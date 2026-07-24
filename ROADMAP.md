@@ -16,7 +16,7 @@ Status legend: ✅ done · 🔶 in progress · ⬜ not started
 | 10 | Accessibility | ⬜ | Keyboard-only play, screen-reader labels (board cells already have aria-labels), color-blind palettes |
 | 11 | Multiplayer-ready architecture | ⬜ | Server-authoritative applyAction relay; state is plain data by contract |
 | 12 | Release candidate | 🔶 | Public-release prep done 2026-07-16 (v1.0.0-rc.1): build-time CSP, security headers, error boundary, host-agnostic relative base, deps audit clean, DEPLOYMENT.md. 2026-07-22: GitHub Actions CI (`.github/workflows/ci.yml`) runs `npm ci` → lint → test → build plus the Playwright browser suite on every push and PR. License chosen 2026-07-24 (proprietary, all rights reserved). Remaining human steps: git init/push, host account + first deploy (see DEPLOYMENT.md checklist) |
-| 13 | Learned CPU (self-play RL) | 🔶 | Stretch goal beyond the heuristic AI (M4): a CPU that discovers strategy from self-play instead of hand-coded rules. Phase 0 done 2026-07-24 (PR #3): the deterministic self-play match recorder (`src/engine/selfplay.ts`) emits `config + seed + full action list + result` records that `replayMatch` reconstructs exactly — the training-data substrate. Plan is a model-free self-play **PPO** policy (not AlphaZero: the game is imperfect-info + stochastic, which breaks vanilla MCTS; PPO gives single-forward-pass inference that ships to the browser). Sequenced as independently-shippable phases — see the **Milestone 13** section below. Remaining: encoders + sample extractor (P1), behavior-cloning de-risk (P2), self-play PPO (P3), ship as a "Learned" difficulty (P4) |
+| 13 | Learned CPU (self-play RL) | 🔶 | Stretch goal beyond the heuristic AI (M4): a CPU that discovers strategy from self-play instead of hand-coded rules. Phase 0 done 2026-07-24 (PR #3): the deterministic self-play match recorder (`src/engine/selfplay.ts`) emits `config + seed + full action list + result` records that `replayMatch` reconstructs exactly — the training-data substrate. Plan is a model-free self-play **PPO** policy (not AlphaZero: the game is imperfect-info + stochastic, which breaks vanilla MCTS; PPO gives single-forward-pass inference that ships to the browser). Sequenced as independently-shippable phases — see the **Milestone 13** section below. Phase 1 done 2026-07-24: observation/option encoders (`encode.ts`) + `replayMatch`-based sample extractor (`samples.ts`), pure TS, info-set boundary pinned by tests. Remaining: behavior-cloning de-risk (P2), self-play PPO (P3), ship as a "Learned" difficulty (P4) |
 
 ## Current focus
 
@@ -78,11 +78,20 @@ each gated on a concrete result — never all-or-nothing.
 - **Phase 0 — ✅ match recorder (2026-07-24, PR #3).** `playSelfPlayGame` /
   `simulateSelfPlay` / `replayMatch` / NDJSON in `src/engine/selfplay.ts`;
   deterministic `config + seed + actions + result` records.
-- **Phase 1 — ⬜ encoders + sample extractor.** Pure TS, no ML deps:
-  observation/option encoders + a `replayMatch`-based extractor emitting
-  `{ obs, legalOptions, chosenIndex, seat }` per decision, joined to the seat's
-  terminal reward. Unit-tested against hand-crafted states. Output: a `Sample[]`
-  dataset. (Foundation everything else needs.)
+- **Phase 1 — ✅ encoders + sample extractor (2026-07-24).** Pure TS, no ML
+  deps. `src/engine/encode.ts`: `encodeObservation(state, seat)` — the acting
+  seat's information set as 26 board planes + a scalar block (per-relative-seat
+  stats, own hand as card-type counts, opponents' hands as sizes only,
+  deck/discard as counts only — hidden info provably never leaks, pinned by
+  tests) — and `encodeOption(state, seat, action)` — each legal intent as a
+  fixed 81-value vector, so the engine's legality is the action mask.
+  `src/engine/samples.ts`: `extractSamples(record)` replays a MatchRecord and
+  emits `{ seat, obs, legalOptions, chosenIndex, reward }` per decision point
+  in the SAME option space the policy will act in: one-shot targeted card
+  plays (how the heuristic AI records them) are decomposed into an intent pick
+  plus per-step `selectTarget` picks on a discarded scratch branch, so the
+  real replay never drifts from `replayMatch`. `ENCODING_SCHEMA` versions the
+  layout. 26 new tests (encode.test.ts, samples.test.ts).
 - **Phase 2 — ⬜ behavior cloning.** Train a net to imitate `chooseAiAction`.
   Success = it mostly matches the heuristic and plays legal games end-to-end —
   de-risks the whole encode → net → decode → play pipeline and warm-starts PPO.
