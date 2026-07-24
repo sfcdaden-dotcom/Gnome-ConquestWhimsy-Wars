@@ -63,9 +63,7 @@ into a `vercel.json` `headers` entry (Vercel doesn't read `_headers`).
 
 ## Pre-release checklist (human steps)
 
-- [ ] **Choose a license** and add a `LICENSE` file — nothing is published
-      rights-wise until you decide (the repo currently has no license, which
-      legally means all-rights-reserved).
+- [x] **License**: proprietary, all rights reserved — see `LICENSE`.
 - [ ] **Initialize git + push** (`git init`) if deploying via a connected
       repository — also your rollback story.
 - [ ] Pick the host, create the account yourself, and deploy `dist/`.

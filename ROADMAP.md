@@ -15,13 +15,13 @@ Status legend: ✅ done · 🔶 in progress · ⬜ not started
 | 9 | Statistics | ⬜ | Per-player aggregates from event stream |
 | 10 | Accessibility | ⬜ | Keyboard-only play, screen-reader labels (board cells already have aria-labels), color-blind palettes |
 | 11 | Multiplayer-ready architecture | ⬜ | Server-authoritative applyAction relay; state is plain data by contract |
-| 12 | Release candidate | 🔶 | Public-release prep done 2026-07-16 (v1.0.0-rc.1): build-time CSP, security headers, error boundary, host-agnostic relative base, deps audit clean, DEPLOYMENT.md. 2026-07-22: GitHub Actions CI (`.github/workflows/ci.yml`) runs `npm ci` → lint → test → build plus the Playwright browser suite on every push and PR. Remaining human steps: license choice, git init/push, host account + first deploy (see DEPLOYMENT.md checklist) |
+| 12 | Release candidate | 🔶 | Public-release prep done 2026-07-16 (v1.0.0-rc.1): build-time CSP, security headers, error boundary, host-agnostic relative base, deps audit clean, DEPLOYMENT.md. 2026-07-22: GitHub Actions CI (`.github/workflows/ci.yml`) runs `npm ci` → lint → test → build plus the Playwright browser suite on every push and PR. License chosen 2026-07-24 (proprietary, all rights reserved). Remaining human steps: git init/push, host account + first deploy (see DEPLOYMENT.md checklist) |
 
 ## Current focus
 
 **Milestone 12 (partial) — public release prep**: engineering side done
-2026-07-16; awaiting the human checklist in DEPLOYMENT.md (license, git,
-host account). In parallel, **Milestone 4 — AI competency** is in progress:
+2026-07-16; awaiting the human checklist in DEPLOYMENT.md (git, host
+account — license chosen 2026-07-24). In parallel, **Milestone 4 — AI competency** is in progress:
 the card-play work item is done (2026-07-17), and 2026-07-22 landed AI
 difficulty (Easy/Normal/Hard, per-seat dropdown in Setup), a genuine
 win-probability fight-commitment calculation for Hard (replacing the flat
