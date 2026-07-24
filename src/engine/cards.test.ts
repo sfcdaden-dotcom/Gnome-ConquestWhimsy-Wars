@@ -10,11 +10,12 @@
 
 import { describe, expect, it } from 'vitest';
 import type { GameState, PlayerId, Pos } from './index';
-import { applyAction, getLegalActions, posKey } from './index';
+import { applyAction, CURSE_DEFINITIONS, getLegalActions, isCurseId, posKey } from './index';
 import {
   activePlayer,
   drive,
   mutate,
+  newGame,
   toActionPhase,
   totalGnomes,
   withGarden,
@@ -505,16 +506,23 @@ describe('curse cards', () => {
     expect(s.discard).not.toContain('curse-mulch-fever');
   });
 
-  it('reshuffling the discard adds one random curse from the pool', () => {
+  it('all 5 curses start shuffled into the deck (no separate pool)', () => {
+    const s = newGame(5);
+    expect(s.cursePool).toHaveLength(0);
+    const cursesInDeck = s.deck.filter((id) => isCurseId(id));
+    expect(cursesInDeck).toHaveLength(CURSE_DEFINITIONS.length);
+    for (const def of CURSE_DEFINITIONS) expect(s.deck).toContain(def.id);
+  });
+
+  it('reshuffling the discard no longer injects a curse', () => {
     let { s, me } = scenario();
     s = mutate(s, (d) => {
       d.deck = [];
       d.discard = ['snake-eyes'];
     });
-    expect(s.cursePool).toHaveLength(5);
     s = applyAction(s, { type: 'drawCard', player: me });
     const reshuffle = s.events.find((e) => e.type === 'deckReshuffled');
-    expect(reshuffle && reshuffle.type === 'deckReshuffled' && reshuffle.curseAdded).toBeTruthy();
-    expect(s.cursePool).toHaveLength(4);
+    expect(reshuffle && reshuffle.type === 'deckReshuffled' && reshuffle.curseAdded).toBeNull();
+    expect(s.cursePool).toHaveLength(0);
   });
 });

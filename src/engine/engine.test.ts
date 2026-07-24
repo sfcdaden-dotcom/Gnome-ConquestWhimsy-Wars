@@ -72,8 +72,8 @@ describe('createGame', () => {
     const s = newGame(7, { gardenPreset: 'many' }, 4);
     expect(s.status).toBe('rolloff');
     expect(s.pendingDecision).toEqual({ kind: 'rollOff', player: 0 });
-    expect(s.deck).toHaveLength(46); // 2 × 23 whimsy cards
-    expect(s.cursePool).toHaveLength(5);
+    expect(s.deck).toHaveLength(51); // 2 × 23 whimsy cards + 5 curses
+    expect(s.cursePool).toHaveLength(0);
     expect(s.players).toHaveLength(4);
     expect(s.rollModifiers).toEqual([0, 0, 0, 0]);
     // 'many' preset: 4 homes + 16 preset gardens.
@@ -252,12 +252,12 @@ describe('card stack', () => {
     const me = activePlayer(s);
     s = mutate(s, (d) => {
       d.players[me].hand.push('gnome-birthday-party');
-      d.players[me].wishes = 2;
+      d.players[me].wishes = 0;
     });
     expect(getLegalActions(s).some((a) => a.type === 'playCard' && a.cardId === 'gnome-birthday-party')).toBe(true);
     s = applyAction(s, { type: 'playCard', player: me, cardId: 'gnome-birthday-party' });
     expect(s.cardStack).toHaveLength(0);
-    expect(s.players[me].wishes).toBe(4);
+    expect(s.players[me].wishes).toBe(2);
     expect(s.discard).toContain('gnome-birthday-party');
     expect(s.events.some((e) => e.type === 'cardResolved')).toBe(true);
   });
@@ -626,7 +626,7 @@ describe('AI policies', () => {
       d.supply.dandelion = 0; // take the economy plant off the table
       d.supply.mushroom = 0;
       d.supply.tunnel = 0;
-      d.players[me].wishes = 3; // enough to plant, too few to make drawing worthwhile
+      d.players[me].wishes = 2; // enough to plant, too few to make drawing worthwhile
       d.players[me].hand = [];
     });
     const g = withGnome(s, me, pos);

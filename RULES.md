@@ -10,7 +10,7 @@ rulebook was ambiguous, the designer's ruling is marked **[RULING]**.
 |---|---|
 | Board size | 7×7 |
 | Starting Wishes | 3 |
-| Wish limit | 5 |
+| Wish limit | 3 |
 | Gnome limit on board (per player) | 8 |
 | Total reinforcements (per player) | 16 |
 | Hand limit | 7 cards |
@@ -35,10 +35,10 @@ rulebook was ambiguous, the designer's ruling is marked **[RULING]**.
    and extending the rulebook diagrams).
 3. **[RULING]** Players start with **0 gnomes on the board**; you bootstrap via
    Home Garden harvest.
-4. Curse Cards are separated from the Whimsy deck.
+4. The 5 Curse Cards are shuffled into the Whimsy deck from the start.
 5. Turn order: each player rolls d6, highest goes first (reroll ties), then clockwise.
 6. **Center Star** (if enabled): the center space is marked. While a player
-   **occupies** the center space, their wish limit is +1 (i.e. 6). This is a marker
+   **occupies** the center space, their wish limit is +1 (i.e. 4). This is a marker
    on the space, not a garden — the space is otherwise normal (can be planted on).
 
 ## Turn structure
@@ -195,9 +195,10 @@ gardens return to the shared supply.
 - **Sudden Magic**: playable at any time, including other players' turns.
 - **Ritual Magic**: playable only during your own turn.
 - Played cards go to a shared discard pile.
-- **Curses**: when the shared deck empties, shuffle the discard into a new deck and
-  add 1 random Curse Card (until all 5 are in). Drawing a Curse: reveal, resolve
-  immediately; it affects ALL players and stays in effect for the rest of the game.
+- **Curses**: all 5 Curse Cards are shuffled into the deck at the start, so any
+  draw can turn one up. Drawing a Curse: reveal, resolve immediately; it affects
+  ALL players and stays in effect for the rest of the game. When the shared deck
+  empties, shuffle the discard into a new deck.
 - **CARD LIST: see CARDS.md** (the designer's official list plus implementation
   rulings). The card system is data-driven: definitions + effect handlers live in
   `src/engine/cards.ts`.

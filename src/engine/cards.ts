@@ -2,7 +2,7 @@
  * Data-driven Whimsy Card system — the official list from CARDS.md.
  *
  * Deck: 2 copies of each of the 23 Whimsy cards (10 Sudden + 13 Ritual) =
- * 46 cards, plus 5 Curse cards that join the deck one-per-reshuffle.
+ * 46 cards, plus the 5 Curse cards, all shuffled in from the start.
  *
  * PLAY / RESPONSE MODEL (CARDS.md "Timing framework"):
  *  - Playing a card moves it hand → discard immediately (a cancelled card
@@ -1239,33 +1239,24 @@ export function isCurseId(id: CardId): boolean {
 // Deck operations
 // ---------------------------------------------------------------------------
 
-/** Build the initial shuffled deck (curses excluded — they join on reshuffles). */
+/** Build the initial shuffled deck. All 5 Curse Cards start shuffled into it. */
 export function buildInitialDeck(draft: GameState): void {
   const ids: CardId[] = [];
   for (const def of CARD_DEFINITIONS) {
     for (let i = 0; i < def.copies; i++) ids.push(def.id);
   }
+  for (const curse of CURSE_DEFINITIONS) ids.push(curse.id);
   draft.deck = draftShuffle(draft, ids);
-  draft.cursePool = CURSE_DEFINITIONS.map((c) => c.id);
+  draft.cursePool = [];
 }
 
-/**
- * When the deck is empty: shuffle the discard into a new deck and add one
- * random Curse Card from the pool (until all 5 are in play).
- */
+/** When the deck is empty: shuffle the discard back into a new deck. */
 function reshuffleIfNeeded(draft: GameState): void {
   if (draft.deck.length > 0 || draft.discard.length === 0) return;
   const pile: CardId[] = draft.discard.slice();
   draft.discard = [];
-  let curseAdded: CardId | null = null;
-  if (draft.cursePool.length > 0) {
-    const idx = draftInt(draft, draft.cursePool.length);
-    curseAdded = draft.cursePool[idx];
-    draft.cursePool.splice(idx, 1);
-    pile.push(curseAdded);
-  }
   draft.deck = draftShuffle(draft, pile);
-  pushEvent(draft, { type: 'deckReshuffled', curseAdded });
+  pushEvent(draft, { type: 'deckReshuffled', curseAdded: null });
 }
 
 /** True when a draw is currently possible at all (ignoring wish cost). */
@@ -1274,9 +1265,9 @@ export function deckHasCards(state: GameState): boolean {
 }
 
 /**
- * Draw one card for `player` (reshuffling + curse injection as needed).
+ * Draw one card for `player` (reshuffling as needed).
  * A drawn Curse is revealed face-up and resolves immediately: it becomes a
- * permanent active curse, never enters a hand or the reshuffle pool, and no
+ * permanent active curse, never enters a hand or the discard, and no
  * replacement card is drawn. Returns the drawn card id.
  */
 export function drawOneCard(draft: GameState, player: PlayerId): CardId {
