@@ -9,8 +9,8 @@ implementation rulings marked **[IMPL]**. This file is the source of truth for
 - **[DESIGNER CONFIRMED]** **2 copies of each Whimsy card** → 46-card deck
   (20 Sudden + 26 Ritual).
 - **[DESIGNER CONFIRMED]** 5 Curse Cards (Antsy Pants was missing from the document —
-  see Curse list). The "add one random curse per reshuffle" rule stops when all 5
-  are in.
+  see Curse list). All 5 are shuffled into the deck from the start, so any draw can
+  turn one up.
 - Shared deck + shared discard pile per RULES.md.
 
 ## Timing framework
@@ -110,5 +110,6 @@ implementation rulings marked **[IMPL]**. This file is the source of truth for
 
 ## Card drawing (reminder from RULES.md)
 
-Curse cards are drawn face-up, resolve immediately, permanent, then removed from
-the deck (not discarded into the reshuffle pool).
+Curse cards start shuffled into the deck. They are drawn face-up, resolve
+immediately, permanent, then removed from play (never entering a hand or the
+discard).

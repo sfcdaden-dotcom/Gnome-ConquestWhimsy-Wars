@@ -31,13 +31,14 @@ test('harvests the Home Garden for a Wish and for a Gnome', async ({ page }) => 
   await g.startTwoPlayer(SEED);
   await g.completeRollOff();
 
-  // Turn 1: take the Wish. Starting Wishes are 3, so the harvest makes 4.
+  // Turn 1: take the Wish. Starting Wishes (3) already sit at the wish cap (3),
+  // so the harvest is clamped — the count holds at the cap rather than rising.
   expect(await g.decision()).toBe('homeHarvest');
   const before = await g.wishes(await g.playerToAct());
   await page.getByTestId('home-harvest-wish').click();
   await g.ready();
   const active = await g.activePlayer();
-  expect(await g.wishes(active)).toBe(before + 1);
+  expect(await g.wishes(active)).toBe(before);
 
   // Turn 2 (the other seat): take the Gnome instead — a second unit appears.
   await g.endTurn();
@@ -223,10 +224,10 @@ test('plays a card and lets the opponent answer the response window', async ({ p
   expect(['playing', 'finished']).toContain(await g.status());
 });
 
-// Seed 2 deals the roll-off winner a playable Plot Twist on their first turn —
-// a two-step (space, then adjacent space) targeted card, so it exercises the
-// phased narrowing end to end.
-const TWO_STEP_SEED = 2;
+// This seed lets the roll-off winner draw a playable Plot Twist within their
+// first-turn Wish budget — a two-step (space, then adjacent space) targeted
+// card, so it exercises the phased narrowing end to end.
+const TWO_STEP_SEED = 7;
 
 /** Roll off, take the Home Wish, and draw until Plot Twist is playable. */
 async function reachPlayablePlotTwist(g: Game) {

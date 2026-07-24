@@ -38,7 +38,7 @@ import { DEFAULT_GARDEN_PRESET_ID, findGardenPreset } from './gardenPresets';
 export const DEFAULT_CONFIG = {
   boardSize: 7,
   startingWishes: 3,
-  wishLimit: 5,
+  wishLimit: 3,
   gnomeBoardLimit: 8,
   totalReinforcements: 16,
   handLimit: 7,

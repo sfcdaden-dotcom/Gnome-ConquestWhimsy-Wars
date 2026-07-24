@@ -119,8 +119,16 @@ blocks · **P3** opportunistic.
   split into a `test:full` tier and keep 3 games in the default run.
 - **schemaVersion policy.** Still `1`; define bump/migration rules before
   save/load (Milestone 7) ships.
-- **Optional entry-effect chains are unbounded.** Tunnel→tunnel hops can chain
-  indefinitely if a player keeps accepting (each hop is one action, so the
-  engine never hangs — the AI declines non-improving hops since 2026-07-16).
-  For multiplayer (Milestone 11), consider a [RULING] cap so a griefing client
-  can't stall a game.
+- **Optional entry-effect chains are unbounded (engine side).** Tunnel→tunnel
+  hops can chain indefinitely if a player keeps accepting (each hop is one
+  action, so the engine never hangs). The **AI** no longer loops here: its
+  "decline non-improving hops" guard (since 2026-07-16) had a hole — a chained
+  hop re-scores against `primaryTarget` recomputed from the mover's new
+  position, so the target could flip between two tunnels and rate the return
+  hop as "improving" too (an A→B→A ping-pong; surfaced 2026-07-24 when a
+  balance change shifted a smoke-test seed into that state). Fixed 2026-07-24
+  by gating each declinable hop on strict progress toward a chain-STABLE anchor
+  (the enemy home nearest our own base) — a monotone, bounded potential, so the
+  chain always terminates (see the `slide`/`tunnel`/`snailMove` case in
+  `ai.ts`). Still open for multiplayer (Milestone 11): an engine-level [RULING]
+  cap so a griefing *human* client can't stall a game.

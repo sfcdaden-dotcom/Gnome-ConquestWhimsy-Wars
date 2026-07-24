@@ -173,17 +173,26 @@ function chooseAiActionInner(state: GameState): Action {
       case 'tunnel':
       case 'snailMove': {
         // Seed with declineEffect (score 0) when available so that a move is
-        // taken only when it STRICTLY improves. Ties must favor declining:
-        // optional entry effects chain (tunnel → tunnel → …), and two tunnels
-        // equidistant from the target would otherwise ping-pong forever.
-        let best: Action | null = null;
-        let bestScore = -Infinity;
-        if (legal.some((a) => a.type === 'declineEffect')) {
-          best = { type: 'declineEffect', player: actor };
-          bestScore = 0;
-        }
+        // taken only when it STRICTLY improves. Ties must favor declining.
+        //
+        // Optional entry effects CHAIN (tunnel → tunnel → …), and
+        // scoreDestination's target is recomputed from the mover's current
+        // position (primaryTarget), so it can flip between two tunnels and rate
+        // the RETURN hop as "improving" too — an unbounded A→B→A ping-pong. For
+        // declinable (chainable) hops, additionally require strict progress
+        // toward a chain-STABLE anchor — the enemy home nearest our own base,
+        // which does not move as the gnome hops. That is a monotonically
+        // decreasing, bounded potential, so the chain always terminates.
+        const canDecline = legal.some((a) => a.type === 'declineEffect');
+        const anchor = primaryTarget(state, actor, state.players[actor].homePos);
+        const fromDist = manhattan(d.from, anchor);
+        let best: Action | null = canDecline ? { type: 'declineEffect', player: actor } : null;
+        let bestScore = canDecline ? 0 : -Infinity;
         for (const a of legal) {
           if (a.type !== 'slide' && a.type !== 'tunnel' && a.type !== 'snailMove') continue;
+          // Chainable hop that doesn't close on the anchor ⇒ not eligible to
+          // chain (forced relocations aren't chainable, so they skip the gate).
+          if (canDecline && manhattan(a.to, anchor) >= fromDist) continue;
           let score = scoreDestination(state, actor, d.from, a.to);
           if (samePos(a.to, d.from)) score = -0.25; // tunnel "stay" mildly discouraged
           if (score > bestScore) {
@@ -447,11 +456,15 @@ function scoreActionPhase(state: GameState, player: PlayerId, action: Action): n
       // AI never plants one on purpose.
       return -1;
     }
-    case 'drawCard':
+    case 'drawCard': {
       // Draw only when wish-rich with hand room: cheap enough not to starve
       // plants/attacks (scores below them and above endTurn's 0.1), and never
-      // so full that the draw forces an immediate discard.
-      return p.wishes >= 4 && p.hand.length <= state.config.handLimit - 2 ? 0.5 : -1;
+      // so full that the draw forces an immediate discard. "Wish-rich" is
+      // relative to the cap so a low wish limit (e.g. 3) stays reachable —
+      // otherwise the AI could never afford to draw and would never play cards.
+      const drawThreshold = Math.min(4, wishCap(state, player));
+      return p.wishes >= drawThreshold && p.hand.length <= state.config.handLimit - 2 ? 0.5 : -1;
+    }
     case 'playCard':
       // Card plays are scored via planCardPlay in chooseAiAction (they need a
       // target payload); this path is unreachable for playCard.

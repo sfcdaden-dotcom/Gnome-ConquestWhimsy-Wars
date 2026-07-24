@@ -124,7 +124,11 @@ describe('respond-only routing is card-definition driven', () => {
 
   it('a respondOnly card without the counter flag gets no stack index', () => {
     register(respondOnlyNonCounter);
-    const { s, me, foe } = openResponseWindow(105, ['test-tardy-toad']);
+    let { s, me, foe } = openResponseWindow(105, ['test-tardy-toad']);
+    // Zero out wishes for headroom under the wish cap so the payout is observable.
+    s = mutate(s, (d) => {
+      d.players[me].wishes = 0;
+    });
     const wishesBefore = s.players[me].wishes;
 
     const next = applyAction(s, { type: 'respondPlayCard', player: foe, cardId: 'test-tardy-toad' });
