@@ -16,6 +16,7 @@ Status legend: ✅ done · 🔶 in progress · ⬜ not started
 | 10 | Accessibility | ⬜ | Keyboard-only play, screen-reader labels (board cells already have aria-labels), color-blind palettes |
 | 11 | Multiplayer-ready architecture | ⬜ | Server-authoritative applyAction relay; state is plain data by contract |
 | 12 | Release candidate | 🔶 | Public-release prep done 2026-07-16 (v1.0.0-rc.1): build-time CSP, security headers, error boundary, host-agnostic relative base, deps audit clean, DEPLOYMENT.md. 2026-07-22: GitHub Actions CI (`.github/workflows/ci.yml`) runs `npm ci` → lint → test → build plus the Playwright browser suite on every push and PR. License chosen 2026-07-24 (proprietary, all rights reserved). Remaining human steps: git init/push, host account + first deploy (see DEPLOYMENT.md checklist) |
+| 13 | Learned CPU (self-play RL) | 🔶 | Stretch goal beyond the heuristic AI (M4): a CPU that discovers strategy from self-play instead of hand-coded rules. Phase 0 done 2026-07-24 (PR #3): the deterministic self-play match recorder (`src/engine/selfplay.ts`) emits `config + seed + full action list + result` records that `replayMatch` reconstructs exactly — the training-data substrate. Plan is a model-free self-play **PPO** policy (not AlphaZero: the game is imperfect-info + stochastic, which breaks vanilla MCTS; PPO gives single-forward-pass inference that ships to the browser). Sequenced as independently-shippable phases — see the **Milestone 13** section below. Phase 1 done 2026-07-24: observation/option encoders (`encode.ts`) + `replayMatch`-based sample extractor (`samples.ts`), pure TS, info-set boundary pinned by tests. Remaining: behavior-cloning de-risk (P2), self-play PPO (P3), ship as a "Learned" difficulty (P4) |
 
 ## Current focus
 
@@ -32,3 +33,71 @@ Normal and Hard AI-vs-AI smoke suites (games still terminate for both).
 Remaining Milestone 4 work: difficulty-aware fight-*response* windows (Hard
 currently reuses Normal's Gnomebody-Dies/Clover/Snake-Eyes logic unchanged),
 and further Hard-tier tactics beyond fight commitment.
+
+## Milestone 13 — Learned CPU (self-play reinforcement learning)
+
+A stretch goal beyond the heuristic AI (Milestone 4): a CPU that *discovers*
+strategy from playing itself, rather than following hand-coded rules. Post-1.0
+and research-flavored, so it is sequenced as independently-shippable phases,
+each gated on a concrete result — never all-or-nothing.
+
+### Design choices
+
+- **Algorithm — model-free self-play PPO (actor-critic), not AlphaZero.** The
+  game is imperfect-information (hidden hands and deck) and stochastic (dice),
+  which breaks vanilla perfect-information MCTS. PPO conditions on the acting
+  seat's *information set* and learns expected outcome under uncertainty, and
+  its inference is a single forward pass — cheap, low-latency, and small enough
+  to ship to the browser. (Information-Set MCTS / tree search is held in reserve
+  if strength plateaus.)
+- **Policy — a decision-point policy over the engine's own legal options.** No
+  giant flat action space: at every state where `getPlayerToAct` returns a seat,
+  the net scores the currently-legal set from `getLegalActionIntents` /
+  `getPendingDecisionOptions` (the mask *is* the engine's legality). Targeted
+  cards resolve step-by-step through the existing phased-targeting decisions, so
+  target combinations are never enumerated. Output is the same `Action` contract
+  as `chooseAiAction`, making the learned policy a drop-in.
+- **Runtime — TensorFlow.js in-repo for v0.** The engine is directly callable in
+  the training loop (no serialization boundary) and the trained model is already
+  JS for the browser. Graduate to TS-selfplay → PyTorch → ONNX
+  (`onnxruntime-web`) only if throughput demands it. Never a second Python engine
+  — determinism is a core contract that two engines would risk.
+- **Encoding (fix 7×7 for v0)** — spatial planes (own / per-enemy gnomes,
+  garden-type one-hots, flytrap active/stunned, center star, home ownership) plus
+  scalars (wishes + cap, reserves / reinforcements, my hand as card-type counts
+  and opponents' hands as counts only = the info-set boundary, deck/discard
+  sizes, active curses, turn, phase, pending-decision kind, roll modifiers,
+  shields).
+- **Reward** — terminal +1 / −1 / 0 per seat (optionally shaped by margin or
+  survival), Monte-Carlo return with a value baseline. Self-play against a
+  rotating **opponent pool** of past checkpoints (prevents strategy collapse).
+  **Eval gate: win-rate vs the heuristic Hard.**
+
+### Phases
+
+- **Phase 0 — ✅ match recorder (2026-07-24, PR #3).** `playSelfPlayGame` /
+  `simulateSelfPlay` / `replayMatch` / NDJSON in `src/engine/selfplay.ts`;
+  deterministic `config + seed + actions + result` records.
+- **Phase 1 — ✅ encoders + sample extractor (2026-07-24).** Pure TS, no ML
+  deps. `src/engine/encode.ts`: `encodeObservation(state, seat)` — the acting
+  seat's information set as 26 board planes + a scalar block (per-relative-seat
+  stats, own hand as card-type counts, opponents' hands as sizes only,
+  deck/discard as counts only — hidden info provably never leaks, pinned by
+  tests) — and `encodeOption(state, seat, action)` — each legal intent as a
+  fixed 81-value vector, so the engine's legality is the action mask.
+  `src/engine/samples.ts`: `extractSamples(record)` replays a MatchRecord and
+  emits `{ seat, obs, legalOptions, chosenIndex, reward }` per decision point
+  in the SAME option space the policy will act in: one-shot targeted card
+  plays (how the heuristic AI records them) are decomposed into an intent pick
+  plus per-step `selectTarget` picks on a discarded scratch branch, so the
+  real replay never drifts from `replayMatch`. `ENCODING_SCHEMA` versions the
+  layout. 26 new tests (encode.test.ts, samples.test.ts).
+- **Phase 2 — ⬜ behavior cloning.** Train a net to imitate `chooseAiAction`.
+  Success = it mostly matches the heuristic and plays legal games end-to-end —
+  de-risks the whole encode → net → decode → play pipeline and warm-starts PPO.
+- **Phase 3 — ⬜ self-play PPO** from the BC-initialized net, with the opponent
+  pool and the Hard-win-rate eval gate.
+- **Phase 4 — ⬜ ship.** Lazy-loaded weights (static asset),
+  `chooseNeuralAction(state, model)` mirroring `chooseAiAction`, exposed as a new
+  "Learned" / "Expert" difficulty (heuristic stays as fallback and for
+  Easy/Normal). Check bundle size + per-move latency.

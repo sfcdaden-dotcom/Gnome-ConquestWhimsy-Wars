@@ -72,3 +72,19 @@ export {
   fromNdjson,
 } from './selfplay';
 export type { MatchRecord, MatchResult, MatchEndReason } from './selfplay';
+
+// Learned-CPU training encoders + sample extractor (pure TS, no ML deps).
+export {
+  ENCODING_SCHEMA,
+  MAX_SEATS,
+  ENCODED_CARD_IDS,
+  ENCODED_CURSE_IDS,
+  OBS_PLANES,
+  OBS_SCALARS,
+  OPTION_SIZE,
+  obsSize,
+  encodeObservation,
+  encodeOption,
+} from './encode';
+export { extractSamples, extractDataset } from './samples';
+export type { Sample, ExtractOptions } from './samples';
