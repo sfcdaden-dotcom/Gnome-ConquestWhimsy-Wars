@@ -375,3 +375,68 @@ test('cancelling phased targeting returns the card to the hand', async ({ page }
   expect(await g.decision()).not.toBe('cardTargeting');
   await expect(page.getByTestId('play-card-plot-twist')).toBeEnabled();
 });
+
+// ---------------------------------------------------------------------------
+// The Random preset (the shipping default)
+// ---------------------------------------------------------------------------
+
+/** Row-major indices of the cells carrying each kind of marker, read off the DOM. */
+async function readLayout(page: import('@playwright/test').Page, root: string) {
+  return page.$$eval(`${root} .cell`, (cells) => {
+    const gardens: string[] = [];
+    const homes: number[] = [];
+    cells.forEach((cell, i) => {
+      const type = [...cell.classList].find((c) => c.startsWith('g-') && c !== 'g-home');
+      if (type) gardens.push(`${i}:${type}`);
+      // The live board marks homes with g-home; the setup preview uses
+      // editor-home, and dims the seats a 2-player game won't fill.
+      const isHome = cell.classList.contains('g-home') || cell.classList.contains('editor-home');
+      if (isHome && !cell.classList.contains('unseated')) homes.push(i);
+    });
+    return { gardens, homes };
+  });
+}
+
+test('the Random preset is the default and previews a symmetric map', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.getByLabel('Extra-garden preset')).toHaveValue('random');
+
+  const { gardens, homes } = await readLayout(page, '.preset-preview');
+  // 2 to 4 orbits of 4, plus the 2 seated homes of a default 2-player game.
+  expect(gardens.length).toBeGreaterThanOrEqual(8);
+  expect(gardens.length).toBeLessThanOrEqual(16);
+  expect(gardens.length % 4).toBe(0);
+  expect(homes).toHaveLength(2);
+});
+
+test('re-rolling the map changes the preview', async ({ page }) => {
+  await page.goto('/');
+  const label = page.getByText(/^Map #/);
+  const before = await label.textContent();
+  const first = await readLayout(page, '.preset-preview');
+
+  // A re-roll could in principle repeat a map; a few attempts makes that moot.
+  let changed = false;
+  for (let i = 0; i < 5 && !changed; i++) {
+    await page.getByTestId('reroll-layout').click();
+    const next = await readLayout(page, '.preset-preview');
+    changed = JSON.stringify(next) !== JSON.stringify(first);
+  }
+  expect(changed).toBe(true);
+  expect(await label.textContent()).not.toBe(before);
+});
+
+test('plays exactly the map the setup screen previewed', async ({ page }) => {
+  await page.goto('/');
+  await page.getByTestId('reroll-layout').click();
+  const previewed = await readLayout(page, '.preset-preview');
+
+  await page.getByTestId('player-count-2').click();
+  await page.getByTestId('seat-0-human').click();
+  await page.getByTestId('seat-1-human').click();
+  await page.getByTestId('seed-input').fill(String(SEED));
+  await page.getByTestId('start-game').click();
+  await expect(page.getByTestId('game-screen')).toBeVisible();
+
+  expect(await readLayout(page, '[data-testid="game-screen"] .board')).toEqual(previewed);
+});

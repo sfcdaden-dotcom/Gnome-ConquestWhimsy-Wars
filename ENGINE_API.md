@@ -33,7 +33,7 @@ implementation detail and may move again.
 | `fights.ts` | fight resolution (Respond → Roll → Resolve) |
 | `cards.ts` | card framework, definitions, the card stack |
 | `helpers.ts` | shared queries and draft mutators |
-| `setup.ts` / `gardenPresets.ts` / `rng.ts` / `types.ts` | creation, layouts, RNG, types |
+| `setup.ts` / `gardenPresets.ts` / `randomLayout.ts` / `rng.ts` / `types.ts` | creation, layouts, procedural map generation, RNG, types |
 
 Dependencies run one way through the top layer — `engine → {actions, settle,
 legalActions} → {targeting, turns} → elimination → {gardens, cards, fights} →

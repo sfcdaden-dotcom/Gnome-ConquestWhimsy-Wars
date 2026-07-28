@@ -3,7 +3,8 @@
 A digital version of the Whimsy Wars tabletop game: harvest gardens, hoard
 Wishes, and gnome your enemies into the compost. 2 or 4 players (any mix of
 human hot-seat and CPU, with Easy/Normal/Hard difficulty per seat) on an N×N
-garden board — pick a built-in board preset or draw your own in the editor.
+garden board — play a freshly rolled symmetrical map, pick a built-in board
+preset, or draw your own in the editor.
 
 - **Rules:** [RULES.md](RULES.md) · **Cards:** [CARDS.md](CARDS.md)
 - **Engine API & architecture:** [ENGINE_API.md](ENGINE_API.md)

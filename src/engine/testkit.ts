@@ -10,6 +10,11 @@ import { expect } from 'vitest';
 import type { CreateGameOptions, GameState, Garden, GardenType, PlayerId, Pos } from './index';
 import { applyAction, chooseAiAction, createGame, isGameOver, posKey } from './index';
 
+/**
+ * A game on a BARE board by default (`gardenPreset: 'none'`), so hand-crafted
+ * scenarios control every space. The shipping default is the procedural
+ * 'random' preset — pass `{ gardenPreset: 'random' }` to exercise it.
+ */
 export function newGame(
   seed = 42,
   extra: Partial<Omit<CreateGameOptions, 'players'>> = {},
@@ -19,7 +24,7 @@ export function newGame(
     name: `P${i}`,
     controller: 'cpu' as const,
   }));
-  return createGame({ players, ...extra }, seed);
+  return createGame({ players, gardenPreset: 'none', ...extra }, seed);
 }
 
 /** Drive the game with the AI until `stop(state)`, game over, or maxActions. */

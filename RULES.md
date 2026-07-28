@@ -31,9 +31,12 @@ rulebook was ambiguous, the designer's ruling is marked **[RULING]**.
 ## Setup
 
 1. Each player gets a Home Garden, gnome supply, and 3 Wishes.
-2. Home Gardens placed equidistant (digital version uses named layout presets —
-   None/Few/Orchard/Fortress/Gauntlet/Many, see `gardenPresets.ts` — mirroring
-   and extending the rulebook diagrams).
+2. Home Gardens placed equidistant. The digital version defaults to **Random
+   (symmetrical)**, which rolls the homes and the extra gardens as 90°-rotation
+   orbits so every seat faces identical terrain, and keeps flytraps, maize and
+   tunnels off the home doorsteps (see `randomLayout.ts`). Fixed named layouts
+   — None/Few/Orchard/Fortress/Gauntlet/Many, see `gardenPresets.ts` — mirror
+   and extend the rulebook diagrams.
 3. **[RULING]** Players start with **0 gnomes on the board**; you bootstrap via
    Home Garden harvest.
 4. The 5 Curse Cards are shuffled into the Whimsy deck from the start.
