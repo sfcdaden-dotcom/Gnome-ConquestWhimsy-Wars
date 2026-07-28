@@ -43,11 +43,12 @@ export const DEFAULT_CONFIG = {
   totalReinforcements: 16,
   handLimit: 7,
   centerStar: true,
+  tilesPerType: 4,
   gardenPreset: DEFAULT_GARDEN_PRESET_ID as GardenPreset,
 } as const;
 
-/** Shared supply: 8 tiles of each plantable type, game-wide. */
-export const SUPPLY_PER_TYPE = 8;
+/** Per-player supply: 4 tiles of each plantable type (see config.tilesPerType). */
+export const TILES_PER_TYPE = 4;
 
 /** Every type a player can plant/design a garden layout with (excludes 'home'). */
 export const PLANTABLE_GARDEN_TYPES: readonly PlantableGardenType[] = [
@@ -58,6 +59,18 @@ export const PLANTABLE_GARDEN_TYPES: readonly PlantableGardenType[] = [
   'slippery',
   'tunnel',
 ];
+
+/** A fresh per-player tile supply. */
+export function makeSupply(tilesPerType: number): Record<PlantableGardenType, number> {
+  return {
+    dandelion: tilesPerType,
+    mushroom: tilesPerType,
+    flytrap: tilesPerType,
+    maize: tilesPerType,
+    slippery: tilesPerType,
+    tunnel: tilesPerType,
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Layout
@@ -139,6 +152,7 @@ function resolveConfig(options: CreateGameOptions): GameConfig {
     totalReinforcements: options.totalReinforcements ?? DEFAULT_CONFIG.totalReinforcements,
     handLimit: options.handLimit ?? DEFAULT_CONFIG.handLimit,
     centerStar: options.centerStar ?? DEFAULT_CONFIG.centerStar,
+    tilesPerType: options.tilesPerType ?? DEFAULT_CONFIG.tilesPerType,
     gardenPreset,
     ...(customGardens ? { customGardens } : {}),
     ...(customHomes ? { customHomes } : {}),
@@ -154,6 +168,9 @@ function resolveConfig(options: CreateGameOptions): GameConfig {
     badConfig('totalReinforcements must be >= gnomeBoardLimit');
   }
   if (cfg.handLimit < 1) badConfig('handLimit must be >= 1');
+  if (!Number.isInteger(cfg.tilesPerType) || cfg.tilesPerType < 1) {
+    badConfig('tilesPerType must be a positive integer');
+  }
   return cfg;
 }
 
@@ -178,16 +195,8 @@ export function createGame(options: CreateGameOptions, seed: number): GameState 
     gnomesSpawned: 0,
     gnomesLost: 0,
     homePos: homes[i],
+    supply: makeSupply(config.tilesPerType),
   }));
-
-  const supply: Record<PlantableGardenType, number> = {
-    dandelion: SUPPLY_PER_TYPE,
-    mushroom: SUPPLY_PER_TYPE,
-    flytrap: SUPPLY_PER_TYPE,
-    maize: SUPPLY_PER_TYPE,
-    slippery: SUPPLY_PER_TYPE,
-    tunnel: SUPPLY_PER_TYPE,
-  };
 
   const state: GameState = {
     schemaVersion: 1,
@@ -203,7 +212,6 @@ export function createGame(options: CreateGameOptions, seed: number): GameState 
     players,
     gardens: {},
     units: {},
-    supply,
     deck: [],
     discard: [],
     cursePool: [],
@@ -233,13 +241,12 @@ export function createGame(options: CreateGameOptions, seed: number): GameState 
     state.gardens[posKey(p.homePos)] = makeGarden('home', 0, p.id);
   }
 
-  // Preset (or custom) gardens (consume shared supply).
+  // Preset (or custom) gardens — WILD tiles: they come from no player's
+  // supply, and when destroyed they leave the game instead of returning.
   const layout = config.customGardens ?? presetGardens(config.boardSize, config.gardenPreset);
   for (const g of layout) {
     const key = posKey(g.pos);
     if (state.gardens[key]) badConfig(`Preset layout collision at ${key}`);
-    if (state.supply[g.type] <= 0) badConfig(`Preset layout exhausts the ${g.type} supply`);
-    state.supply[g.type] -= 1;
     state.gardens[key] = makeGarden(g.type, 0);
   }
 

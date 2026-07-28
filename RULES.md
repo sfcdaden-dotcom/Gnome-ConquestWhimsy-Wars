@@ -14,6 +14,7 @@ rulebook was ambiguous, the designer's ruling is marked **[RULING]**.
 | Gnome limit on board (per player) | 8 |
 | Total reinforcements (per player) | 16 |
 | Hand limit | 7 cards |
+| Garden tiles per type (per player) | 4 |
 | Players | 2 or 4 (each seat human or CPU) |
 | Center Star | ON (toggleable) |
 
@@ -70,8 +71,11 @@ Available actions, any number, any order:
   Movement granted by cards or gardens (slides, tunnels) does NOT consume the unit's
   movement action.
 - **Plant a garden**: when a gnome you control occupies an empty space (no garden,
-  no enemies), pay 1 Wish and place any garden type from the shared supply
-  (8 tiles of each type game-wide; never a second Home Garden).
+  no enemies), pay 1 Wish and place any garden type from **your own supply**
+  (4 tiles of each type per player; never a second Home Garden).
+- **Upgrade a garden**: when a gnome you control occupies a non-Home garden you
+  control (no enemy critters on the space), pay **2 Wishes** to flip it to its
+  upgraded form. See **Garden Upgrades**.
 - **Draw a Whimsy Card**: pay 1 Wish. Draw as many as you can afford. Hand limit 7 —
   if exceeded, discard down to 7 immediately.
 - Play Whimsy Cards (Ritual Magic: own turn only; Sudden Magic: anytime, including
@@ -132,24 +136,60 @@ Snail rules:
 ## Gardens
 
 Planting cost: always 1 Wish. Plant only on an empty space (no garden, no enemies)
-occupied by your gnome, during your Action Phase. Supply: 8 tiles per type, shared.
+occupied by your gnome, during your Action Phase.
 
-A garden is removed ("destroyed") only by card effects or the Snail. Destroyed
-gardens return to the shared supply.
+**[RULING] Per-player supply.** Each player has their own supply of **4 tiles per
+plantable type** — there is no shared bank. You always plant from your own supply,
+and cards that plant gardens (Wild Growth, Pocket Shovel) draw from the card
+player's supply. Every planted garden remembers its original planter.
+
+A garden is removed ("destroyed") only by card effects or the Snail. A destroyed
+garden returns to its **original planter's** supply as a basic (un-upgraded)
+tile — regardless of who controlled or upgraded it since. **[RULING]** Gardens
+pre-placed by a setup preset are **wild tiles**: they come from no player's
+supply, count against nobody's 4, and are removed from the game permanently when
+destroyed.
+
+### Garden Upgrades
+
+Any non-Home garden can be upgraded once to a stronger form — see each garden's
+**Upgraded** entry below.
+
+- **Cost & timing**: 2 Wishes, during your Action Phase, while a gnome you
+  control occupies the garden and no enemy units are on the space. You may
+  upgrade a garden you didn't plant (including one you captured), and you may
+  upgrade a garden the turn it was planted (it still becomes Active on the
+  normal schedule). **[RULING]** A flytrap does not block the upgrading of its
+  own garden — a gnome standing on an inactive or stunned flytrap may upgrade
+  it. (Compost Combustion doubles *planting* costs only; upgrades stay at 2.)
+- **[RULING] Upgrades belong to the tile, not the player.** Whoever controls the
+  garden gets the upgraded effect — capturing an upgraded garden captures the
+  upgrade. (Flytraps stay neutral: upgrading one strengthens it against
+  everyone, including its upgrader.)
+- One upgrade level only, and upgrades cannot be undone. If the garden is
+  destroyed the upgrade is lost — the tile returns to its planter's supply as a
+  basic tile (or leaves the game, if wild).
 
 ### Home Garden (economy)
 - Harvest: owner chooses 1 Wish or 1 Gnome, even if unoccupied.
 - Max 1 per player, never plantable. Enemy sole occupation = owner eliminated.
+- Cannot be upgraded.
 
 ### Dandelion Garden (economy)
 - Harvest: up to 2 occupying gnomes harvest 1 Wish each (i.e. +1 Wish if 1 gnome,
   +2 Wishes if 2+ gnomes, subject to wish cap; excess lost).
+- **Upgraded — Golden Dandelion**: harvest unchanged; additionally, **while you
+  control this garden your wish limit is +1**. Stacks with the Center Star and
+  with other Golden Dandelions. (Balance watch-point: stacking — revisit after
+  playtesting.)
 
 ### Mushroom Garden (economy)
 - Harvest: clone up to 2 occupying gnomes (owner picks how many, capped by board/
   reserve limits). New gnomes spawn on this mushroom garden.
 - **[RULING]** Spawned gnomes may move normally during the Action Phase of the turn
   they spawn (they do not get an extra harvest-phase move).
+- **Upgraded — Elder Mushroom**: harvest clones up to **3** occupying gnomes
+  (same board/reserve caps).
 
 ### Flytrap Garden (defense)
 - **[RULING]** The Flytrap is a neutral hazard critter: once **Active** (planted on
@@ -167,6 +207,9 @@ gardens return to the shared supply.
 - A space with a flytrap contains an enemy critter for everyone: it blocks planting
   (space isn't empty anyway), blocks entry effects, and blocks harvest of... itself
   (its "harvest" is the attack).
+- **Upgraded — Snapping Maw**: the flytrap adds **+1 to its d6** in every fight —
+  against all players, including its upgrader. Everything else is unchanged
+  (winning still stuns it; it still can't be destroyed by fighting).
 
 ### Maize Garden (defense)
 - On Exit: the exiting unit's owner pays 1 Wish. **[RULING]** If they cannot pay,
@@ -174,6 +217,8 @@ gardens return to the shared supply.
 - On Harvest: the harvesting owner rolls a d6; if result < 4, the exit cost of this
   maize garden doubles (1→2) until the end of that player's turn.
   (Designer notes this harvest effect is provisional; keep implementation isolated.)
+- **Upgraded — Thorn Maize**: base exit cost is **2 Wishes**. The harvest
+  doubling applies to the upgraded cost (2→4) until end of turn.
 
 ### Slippery Garden (mobility)
 - On Entry (optional): slide to an adjacent space (orthogonal).
@@ -181,6 +226,15 @@ gardens return to the shared supply.
   destination — may include diagonal spaces): slide to any adjacent or diagonal space.
 - Slides do not consume the unit's movement action. Slides can trigger the entered
   space's entry effects/fights as normal entry.
+- **Upgraded — Glacier**:
+  - On Entry (optional): slide to an adjacent **or diagonal** space.
+  - On Harvest (mandatory activation, destination is the player's choice):
+    either slide **exactly 2 spaces orthogonally in a straight line**, or slide
+    **1 space diagonally**. The straight slide passes *through* the middle
+    space: it must not be blocked (e.g. Great Wall), but nothing on it triggers —
+    no fights, no entry effects; you whoosh past enemies. Only the destination
+    is a normal Entry. Directions without a legal full 2-line simply aren't
+    offered; if no option is legal the harvest is skipped.
 
 ### Tunnel Garden (mobility)
 - On Entry (optional): move to any other tunnel garden on the board.
@@ -188,6 +242,9 @@ gardens return to the shared supply.
   your own gnomes.
 - Tunnel moves don't consume movement actions; arriving is an Entry (triggers
   effects/fights).
+- **Upgraded — Grand Burrow**: the *entry* effect offers the full harvest
+  destination list (any other tunnel garden, OR any garden occupied by one of
+  your own gnomes).
 
 ## Whimsy Cards
 

@@ -14,7 +14,7 @@
 import { useState } from 'react';
 import type { CSSProperties } from 'react';
 import type { GardenPresetDef, PlantableGardenType, Pos } from '../engine';
-import { PLANTABLE_GARDEN_TYPES, SUPPLY_PER_TYPE, posKey } from '../engine';
+import { PLANTABLE_GARDEN_TYPES, posKey } from '../engine';
 import { GARDEN_META } from './meta';
 import {
   CUSTOM_EDITOR_BOARD_SIZE,
@@ -27,6 +27,14 @@ import {
 } from './customPresets';
 
 type Tool = PlantableGardenType | 'erase';
+
+/**
+ * Editor sanity cap per garden type. Preset gardens are WILD tiles (they come
+ * from no player's supply — see RULES.md "Per-player supply"), so this is a
+ * layout-design limit, not a supply constraint. Kept at the old shared-supply
+ * value so every existing preset stays valid.
+ */
+const PRESET_MAX_PER_TYPE = 8;
 
 export interface PresetEditorProps {
   /** Pass the currently-selected custom preset to edit it in place; omit to start blank. */
@@ -100,7 +108,7 @@ export function PresetEditor({ initial, onCancel, onSave }: PresetEditorProps) {
         next.delete(key); // clicking the same type again clears it
         return next;
       }
-      if (counts[tool] >= SUPPLY_PER_TYPE && next.get(key) !== tool) {
+      if (counts[tool] >= PRESET_MAX_PER_TYPE && next.get(key) !== tool) {
         return prev; // at supply cap for this type
       }
       next.set(key, tool);
@@ -162,10 +170,10 @@ export function PresetEditor({ initial, onCancel, onSave }: PresetEditorProps) {
               type="button"
               className={`btn small${tool === type ? ' accent' : ''}`}
               onClick={() => setTool(type)}
-              disabled={counts[type] >= SUPPLY_PER_TYPE && tool !== type}
+              disabled={counts[type] >= PRESET_MAX_PER_TYPE && tool !== type}
               title={GARDEN_META[type].blurb}
             >
-              {GARDEN_META[type].emoji} {GARDEN_META[type].label} ({counts[type]}/{SUPPLY_PER_TYPE})
+              {GARDEN_META[type].emoji} {GARDEN_META[type].label} ({counts[type]}/{PRESET_MAX_PER_TYPE})
             </button>
           ))}
           <button

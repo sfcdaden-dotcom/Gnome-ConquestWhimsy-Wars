@@ -24,7 +24,6 @@
 import type {
   CardId,
   CardTargets,
-  FightSide,
   FightState,
   GameState,
   PlayerId,
@@ -215,8 +214,14 @@ function requireRespond(draft: GameState, player: PlayerId): FightState {
 // Roll + Resolve
 // ---------------------------------------------------------------------------
 
-function rollSide(draft: GameState, side: FightSide): number {
-  return side.kind === 'player' ? rollPlayerD6(draft, side.player) : draftRollD6(draft);
+function rollSide(draft: GameState, f: FightState, idx: 0 | 1): number {
+  const side = f.sides[idx];
+  if (side.kind === 'player') return rollPlayerD6(draft, side.player);
+  // Snapping Maw (upgraded flytrap): the system die gets +1 — against every
+  // player, including the upgrader.
+  const g = gardenAt(draft, f.pos);
+  const bonus = g && g.type === 'flytrap' && g.upgraded ? 1 : 0;
+  return draftRollD6(draft) + bonus;
 }
 
 /**
@@ -258,8 +263,8 @@ function rollAndResolveRound(draft: GameState, f: FightState): void {
     casualtyCandidate(draft, f, 0),
     casualtyCandidate(draft, f, 1),
   ];
-  let a = rollSide(draft, f.sides[0]);
-  let b = rollSide(draft, f.sides[1]);
+  let a = rollSide(draft, f, 0);
+  let b = rollSide(draft, f, 1);
   pushEvent(draft, {
     type: 'fightRolled',
     fightId: f.id,
@@ -269,8 +274,8 @@ function rollAndResolveRound(draft: GameState, f: FightState): void {
     casualtyCandidates: atRisk(),
   });
   while (a === b && !mulchFever) {
-    a = rollSide(draft, f.sides[0]);
-    b = rollSide(draft, f.sides[1]);
+    a = rollSide(draft, f, 0);
+    b = rollSide(draft, f, 1);
     pushEvent(draft, {
       type: 'fightRolled',
       fightId: f.id,

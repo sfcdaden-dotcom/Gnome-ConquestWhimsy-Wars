@@ -72,15 +72,18 @@ export function withGnome(
   return { state: s, unitId };
 }
 
-/** Place a garden at `pos` (default: pre-game planting, i.e. already Active). */
+/** Place a garden at `pos` (default: pre-game planting, i.e. already Active).
+ *  Omit `plantedBy` for a wild tile (destroyed ⇒ leaves the game). */
 export function withGarden(
   state: GameState,
   pos: Pos,
   type: Exclude<GardenType, 'home'>,
   plantedOnTurn = 0,
+  plantedBy?: number,
 ): GameState {
   return mutate(state, (d) => {
     const g: Garden = { type, plantedOnTurn, stunnedForPlayerTurn: null, doubledForPlayerTurn: null };
+    if (plantedBy !== undefined) g.plantedBy = plantedBy;
     d.gardens[posKey(pos)] = g;
   });
 }

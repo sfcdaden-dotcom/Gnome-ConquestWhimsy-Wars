@@ -161,12 +161,22 @@ export function gardenIsActive(state: GameState, garden: Garden): boolean {
   return garden.plantedOnTurn < turnNumber;
 }
 
-/** Current wish cap: base limit, +1 while the player occupies the Center Star. */
+/**
+ * Current wish cap: base limit, +1 while the player occupies the Center Star,
+ * +1 per Golden Dandelion (upgraded dandelion garden) the player controls
+ * (occupied by their gnome, no enemy units). Bonuses stack.
+ */
 export function wishCap(state: GameState, player: PlayerId): number {
   let cap = state.config.wishLimit;
   if (state.config.centerStar) {
     const c = centerPos(state);
     if (playerUnitsAt(state, c, player).length > 0) cap += 1;
+  }
+  for (const [key, g] of Object.entries(state.gardens)) {
+    if (g.type !== 'dandelion' || !g.upgraded) continue;
+    const pos = parsePos(key);
+    if (enemyUnitsAt(state, pos, player).length > 0) continue;
+    if (playerUnitsAt(state, pos, player).some((u) => u.kind === 'gnome')) cap += 1;
   }
   return cap;
 }
@@ -174,12 +184,14 @@ export function wishCap(state: GameState, player: PlayerId): number {
 /**
  * Maize exit cost for a unit leaving `from`, or 0 when no active maize garden
  * is there. (A maize garden planted this turn does not tax exits yet —
- * see ENGINE_API.md "interpretations".)
+ * see ENGINE_API.md "interpretations".) Thorn Maize (upgraded) charges a base
+ * of 2; the harvest doubling applies to the upgraded cost (2→4).
  */
 export function maizeExitCost(state: GameState, from: Pos): number {
   const g = gardenAt(state, from);
   if (!g || g.type !== 'maize' || !gardenIsActive(state, g)) return 0;
-  return g.doubledForPlayerTurn !== null ? 2 : 1;
+  const base = g.upgraded ? 2 : 1;
+  return g.doubledForPlayerTurn !== null ? base * 2 : base;
 }
 
 // ---------------------------------------------------------------------------
@@ -418,14 +430,19 @@ export function checkHomeCapture(draft: GameState, pos: Pos): void {
   }
 }
 
-/** Destroy a garden (snail / card / elimination). Non-home tiles return to supply. */
+/**
+ * Destroy a garden (snail / card / elimination). A non-home tile returns to
+ * its ORIGINAL PLANTER's supply as a basic tile (any upgrade is lost). Wild
+ * tiles (preset gardens, no plantedBy) leave the game permanently.
+ */
 export function destroyGarden(draft: GameState, pos: Pos, cause: 'snail' | 'card' | 'elimination'): void {
   const key = posKey(pos);
   const g = draft.gardens[key];
   if (!g) return;
   delete draft.gardens[key];
-  if (g.type !== 'home') {
-    draft.supply[g.type] += 1;
+  if (g.type !== 'home' && g.plantedBy !== undefined) {
+    const planter = draft.players[g.plantedBy];
+    if (planter) planter.supply[g.type] += 1;
   }
   pushEvent(draft, { type: 'gardenDestroyed', pos, gardenType: g.type, cause });
 }

@@ -30,11 +30,18 @@ const TWO_HARD: CreateGameOptions = {
   ],
 };
 
+/** A wish-rich economy: with garden upgrades in the game, the default-config
+ *  AI sinks its wishes into planting + upgrading and (in the seeds scanned
+ *  here) never draws a card, so this scenario raises the wish economy until
+ *  card plays actually happen. The extractor is what's under test, not the
+ *  AI's spending priorities. */
+const TWO_HARD_CARD_RICH: CreateGameOptions = { ...TWO_HARD, startingWishes: 6, wishLimit: 6 };
+
 /** First seed in 1..8 whose record contains a one-shot targeted card play —
  *  the case the extractor must decompose. Deterministic (fixed AI + seeds). */
 function recordWithTargetedPlay(): MatchRecord {
   for (let seed = 1; seed <= 8; seed++) {
-    const rec = playSelfPlayGame(TWO_HARD, seed);
+    const rec = playSelfPlayGame(TWO_HARD_CARD_RICH, seed);
     if (rec.actions.some((a) => (a.type === 'playCard' || a.type === 'respondPlayCard') && a.targets !== undefined)) {
       return rec;
     }

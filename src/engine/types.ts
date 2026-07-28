@@ -92,6 +92,8 @@ export interface GameConfig {
   handLimit: number;
   /** Center Star marker on the center space. Default true. */
   centerStar: boolean;
+  /** Garden tiles of each plantable type in each player's supply. Default 4. */
+  tilesPerType: number;
   /** Additional-garden layout preset. Default 'none'. */
   gardenPreset: GardenPreset;
   /**
@@ -128,6 +130,18 @@ export interface Garden {
   type: GardenType;
   /** Owner seat — Home Gardens only. */
   owner?: PlayerId;
+  /**
+   * Seat whose tile supply this garden came from. Destruction returns the
+   * tile (as a basic tile) to this player's supply. Absent = wild tile
+   * (preset/setup garden): destroyed wild gardens leave the game permanently.
+   */
+  plantedBy?: PlayerId;
+  /**
+   * Upgraded form (Golden Dandelion, Elder Mushroom, Snapping Maw, Thorn
+   * Maize, Glacier, Grand Burrow). The upgrade belongs to the TILE — whoever
+   * controls the garden gets the upgraded effect — and is lost on destruction.
+   */
+  upgraded?: true;
   /**
    * Global turn number the garden was planted on (0 = pre-game setup).
    * A garden is Active once `plantedOnTurn < turn.number`.
@@ -167,6 +181,11 @@ export interface PlayerState {
    * garden is later destroyed (the Snail is placed here on conversion).
    */
   homePos: Pos;
+  /**
+   * This player's remaining garden tiles per plantable type (no shared bank).
+   * Destroyed gardens return to their original planter's supply.
+   */
+  supply: Record<PlantableGardenType, number>;
 }
 
 // ---------------------------------------------------------------------------
@@ -459,6 +478,7 @@ export type Action =
   // --- action-phase actions ---------------------------------------------------
   | { type: 'move'; player: PlayerId; unitId: UnitId; to: Pos }
   | { type: 'plant'; player: PlayerId; pos: Pos; gardenType: PlantableGardenType }
+  | { type: 'upgrade'; player: PlayerId; pos: Pos }
   | { type: 'drawCard'; player: PlayerId }
   | { type: 'playCard'; player: PlayerId; cardId: CardId; targets?: CardTargets }
   | { type: 'endTurn'; player: PlayerId };
@@ -489,6 +509,7 @@ export type GameEvent =
   | { type: 'unitTunneled'; player: PlayerId; unitId: UnitId; unitKind: UnitKind; from: Pos; to: Pos; context: 'entry' | 'harvest' }
   | { type: 'entryEffectDeclined'; player: PlayerId; unitId: UnitId; unitKind: UnitKind; pos: Pos }
   | { type: 'gardenPlanted'; player: PlayerId; pos: Pos; gardenType: PlantableGardenType }
+  | { type: 'gardenUpgraded'; player: PlayerId; pos: Pos; gardenType: PlantableGardenType }
   | { type: 'gardenDestroyed'; pos: Pos; gardenType: GardenType; cause: 'snail' | 'card' | 'elimination' }
   | { type: 'maizeExitPaid'; player: PlayerId; pos: Pos; cost: number }
   | { type: 'cardDrawn'; player: PlayerId; cardId: CardId }
@@ -557,8 +578,6 @@ export interface GameState {
   gardens: Record<PosKey, Garden>;
   /** Units by UnitId. */
   units: Record<UnitId, Unit>;
-  /** Remaining shared-supply tiles per plantable garden type. */
-  supply: Record<PlantableGardenType, number>;
   /** Draw pile (top = last element). Card ids reference cards.ts definitions. */
   deck: CardId[];
   discard: CardId[];

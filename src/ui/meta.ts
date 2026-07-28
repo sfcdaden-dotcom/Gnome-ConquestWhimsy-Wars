@@ -29,16 +29,63 @@ export interface GardenMeta {
   emoji: string;
   label: string;
   blurb: string;
+  /** Name of the upgraded form (Garden Upgrades, RULES.md). */
+  upgradeLabel: string;
+  /** What the upgraded form does. */
+  upgradeBlurb: string;
 }
 
 export const GARDEN_META: Record<GardenType, GardenMeta> = {
-  home: { emoji: '🏡', label: 'Home Garden', blurb: 'Harvest: 1 Wish or 1 Gnome. Lose it, lose the game.' },
-  dandelion: { emoji: '🌼', label: 'Dandelion', blurb: 'Harvest: up to 2 occupying gnomes gain 1 Wish each.' },
-  mushroom: { emoji: '🍄', label: 'Mushroom', blurb: 'Harvest: clone up to 2 occupying gnomes.' },
-  flytrap: { emoji: '🪤', label: 'Flytrap', blurb: 'Neutral hazard: fights anyone who enters or harvests here.' },
-  maize: { emoji: '🌽', label: 'Maize', blurb: 'Exit costs 1 Wish. Harvest roll < 4 doubles the cost.' },
-  slippery: { emoji: '🧊', label: 'Slippery', blurb: 'Entry: slide 1 space. Harvest: slide anywhere adjacent (incl. diagonal).' },
-  tunnel: { emoji: '🕳️', label: 'Tunnel', blurb: 'Entry: hop to another tunnel. Harvest: tunnel or hop to a garden you occupy.' },
+  home: {
+    emoji: '🏡',
+    label: 'Home Garden',
+    blurb: 'Harvest: 1 Wish or 1 Gnome. Lose it, lose the game.',
+    upgradeLabel: 'Home Garden',
+    upgradeBlurb: 'Home Gardens cannot be upgraded.',
+  },
+  dandelion: {
+    emoji: '🌼',
+    label: 'Dandelion',
+    blurb: 'Harvest: up to 2 occupying gnomes gain 1 Wish each.',
+    upgradeLabel: 'Golden Dandelion',
+    upgradeBlurb: 'Golden Dandelion: harvest unchanged, and your wish limit is +1 while you control it.',
+  },
+  mushroom: {
+    emoji: '🍄',
+    label: 'Mushroom',
+    blurb: 'Harvest: clone up to 2 occupying gnomes.',
+    upgradeLabel: 'Elder Mushroom',
+    upgradeBlurb: 'Elder Mushroom: harvest clones up to 3 occupying gnomes.',
+  },
+  flytrap: {
+    emoji: '🪤',
+    label: 'Flytrap',
+    blurb: 'Neutral hazard: fights anyone who enters or harvests here.',
+    upgradeLabel: 'Snapping Maw',
+    upgradeBlurb: 'Snapping Maw: the flytrap adds +1 to its die — against everyone, including you.',
+  },
+  maize: {
+    emoji: '🌽',
+    label: 'Maize',
+    blurb: 'Exit costs 1 Wish. Harvest roll < 4 doubles the cost.',
+    upgradeLabel: 'Thorn Maize',
+    upgradeBlurb: 'Thorn Maize: exit costs 2 Wishes (harvest doubling makes it 4).',
+  },
+  slippery: {
+    emoji: '🧊',
+    label: 'Slippery',
+    blurb: 'Entry: slide 1 space. Harvest: slide anywhere adjacent (incl. diagonal).',
+    upgradeLabel: 'Glacier',
+    upgradeBlurb:
+      'Glacier: entry slides may go diagonally; harvest slides exactly 2 orthogonally in a straight line (whooshing past the middle space) or 1 diagonally.',
+  },
+  tunnel: {
+    emoji: '🕳️',
+    label: 'Tunnel',
+    blurb: 'Entry: hop to another tunnel. Harvest: tunnel or hop to a garden you occupy.',
+    upgradeLabel: 'Grand Burrow',
+    upgradeBlurb: 'Grand Burrow: the entry hop may also go to any garden occupied by one of your gnomes.',
+  },
 };
 
 export const DIE_FACES = ['⚀', '⚁', '⚂', '⚃', '⚄', '⚅'];
@@ -134,6 +181,8 @@ export function describeEvent(state: GameState, ev: GameEvent): string {
       return `${who(state, ev)} declines the entry effect at ${posStr(ev.pos)}.`;
     case 'gardenPlanted':
       return `${pname(state, ev.player)} plants a ${GARDEN_META[ev.gardenType].label} ${GARDEN_META[ev.gardenType].emoji} at ${posStr(ev.pos)}.`;
+    case 'gardenUpgraded':
+      return `⭐ ${pname(state, ev.player)} upgrades the ${GARDEN_META[ev.gardenType].label} at ${posStr(ev.pos)} into a ${GARDEN_META[ev.gardenType].upgradeLabel}!`;
     case 'gardenDestroyed':
       return `The ${GARDEN_META[ev.gardenType].label} at ${posStr(ev.pos)} is destroyed (${ev.cause}).`;
     case 'maizeExitPaid':
@@ -254,6 +303,12 @@ export function describeAction(state: GameState, a: Action): string {
       return `Move to ${posStr(a.to)}`;
     case 'plant':
       return `Plant ${GARDEN_META[a.gardenType].label} at ${posStr(a.pos)}`;
+    case 'upgrade': {
+      const g = state.gardens[`${a.pos.x},${a.pos.y}`];
+      return g
+        ? `Upgrade to ${GARDEN_META[g.type].upgradeLabel} at ${posStr(a.pos)} (2 ✨)`
+        : `Upgrade the garden at ${posStr(a.pos)} (2 ✨)`;
+    }
     case 'drawCard':
       return 'Draw a card (1 ✨)';
     case 'playCard':

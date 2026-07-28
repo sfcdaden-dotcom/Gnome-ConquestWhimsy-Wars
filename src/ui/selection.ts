@@ -18,8 +18,9 @@ import { gnomeFirstName, unitNameLive } from './gnomeNames';
 
 /**
  * The acting player's units on `pos` that can still do something this turn —
- * a legal move, OR a legal plant on the space they stand on. Both count: a
- * gnome that has already moved cannot move again but may still plant.
+ * a legal move, OR a legal plant/upgrade on the space they stand on. All
+ * count: a gnome that has already moved cannot move again but may still plant
+ * or upgrade.
  *
  * Ordered by unit id (via `unitsAt`), so cycling and the chip row agree on
  * position and the order is stable across re-renders.
@@ -30,11 +31,13 @@ export function actionableUnitsAt(
   pos: Pos,
   legal: readonly Action[],
 ): Unit[] {
-  const canPlantHere = legal.some((a) => a.type === 'plant' && samePos(a.pos, pos));
+  const canBuildHere = legal.some(
+    (a) => (a.type === 'plant' || a.type === 'upgrade') && samePos(a.pos, pos),
+  );
   return unitsAt(state, pos).filter(
     (u) =>
       u.owner === player &&
-      (canPlantHere || legal.some((a) => a.type === 'move' && a.unitId === u.id)),
+      (canBuildHere || legal.some((a) => a.type === 'move' && a.unitId === u.id)),
   );
 }
 

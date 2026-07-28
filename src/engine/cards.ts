@@ -681,32 +681,33 @@ const rocketPropelledGnome: WhimsyCardDef = {
 const wildGrowth: WhimsyCardDef = {
   id: 'wild-growth',
   name: 'Wild Growth',
-  text: 'Plant any garden on any empty space (free, no gnome required).',
+  text: 'Plant any garden from your supply on any empty space (free, no gnome required).',
   timing: 'ritual',
   copies: 2,
   needsTargets: true,
   targetFlow: () => [
     spaceStep('Choose an empty space', (s) => allBoardSpaces(s).filter((p) => isEmptySpace(s, p))),
-    gardenTypeStep(
-      'Choose a garden type to plant',
-      (s) => (Object.keys(s.supply) as PlantableGardenType[]).filter((gt) => s.supply[gt] > 0),
-    ),
+    gardenTypeStep('Choose a garden type to plant', (s, ctx) => {
+      const supply = getPlayer(s, ctx.player).supply;
+      return (Object.keys(supply) as PlantableGardenType[]).filter((gt) => supply[gt] > 0);
+    }),
   ],
-  hasAnyPlay: (s) => anyEmptySpace(s) && Object.values(s.supply).some((n) => n > 0),
-  validate: (s, _p, t) => {
+  hasAnyPlay: (s, p) => anyEmptySpace(s) && Object.values(getPlayer(s, p).supply).some((n) => n > 0),
+  validate: (s, p, t) => {
     const pos = targetSpace(t, 0);
     const gt = t?.gardenType;
+    const supply = getPlayer(s, p).supply;
     if (!pos || !inBounds(s, pos)) return 'space is off the board';
     if (!isEmptySpace(s, pos)) return 'space must be empty (no garden, no critters)';
-    if (!gt || !(gt in s.supply)) return 'choose a plantable garden type';
-    if (s.supply[gt] <= 0) return `the shared supply has no ${gt} tiles left`;
+    if (!gt || !(gt in supply)) return 'choose a plantable garden type';
+    if (supply[gt] <= 0) return `your supply has no ${gt} tiles left`;
     return null;
   },
   resolve: (d, e) => {
     const pos = targetSpace(e.targets, 0) as Pos;
     const gt = e.targets?.gardenType as PlantableGardenType;
-    d.supply[gt] -= 1;
-    d.gardens[posKey(pos)] = makeGarden(gt, requireTurn(d).number);
+    getPlayer(d, e.player).supply[gt] -= 1;
+    d.gardens[posKey(pos)] = makeGarden(gt, requireTurn(d).number, undefined, e.player);
     pushEvent(d, { type: 'gardenPlanted', player: e.player, pos: { ...pos }, gardenType: gt });
   },
 };
@@ -1081,14 +1082,14 @@ const mushroomCloud: WhimsyCardDef = {
 const pocketShovel: WhimsyCardDef = {
   id: 'pocket-shovel',
   name: 'Pocket Shovel',
-  text: 'Plant Tunnel Gardens on two empty spaces (one if only 1 tunnel tile remains).',
+  text: 'Plant Tunnel Gardens from your supply on two empty spaces (one if only 1 of your tunnel tiles remains).',
   timing: 'ritual',
   copies: 2,
   needsTargets: true,
-  // Dynamic length: one empty-space step per tunnel tile remaining (max 2).
-  // Each step excludes spaces already chosen, so no duplicate/reversed picks.
-  targetFlow: (s) => {
-    const required = Math.min(2, s.supply.tunnel);
+  // Dynamic length: one empty-space step per tunnel tile the player has (max
+  // 2). Each step excludes spaces already chosen, so no duplicate/reversed picks.
+  targetFlow: (s, p) => {
+    const required = Math.min(2, getPlayer(s, p).supply.tunnel);
     const step = (n: number) =>
       spaceStep(required === 1 ? 'Choose an empty space' : `Choose empty space ${n} of ${required}`, (st, ctx) => {
         const chosen = new Set((ctx.selected.spaces ?? []).map(posKey));
@@ -1096,13 +1097,14 @@ const pocketShovel: WhimsyCardDef = {
       });
     return Array.from({ length: required }, (_, i) => step(i + 1));
   },
-  hasAnyPlay: (s) => s.supply.tunnel > 0 && anyEmptySpace(s),
-  validate: (s, _p, t) => {
-    if (s.supply.tunnel <= 0) return 'the shared supply has no tunnel tiles left';
-    const required = Math.min(2, s.supply.tunnel);
+  hasAnyPlay: (s, p) => getPlayer(s, p).supply.tunnel > 0 && anyEmptySpace(s),
+  validate: (s, p, t) => {
+    const supply = getPlayer(s, p).supply;
+    if (supply.tunnel <= 0) return 'your supply has no tunnel tiles left';
+    const required = Math.min(2, supply.tunnel);
     const spaces = t?.spaces ?? [];
     if (spaces.length !== required) {
-      return `choose exactly ${required} empty space(s) (tunnel tiles remaining: ${s.supply.tunnel})`;
+      return `choose exactly ${required} empty space(s) (your tunnel tiles remaining: ${supply.tunnel})`;
     }
     for (const pos of spaces) {
       if (!inBounds(s, pos)) return 'space is off the board';
@@ -1113,14 +1115,15 @@ const pocketShovel: WhimsyCardDef = {
   },
   resolve: (d, e) => {
     const turnNumber = requireTurn(d).number;
+    const supply = getPlayer(d, e.player).supply;
     for (const pos of e.targets?.spaces ?? []) {
-      if (d.supply.tunnel <= 0) break;
+      if (supply.tunnel <= 0) break;
       if (!isEmptySpace(d, pos)) {
         fizzle(d, e, `(${pos.x},${pos.y}) was no longer empty`);
         continue;
       }
-      d.supply.tunnel -= 1;
-      d.gardens[posKey(pos)] = makeGarden('tunnel', turnNumber);
+      supply.tunnel -= 1;
+      d.gardens[posKey(pos)] = makeGarden('tunnel', turnNumber, undefined, e.player);
       pushEvent(d, { type: 'gardenPlanted', player: e.player, pos: { ...pos }, gardenType: 'tunnel' });
     }
   },

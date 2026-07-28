@@ -40,6 +40,7 @@ import {
   getPlayer,
   gnomesOnBoard,
   illegal,
+  inBounds,
   internal,
   maizeExitCost,
   orthNeighbors,
@@ -121,7 +122,9 @@ export function handleEntry(draft: GameState, unitId: UnitId): void {
   if (unit.kind !== 'gnome' || !garden || !gardenIsActive(draft, garden)) return;
 
   if (garden.type === 'slippery') {
-    const options = orthNeighbors(draft, pos).filter((q) => !entryBlockedByWall(draft, q));
+    // Glacier (upgraded): the entry slide may also go diagonally.
+    const neighbors = garden.upgraded ? allNeighbors(draft, pos) : orthNeighbors(draft, pos);
+    const options = neighbors.filter((q) => !entryBlockedByWall(draft, q));
     if (options.length > 0) {
       draft.pendingDecision = {
         kind: 'slide',
@@ -134,7 +137,14 @@ export function handleEntry(draft: GameState, unitId: UnitId): void {
       };
     }
   } else if (garden.type === 'tunnel') {
-    const options = otherTunnelPositions(draft, pos).filter((q) => !entryBlockedByWall(draft, q));
+    // Grand Burrow (upgraded): the entry effect offers the full harvest
+    // destination list (other tunnels OR gardens occupied by your own gnome).
+    // "Stay" is excluded on entry — declining the optional effect covers it.
+    const options = (
+      garden.upgraded
+        ? tunnelHarvestDestinations(draft, pos, unit.owner).filter((q) => !samePos(q, pos))
+        : otherTunnelPositions(draft, pos)
+    ).filter((q) => !entryBlockedByWall(draft, q));
     if (options.length > 0) {
       draft.pendingDecision = {
         kind: 'tunnel',
@@ -284,7 +294,13 @@ export function continueHarvest(draft: GameState): void {
     }
     if (mv.effect === 'slippery') {
       // Diagonals allowed on harvest slides; Great Wall blocks destinations.
-      const options = allNeighbors(draft, mv.pos).filter((q) => !entryBlockedByWall(draft, q));
+      // Glacier (upgraded): exactly 2 orthogonally in a straight line, or 1
+      // diagonally — see glacierHarvestDestinations.
+      const sourceGarden = gardenAt(draft, mv.pos);
+      const options =
+        sourceGarden && sourceGarden.type === 'slippery' && sourceGarden.upgraded
+          ? glacierHarvestDestinations(draft, mv.pos)
+          : allNeighbors(draft, mv.pos).filter((q) => !entryBlockedByWall(draft, q));
       if (options.length === 0) {
         h.moveQueue.shift();
         pushEvent(draft, { type: 'harvestSkipped', sourceKey: posKey(mv.pos), reason: 'no slide destination' });
@@ -400,7 +416,7 @@ function resolveHarvestSourceByKey(draft: GameState, sourceKey: string): void {
       return;
     }
     case 'mushroom': {
-      const max = mushroomCloneMax(draft, player.id, ownGnomes.length);
+      const max = mushroomCloneMax(draft, player.id, ownGnomes.length, g.upgraded === true);
       if (max === 0) {
         pushEvent(draft, { type: 'mushroomHarvested', player: player.id, pos: source.pos, cloned: 0 });
         return;
@@ -454,9 +470,46 @@ function resolveHarvestSourceByKey(draft: GameState, sourceKey: string): void {
   }
 }
 
-function mushroomCloneMax(state: GameState, player: PlayerId, occupyingGnomes: number): number {
+/** Clone cap: 2 (Elder Mushroom: 3), further capped by occupancy and limits. */
+function mushroomCloneMax(state: GameState, player: PlayerId, occupyingGnomes: number, upgraded: boolean): number {
   const boardRoom = state.config.gnomeBoardLimit - gnomesOnBoard(state, player);
-  return Math.max(0, Math.min(2, occupyingGnomes, boardRoom, reserveGnomes(state, player)));
+  return Math.max(0, Math.min(upgraded ? 3 : 2, occupyingGnomes, boardRoom, reserveGnomes(state, player)));
+}
+
+/**
+ * Glacier (upgraded slippery) harvest destinations: exactly 2 spaces
+ * orthogonally in a straight line, or 1 space diagonally. The straight slide
+ * passes THROUGH the middle space — it must be on the board and not
+ * wall-blocked, but nothing on it triggers (no fights, no entry effects).
+ * Only the destination is a normal Entry.
+ */
+function glacierHarvestDestinations(state: GameState, from: Pos): Pos[] {
+  const out: Pos[] = [];
+  const orth = [
+    { x: 0, y: -1 },
+    { x: 1, y: 0 },
+    { x: 0, y: 1 },
+    { x: -1, y: 0 },
+  ];
+  for (const d of orth) {
+    const mid = { x: from.x + d.x, y: from.y + d.y };
+    const dest = { x: from.x + 2 * d.x, y: from.y + 2 * d.y };
+    if (!inBounds(state, mid) || !inBounds(state, dest)) continue;
+    if (entryBlockedByWall(state, mid) || entryBlockedByWall(state, dest)) continue;
+    out.push(dest);
+  }
+  for (const d of [
+    { x: -1, y: -1 },
+    { x: 1, y: -1 },
+    { x: -1, y: 1 },
+    { x: 1, y: 1 },
+  ]) {
+    const dest = { x: from.x + d.x, y: from.y + d.y };
+    if (!inBounds(state, dest) || entryBlockedByWall(state, dest)) continue;
+    out.push(dest);
+  }
+  out.sort((a, b) => a.y - b.y || a.x - b.x);
+  return out;
 }
 
 function resolveHomeSource(draft: GameState, player: PlayerId): void {
@@ -630,8 +683,14 @@ export function canPlantAt(state: GameState, player: PlayerId, pos: Pos): boolea
   return own.some((u) => u.kind === 'gnome');
 }
 
-/** Ensure a garden object literal is well-formed. */
-export function makeGarden(type: Garden['type'], plantedOnTurn: number, owner?: PlayerId): Garden {
+/** Ensure a garden object literal is well-formed. `plantedBy` is the seat
+ *  whose supply the tile came from; omit it for wild (preset) tiles. */
+export function makeGarden(
+  type: Garden['type'],
+  plantedOnTurn: number,
+  owner?: PlayerId,
+  plantedBy?: PlayerId,
+): Garden {
   const g: Garden = {
     type,
     plantedOnTurn,
@@ -639,7 +698,20 @@ export function makeGarden(type: Garden['type'], plantedOnTurn: number, owner?: 
     doubledForPlayerTurn: null,
   };
   if (owner !== undefined) g.owner = owner;
+  if (plantedBy !== undefined) g.plantedBy = plantedBy;
   return g;
+}
+
+/**
+ * Does `pos` hold a non-home, un-upgraded garden `player` controls (their
+ * gnome occupies it, no enemy units)? The flytrap itself does not block
+ * upgrading its own garden.
+ */
+export function canUpgradeAt(state: GameState, player: PlayerId, pos: Pos): boolean {
+  const g = gardenAt(state, pos);
+  if (!g || g.type === 'home' || g.upgraded) return false;
+  if (enemyUnitsAt(state, pos, player).length > 0) return false;
+  return playerUnitsAt(state, pos, player).some((u) => u.kind === 'gnome');
 }
 
 /** All units on the board (used by AI / UI helpers). */

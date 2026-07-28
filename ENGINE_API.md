@@ -23,7 +23,7 @@ implementation detail and may move again.
 | File | Responsibility |
 |---|---|
 | `engine.ts` | public façade: `applyAction`, `isGameOver`, re-exports |
-| `actions.ts` | action dispatch + Action-Phase handlers (move/plant/draw/play) |
+| `actions.ts` | action dispatch + Action-Phase handlers (move/plant/upgrade/draw/play) |
 | `turns.ts` | roll-off, turn start/end, movement legality, `getPlayerToAct` |
 | `settle.ts` | the auto-advance loop and its convergence diagnostics |
 | `elimination.ts` | eliminations, snailify, win detection |
@@ -100,7 +100,9 @@ identifiable from the message alone.
   sources are revalidated when resolved; gardens entered mid-harvest do not
   harvest this turn.
 - **Action Phase**: any number of `move` (each unit 1 orthogonal space per
-  turn), `plant`, `drawCard`, `playCard`; then `endTurn`.
+  turn), `plant` (from the actor's own tile supply), `upgrade` (2 Wishes,
+  flips a controlled non-Home garden to its upgraded form — see RULES.md
+  "Garden Upgrades"), `drawCard`, `playCard`; then `endTurn`.
 
 ## Decisions (`PendingDecision.kind` → answering `Action.type`)
 
