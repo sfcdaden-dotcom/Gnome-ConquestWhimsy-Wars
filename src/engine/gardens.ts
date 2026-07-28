@@ -38,6 +38,7 @@ import {
   gardenAt,
   gardenIsActive,
   getPlayer,
+  gnomeBoardCap,
   gnomesOnBoard,
   illegal,
   inBounds,
@@ -416,7 +417,7 @@ function resolveHarvestSourceByKey(draft: GameState, sourceKey: string): void {
       return;
     }
     case 'mushroom': {
-      const max = mushroomCloneMax(draft, player.id, ownGnomes.length, g.upgraded === true);
+      const max = mushroomCloneMax(draft, player.id, ownGnomes.length);
       if (max === 0) {
         pushEvent(draft, { type: 'mushroomHarvested', player: player.id, pos: source.pos, cloned: 0 });
         return;
@@ -470,10 +471,11 @@ function resolveHarvestSourceByKey(draft: GameState, sourceKey: string): void {
   }
 }
 
-/** Clone cap: 2 (Elder Mushroom: 3), further capped by occupancy and limits. */
-function mushroomCloneMax(state: GameState, player: PlayerId, occupyingGnomes: number, upgraded: boolean): number {
-  const boardRoom = state.config.gnomeBoardLimit - gnomesOnBoard(state, player);
-  return Math.max(0, Math.min(upgraded ? 3 : 2, occupyingGnomes, boardRoom, reserveGnomes(state, player)));
+/** Clone cap: 2, further capped by occupancy, board room (which the Elder
+ *  Mushroom's raised gnome board limit feeds into) and the reserve. */
+function mushroomCloneMax(state: GameState, player: PlayerId, occupyingGnomes: number): number {
+  const boardRoom = gnomeBoardCap(state, player) - gnomesOnBoard(state, player);
+  return Math.max(0, Math.min(2, occupyingGnomes, boardRoom, reserveGnomes(state, player)));
 }
 
 /**

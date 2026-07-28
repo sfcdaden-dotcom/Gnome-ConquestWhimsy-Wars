@@ -21,10 +21,12 @@ codebase for the implementation phase.
    *basic* tile to the planter. Preset gardens are **wild**: from nobody's
    supply, gone forever when destroyed.
 4. Upgraded forms: Golden Dandelion (+1 wish cap while controlled), Elder
-   Mushroom (clone up to 3), Snapping Maw (flytrap d6 +1), Thorn Maize (exit
-   toll 2, doubles to 4), Glacier (diagonal entry slide; harvest = exactly-2
-   orthogonal straight slide through the middle space, or 1 diagonal), Grand
-   Burrow (entry gets the harvest destination list). No Home upgrade.
+   Mushroom (+2 gnome board limit while controlled; harvest unchanged —
+   reworked 2026-07-28, see below), Snapping Maw (flytrap d6 +1), Thorn Maize
+   (exit toll 2, doubles to 4), Glacier (diagonal entry slide; harvest =
+   exactly-2 orthogonal straight slide through the middle space, or 1
+   diagonal), Grand Burrow (entry gets the harvest destination list). No Home
+   upgrade.
 
 ## Design rationale
 
@@ -44,6 +46,19 @@ codebase for the implementation phase.
   mirrors the Center Star rule shape players already know and makes it a
   genuine economy engine. Stacking (multiple Golden Dandelions + Center Star)
   is allowed for now — flagged as a balance watch-point.
+- **Elder Mushroom rework (2026-07-28)**: originally "clone up to 3". Reworked
+  at the designer's request to **+2 to your gnome board limit while you
+  control it** (stacking, tile-sticky like every upgrade), with the harvest
+  clone cap staying at 2. Rationale: the clone-cap bump compounded the
+  already-observed mushroom-economy tempo spike (see the balance note below),
+  while a board-limit raise is the same "raise the cap, not the income" shape
+  as the Golden Dandelion — it only pays off when the 8-gnome limit actually
+  pinches, and it self-neutralizes when the garden is lost (gnomes already on
+  the board survive; you just can't spawn more while over the limit — the
+  same over-cap behavior as wishes when a Golden Dandelion falls).
+  Implemented as `gnomeBoardCap` in `helpers.ts`, mirroring `wishCap`;
+  everything that spawns gnomes (home harvest, mushroom clones, Seeing
+  Double) flows through `canSpawnGnome` and picks it up automatically.
 - **Why per-player supply?** Gardens become personal assets. Note the
   deliberate side effect: 2p totals per type stay 8 (4+4), 4p grows 8 → 16, and
   the shared-bank *supply-denial* strategy disappears. Accepted by the designer.
@@ -74,8 +89,8 @@ codebase for the implementation phase.
 | `setup.ts` | Init per-player supplies; presets become wild (no supply decrement, drop the exhaustion `badConfig`). |
 | `actions.ts` | `plant` uses the actor's supply and stamps `plantedBy`; new `upgrade` action (cost 2, control checks, non-home, not already upgraded). |
 | `legalActions.ts` | Plant intents read own supply; new upgrade intents. |
-| `gardens.ts` | Harvest switch branches on `upgraded` (dandelion unchanged, mushroom max 3, maize doubling on base 2, glacier move options, grand-burrow entry options in `handleEntry`). Glacier straight-slide needs a new decision option shape (destination + implied middle-space wall check). |
-| `helpers.ts` | `destroyGarden`: return basic tile to `plantedBy`'s supply or drop wild tiles. `wishCap`: count controlled Golden Dandelions. `maizeExitCost`: read `upgraded`. |
+| `gardens.ts` | Harvest switch branches on `upgraded` (dandelion unchanged, mushroom clone cap stays 2 with board room read from `gnomeBoardCap`, maize doubling on base 2, glacier move options, grand-burrow entry options in `handleEntry`). Glacier straight-slide needs a new decision option shape (destination + implied middle-space wall check). |
+| `helpers.ts` | `destroyGarden`: return basic tile to `plantedBy`'s supply or drop wild tiles. `wishCap`: count controlled Golden Dandelions. `gnomeBoardCap`: +2 per controlled Elder Mushroom, read by `canSpawnGnome`. `maizeExitCost`: read `upgraded`. |
 | `fights.ts` | Flytrap side rolls d6+1 when the garden is upgraded. |
 | `cards.ts` | Wild Growth / Pocket Shovel switch to the player's supply; planted tiles get `plantedBy`. |
 | `encode.ts` | Schema bump: `upgraded` board plane, per-relative-seat supply scalars replacing the shared block (`SUPPLY_PER_TYPE` semantics change), optional planter planes. All public info — no info-set concerns. |

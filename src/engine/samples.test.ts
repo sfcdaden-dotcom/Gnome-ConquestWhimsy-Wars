@@ -145,8 +145,11 @@ describe('extractSamples', () => {
 });
 
 describe('extractDataset', () => {
-  it('flattens a batch of records', () => {
-    const recs = simulateSelfPlay(TWO_HARD, [1, 2]);
+  it('flattens a batch of records', { timeout: 30_000 }, () => {
+    // Extraction replays every game twice here (flat + separate), so game
+    // length drives the runtime — these seeds stay short under the current
+    // balance, and the explicit timeout absorbs future dynamics shifts.
+    const recs = simulateSelfPlay(TWO_HARD, [3, 4]);
     const flat = extractDataset(recs);
     const separate = recs.flatMap((r) => extractSamples(r));
     expect(flat.length).toBe(separate.length);

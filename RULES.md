@@ -11,7 +11,7 @@ rulebook was ambiguous, the designer's ruling is marked **[RULING]**.
 | Board size | 7×7 |
 | Starting Wishes | 3 |
 | Wish limit | 3 |
-| Gnome limit on board (per player) | 8 |
+| Gnome limit on board (per player) | 8 (+2 per controlled Elder Mushroom) |
 | Total reinforcements (per player) | 16 |
 | Hand limit | 7 cards |
 | Garden tiles per type (per player) | 4 |
@@ -191,8 +191,11 @@ Any non-Home garden can be upgraded once to a stronger form — see each garden'
   reserve limits). New gnomes spawn on this mushroom garden.
 - **[RULING]** Spawned gnomes may move normally during the Action Phase of the turn
   they spawn (they do not get an extra harvest-phase move).
-- **Upgraded — Elder Mushroom**: harvest clones up to **3** occupying gnomes
-  (same board/reserve caps).
+- **Upgraded — Elder Mushroom**: harvest unchanged (still clones up to 2);
+  additionally, **while you control this garden your gnome board limit is
+  +2**. Stacks with other Elder Mushrooms. **[RULING]** Losing control of the
+  garden never destroys gnomes already on the board — while over the limit
+  you simply cannot spawn more.
 
 ### Flytrap Garden (defense)
 - **[RULING]** The Flytrap is a neutral hazard critter: once **Active** (planted on
