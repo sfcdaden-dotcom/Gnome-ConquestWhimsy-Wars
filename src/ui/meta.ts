@@ -55,7 +55,7 @@ export const GARDEN_META: Record<GardenType, GardenMeta> = {
     label: 'Mushroom',
     blurb: 'Harvest: clone up to 2 occupying gnomes.',
     upgradeLabel: 'Elder Mushroom',
-    upgradeBlurb: 'Elder Mushroom: harvest unchanged, and your gnome board limit is +2 while you control it.',
+    upgradeBlurb: 'Elder Mushroom: harvest unchanged, and your gnome board limit is +1 while you control it.',
   },
   flytrap: {
     emoji: '🪤',

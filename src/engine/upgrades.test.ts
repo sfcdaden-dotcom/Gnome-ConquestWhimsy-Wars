@@ -165,11 +165,11 @@ describe('Golden Dandelion', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Elder Mushroom (upgraded mushroom): +2 gnome board limit while controlled
+// Elder Mushroom (upgraded mushroom): +1 gnome board limit while controlled
 // ---------------------------------------------------------------------------
 
 describe('Elder Mushroom', () => {
-  it('raises the controller\'s gnome board limit by 2 per controlled Elder Mushroom', () => {
+  it('raises the controller\'s gnome board limit by 1 per controlled Elder Mushroom', () => {
     const { s, me, foe } = scenario();
     const base = gnomeBoardCap(s, me);
     expect(base).toBe(s.config.gnomeBoardLimit);
@@ -178,7 +178,7 @@ describe('Elder Mushroom', () => {
     st = mutate(st, (d) => {
       d.gardens['2,2'].upgraded = true;
     });
-    expect(gnomeBoardCap(st, me)).toBe(base + 2);
+    expect(gnomeBoardCap(st, me)).toBe(base + 1);
     expect(gnomeBoardCap(st, foe)).toBe(base); // not the foe's garden to enjoy
     // A second one stacks.
     const g2 = withGnome(st, me, { x: 4, y: 4 });
@@ -186,10 +186,10 @@ describe('Elder Mushroom', () => {
     st2 = mutate(st2, (d) => {
       d.gardens['4,4'].upgraded = true;
     });
-    expect(gnomeBoardCap(st2, me)).toBe(base + 4);
+    expect(gnomeBoardCap(st2, me)).toBe(base + 2);
     // Contested ⇒ not controlled ⇒ no bonus from that garden.
     const contested = withGnome(st2, foe, { x: 2, y: 2 }).state;
-    expect(gnomeBoardCap(contested, me)).toBe(base + 2);
+    expect(gnomeBoardCap(contested, me)).toBe(base + 1);
   });
 
   it('clone cap stays 2, and the raised limit opens board room at harvest', () => {
@@ -201,20 +201,20 @@ describe('Elder Mushroom', () => {
     s = mutate(s, (d) => {
       d.gardens['2,2'].upgraded = true;
       // Shrink the config limit until it pinches: without the Elder
-      // Mushroom's +2 there would be no board room to clone into at all.
+      // Mushroom's +1 there would be no board room to clone into at all.
       d.config.gnomeBoardLimit = Object.values(d.units).filter(
         (u) => u.owner === me && u.kind === 'gnome',
       ).length;
     });
     s = toMyChooseHarvest(s, me);
     s = applyAction(s, { type: 'chooseHarvest', player: me, sourceKey: '2,2' });
-    // Max is 2 (the base clone cap — no longer 3), fed by the +2 board room.
-    expect(s.pendingDecision).toMatchObject({ kind: 'mushroomClones', player: me, max: 2 });
+    // Max is 1: the clone cap is 2, but board room is exactly the +1 bonus.
+    expect(s.pendingDecision).toMatchObject({ kind: 'mushroomClones', player: me, max: 1 });
     const before = Object.values(s.units).filter((u) => u.owner === me && u.kind === 'gnome').length;
-    s = applyAction(s, { type: 'mushroomClones', player: me, count: 2 });
+    s = applyAction(s, { type: 'mushroomClones', player: me, count: 1 });
     const after = Object.values(s.units).filter((u) => u.owner === me && u.kind === 'gnome').length;
-    expect(after).toBe(before + 2);
-    expect(after).toBe(s.config.gnomeBoardLimit + 2); // exactly the bonus room
+    expect(after).toBe(before + 1);
+    expect(after).toBe(s.config.gnomeBoardLimit + 1); // exactly the bonus room
   });
 });
 
@@ -381,8 +381,8 @@ describe('tile-sticky upgrades', () => {
     s = mutate(s, (d) => {
       d.gardens['2,2'].upgraded = true;
     });
-    // Elder Mushroom's +2 board limit, for ME — the capture stole the upgrade.
-    expect(gnomeBoardCap(s, me)).toBe(s.config.gnomeBoardLimit + 2);
+    // Elder Mushroom's +1 board limit, for ME — the capture stole the upgrade.
+    expect(gnomeBoardCap(s, me)).toBe(s.config.gnomeBoardLimit + 1);
     expect(gnomeBoardCap(s, foe)).toBe(s.config.gnomeBoardLimit);
     expect(s.gardens['2,2'].plantedBy).toBe(foe); // tile still returns to its planter
   });

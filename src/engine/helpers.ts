@@ -182,7 +182,7 @@ export function wishCap(state: GameState, player: PlayerId): number {
 }
 
 /**
- * Current gnome board limit: base config limit, +2 per Elder Mushroom
+ * Current gnome board limit: base config limit, +1 per Elder Mushroom
  * (upgraded mushroom garden) the player controls (occupied by their gnome,
  * no enemy units). Bonuses stack. Losing control never destroys gnomes
  * already on the board — it only blocks new spawns while over the limit.
@@ -193,7 +193,7 @@ export function gnomeBoardCap(state: GameState, player: PlayerId): number {
     if (g.type !== 'mushroom' || !g.upgraded) continue;
     const pos = parsePos(key);
     if (enemyUnitsAt(state, pos, player).length > 0) continue;
-    if (playerUnitsAt(state, pos, player).some((u) => u.kind === 'gnome')) cap += 2;
+    if (playerUnitsAt(state, pos, player).some((u) => u.kind === 'gnome')) cap += 1;
   }
   return cap;
 }

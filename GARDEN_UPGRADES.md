@@ -21,7 +21,7 @@ codebase for the implementation phase.
    *basic* tile to the planter. Preset gardens are **wild**: from nobody's
    supply, gone forever when destroyed.
 4. Upgraded forms: Golden Dandelion (+1 wish cap while controlled), Elder
-   Mushroom (+2 gnome board limit while controlled; harvest unchanged —
+   Mushroom (+1 gnome board limit while controlled; harvest unchanged —
    reworked 2026-07-28, see below), Snapping Maw (flytrap d6 +1), Thorn Maize
    (exit toll 2, doubles to 4), Glacier (diagonal entry slide; harvest =
    exactly-2 orthogonal straight slide through the middle space, or 1
@@ -47,9 +47,10 @@ codebase for the implementation phase.
   genuine economy engine. Stacking (multiple Golden Dandelions + Center Star)
   is allowed for now — flagged as a balance watch-point.
 - **Elder Mushroom rework (2026-07-28)**: originally "clone up to 3". Reworked
-  at the designer's request to **+2 to your gnome board limit while you
+  at the designer's request to **+1 to your gnome board limit while you
   control it** (stacking, tile-sticky like every upgrade), with the harvest
-  clone cap staying at 2. Rationale: the clone-cap bump compounded the
+  clone cap staying at 2 — the designer scaled an initial +2 down to +1 the
+  same day. Rationale: the clone-cap bump compounded the
   already-observed mushroom-economy tempo spike (see the balance note below),
   while a board-limit raise is the same "raise the cap, not the income" shape
   as the Golden Dandelion — it only pays off when the 8-gnome limit actually
@@ -90,7 +91,7 @@ codebase for the implementation phase.
 | `actions.ts` | `plant` uses the actor's supply and stamps `plantedBy`; new `upgrade` action (cost 2, control checks, non-home, not already upgraded). |
 | `legalActions.ts` | Plant intents read own supply; new upgrade intents. |
 | `gardens.ts` | Harvest switch branches on `upgraded` (dandelion unchanged, mushroom clone cap stays 2 with board room read from `gnomeBoardCap`, maize doubling on base 2, glacier move options, grand-burrow entry options in `handleEntry`). Glacier straight-slide needs a new decision option shape (destination + implied middle-space wall check). |
-| `helpers.ts` | `destroyGarden`: return basic tile to `plantedBy`'s supply or drop wild tiles. `wishCap`: count controlled Golden Dandelions. `gnomeBoardCap`: +2 per controlled Elder Mushroom, read by `canSpawnGnome`. `maizeExitCost`: read `upgraded`. |
+| `helpers.ts` | `destroyGarden`: return basic tile to `plantedBy`'s supply or drop wild tiles. `wishCap`: count controlled Golden Dandelions. `gnomeBoardCap`: +1 per controlled Elder Mushroom, read by `canSpawnGnome`. `maizeExitCost`: read `upgraded`. |
 | `fights.ts` | Flytrap side rolls d6+1 when the garden is upgraded. |
 | `cards.ts` | Wild Growth / Pocket Shovel switch to the player's supply; planted tiles get `plantedBy`. |
 | `encode.ts` | Schema bump: `upgraded` board plane, per-relative-seat supply scalars replacing the shared block (`SUPPLY_PER_TYPE` semantics change), optional planter planes. All public info — no info-set concerns. |

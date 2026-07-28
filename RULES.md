@@ -11,7 +11,7 @@ rulebook was ambiguous, the designer's ruling is marked **[RULING]**.
 | Board size | 7×7 |
 | Starting Wishes | 3 |
 | Wish limit | 3 |
-| Gnome limit on board (per player) | 8 (+2 per controlled Elder Mushroom) |
+| Gnome limit on board (per player) | 8 (+1 per controlled Elder Mushroom) |
 | Total reinforcements (per player) | 16 |
 | Hand limit | 7 cards |
 | Garden tiles per type (per player) | 4 |
@@ -193,7 +193,7 @@ Any non-Home garden can be upgraded once to a stronger form — see each garden'
   they spawn (they do not get an extra harvest-phase move).
 - **Upgraded — Elder Mushroom**: harvest unchanged (still clones up to 2);
   additionally, **while you control this garden your gnome board limit is
-  +2**. Stacks with other Elder Mushrooms. **[RULING]** Losing control of the
+  +1**. Stacks with other Elder Mushrooms. **[RULING]** Losing control of the
   garden never destroys gnomes already on the board — while over the limit
   you simply cannot spawn more.
 
