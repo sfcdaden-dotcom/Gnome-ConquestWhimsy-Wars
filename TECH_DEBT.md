@@ -30,6 +30,20 @@ blocks · **P3** opportunistic.
   through `completeTargets`, so it is now structurally incapable of emitting a
   half-built action. Covered by `legalActions.test.ts`, including a whole-game
   test that dispatches every enumerated action at every state.
+
+  **Follow-up, fixed 2026-07-28:** that whole-game test covered `getLegalActions`
+  (the complete expansion) only, and the gap it missed was in the *intent* API.
+  `getLegalActionIntents` gated targeted plays on the card's cheap `hasAnyPlay`
+  hint, which can pass while the card's targeting FLOW has no completable path —
+  so the intent list could offer a `playCard` that threw ILLEGAL_ACTION on
+  dispatch (Hidden Passage / Gust Of Wind / Slippery Trail / Gnome Place Like
+  Home on a gnome whose owner cannot pay its Maize exit; Pocket Shovel with one
+  empty space left). The UI showed such a card as an enabled hand button that
+  errored on click, and the Milestone-13 sample extractor treats the intent list
+  as its action mask. Playability now also walks the flow greedily
+  (`firstCompleteTargets`, moved into `cards.ts` so the check doesn't invert the
+  `targeting → cards` dependency). A whole-game test now dispatches every
+  *intent* at every state too.
 - ~~**`respondOnly` cards other than Nope-Gnome are untested territory.**~~
   **FIXED 2026-07-22.** The `cardId === 'nope-gnome'` special case is gone;
   `handleCardResponsePlay` now consults the card definition's
@@ -83,13 +97,25 @@ blocks · **P3** opportunistic.
   turn on a fixed seed. Not covered: 4-player games, CPU seats, the snail
   path, elimination/end-game overlays, the preset editor, and mobile layout.
 
-- ~~**AI holds some situational cards.**~~ **DONE 2026-07-22 for Hard.**
-  `planCardPlay` now has board-state-aware heuristics for all 6 (wall an
+- **AI holds some situational cards.** **MOSTLY DONE 2026-07-22 for Hard.**
+  `planCardPlay` has board-state-aware heuristics for 5 of the 6 (wall an
   approach, sabotage an occupied economy garden, free tunnels near our own
-  gnomes, Plot-Twist a lone home defender out for a free capture, marry two
-  of the same opponent's gnomes for a future bonus kill, trap an enemy on
-  Maize). Easy/Normal still hold them deliberately — see `isHard` gate in
-  `ai.ts`.
+  gnomes, marry two of the same opponent's gnomes for a future bonus kill, trap
+  an enemy on Maize). Easy/Normal still hold them deliberately — see the
+  `isHard` gate in `ai.ts`.
+
+  **Plot Twist is held by every difficulty again (2026-07-28).** Its Hard
+  planner swapped one of our gnomes into an enemy home holding a lone defender,
+  on the premise that the swap "relocates the defender away with no Entry
+  trigger" for a free capture. That premise was wrong: a garden and the critters
+  standing on it move TOGETHER and the two spaces' contents cross rather than
+  merge, so the defender arrives at the other space still on its own home while
+  our gnome lands on the square the home just vacated. Home occupancy is
+  invariant under a swap — the card cannot capture anything, and the planner was
+  spending it to shuffle the enemy's home one space. Planner removed; the
+  invariant is now pinned by a Plot Twist test in `cards.test.ts`. To plan the
+  card again, score what a swap can actually do (repositioning a garden and its
+  occupants as a unit).
 - **`scoreDestination` distorts when a friendly gnome shares a square with an
   enemy.** Such co-location can't arise in real play (entry always triggers a
   fight), but the BFS distance field marks the shared square unreachable, so

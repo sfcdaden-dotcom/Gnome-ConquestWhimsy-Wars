@@ -82,7 +82,7 @@ export interface GameConfig {
   boardSize: number;
   /** Default 3. */
   startingWishes: number;
-  /** Default 5. +1 while the player occupies the Center Star space. */
+  /** Default 3. +1 while the player occupies the Center Star space. */
   wishLimit: number;
   /** Max gnomes on the board per player. Default 8. */
   gnomeBoardLimit: number;

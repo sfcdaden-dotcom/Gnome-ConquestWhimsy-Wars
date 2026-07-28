@@ -30,45 +30,27 @@ import type {
   TargetKind,
 } from './types';
 import { badArg, illegal, internal, posKey, samePos } from './helpers';
-import { commitCardResponsePlay, getCardDef, playCardFromHand } from './cards';
+import {
+  cardTargetFlow as cardFlow,
+  commitCardResponsePlay,
+  foldTarget,
+  getCardDef,
+  playCardFromHand,
+} from './cards';
 import type { TargetStep } from './cards';
 import { commitFightRespondPlay } from './fights';
+
+// `cardFlow` / `foldTarget` / `firstCompleteTargets` live in cards.ts, next to
+// the flow definitions they walk, because the playability checks there need
+// them too and cards.ts must not import this module (see the header comment).
+export { firstCompleteTargets } from './cards';
 
 type TargetingDecision = Extract<PendingDecision, { kind: 'cardTargeting' }>;
 type RestoreWindow = TargetingDecision['restore'];
 
 // ---------------------------------------------------------------------------
-// Flow access & payload folding
+// Payload comparison
 // ---------------------------------------------------------------------------
-
-/** The card's targeting flow for the current state (empty for untargeted cards). */
-function cardFlow(state: GameState, cardId: CardId, player: PlayerId): TargetStep[] {
-  const def = getCardDef(cardId);
-  return def?.targetFlow ? def.targetFlow(state, player) : [];
-}
-
-/** Fold one chosen target into the accumulating CardTargets payload (immutably). */
-function foldTarget(selected: CardTargets, t: CardTarget): CardTargets {
-  const next: CardTargets = structuredClone(selected);
-  switch (t.kind) {
-    case 'unit':
-      (next.units ??= []).push(t.unitId);
-      break;
-    case 'space':
-      (next.spaces ??= []).push({ x: t.pos.x, y: t.pos.y });
-      break;
-    case 'player':
-      (next.players ??= []).push(t.playerId);
-      break;
-    case 'card':
-      (next.cards ??= []).push(t.cardId);
-      break;
-    case 'gardenType':
-      next.gardenType = t.gardenType;
-      break;
-  }
-  return next;
-}
 
 function targetsEqual(a: CardTarget, b: CardTarget): boolean {
   if (a.kind !== b.kind) return false;
@@ -277,27 +259,6 @@ export function enumerateCardTargets(state: GameState, player: PlayerId, cardId:
   };
   walk(0, {});
   return out;
-}
-
-/**
- * Greedily pick the first option at every step, returning the completed payload
- * if it validates, else null. A cheap way to turn a bare card id into a legal
- * play — used as the AI's structural safety net for a card without a dedicated
- * planner (so it degrades to "play it with the first legal targets" rather than
- * emitting a half-built action).
- */
-export function firstCompleteTargets(state: GameState, player: PlayerId, cardId: CardId): CardTargets | null {
-  const flow = cardFlow(state, cardId, player);
-  if (flow.length === 0) return null;
-  let selected: CardTargets = {};
-  for (const step of flow) {
-    const opts = step.getOptions(state, { player, selected });
-    if (opts.length === 0) return null;
-    selected = foldTarget(selected, opts[0]);
-  }
-  const def = getCardDef(cardId);
-  if (def?.validate && def.validate(state, player, selected) !== null) return null;
-  return selected;
 }
 
 /**

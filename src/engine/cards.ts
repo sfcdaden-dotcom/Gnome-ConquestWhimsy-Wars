@@ -883,6 +883,10 @@ const plotTwist: WhimsyCardDef = {
         });
       }
     }
+    // No home-capture check is needed here. A garden and the critters standing
+    // on it move TOGETHER, and the two spaces' contents cross rather than merge,
+    // so a swap cannot change who occupies a Home Garden: whoever held it before
+    // holds it afterwards, at the other space. See the Plot Twist tests.
   },
 };
 
@@ -1288,14 +1292,101 @@ export function drawOneCard(draft: GameState, player: PlayerId): CardId {
 }
 
 // ---------------------------------------------------------------------------
+// Walking a card's targeting flow
+//
+// These live here, next to the flow definitions they walk, rather than in
+// targeting.ts: the playability checks below need them, and cards.ts must not
+// import targeting.ts (the dependency graph is targeting → {cards, fights} →
+// helpers — see the targeting.ts module comment). targeting.ts imports them
+// back out of this file, which keeps that direction intact.
+// ---------------------------------------------------------------------------
+
+/** The card's targeting flow for the current state (empty for untargeted cards). */
+export function cardTargetFlow(state: GameState, cardId: CardId, player: PlayerId): TargetStep[] {
+  const def = getCardDef(cardId);
+  return def?.targetFlow ? def.targetFlow(state, player) : [];
+}
+
+/** Fold one chosen target into the accumulating CardTargets payload (immutably). */
+export function foldTarget(selected: CardTargets, t: CardTarget): CardTargets {
+  const next: CardTargets = structuredClone(selected);
+  switch (t.kind) {
+    case 'unit':
+      (next.units ??= []).push(t.unitId);
+      break;
+    case 'space':
+      (next.spaces ??= []).push({ x: t.pos.x, y: t.pos.y });
+      break;
+    case 'player':
+      (next.players ??= []).push(t.playerId);
+      break;
+    case 'card':
+      (next.cards ??= []).push(t.cardId);
+      break;
+    case 'gardenType':
+      next.gardenType = t.gardenType;
+      break;
+  }
+  return next;
+}
+
+/**
+ * Greedily pick the first option at every step, returning the completed payload
+ * if it validates, else null. A cheap way to turn a bare card id into a legal
+ * play — used as the AI's structural safety net for a card without a dedicated
+ * planner (so it degrades to "play it with the first legal targets" rather than
+ * emitting a half-built action), and as the playability check below.
+ *
+ * Greedy is sufficient because a `TargetStep` is required to offer only options
+ * that can lead to at least one valid completion (see `TargetStep`), so the
+ * first option of every step is as good as any other for deciding *whether* a
+ * completion exists.
+ */
+export function firstCompleteTargets(
+  state: GameState,
+  player: PlayerId,
+  cardId: CardId,
+): CardTargets | null {
+  const flow = cardTargetFlow(state, cardId, player);
+  if (flow.length === 0) return null;
+  let selected: CardTargets = {};
+  for (const step of flow) {
+    const opts = step.getOptions(state, { player, selected });
+    if (opts.length === 0) return null;
+    selected = foldTarget(selected, opts[0]);
+  }
+  const def = getCardDef(cardId);
+  if (def?.validate && def.validate(state, player, selected) !== null) return null;
+  return selected;
+}
+
+// ---------------------------------------------------------------------------
 // Playability
 // ---------------------------------------------------------------------------
+
+/**
+ * Why `player` has no play for `def` at all right now (ignoring timing), or
+ * null when one exists.
+ *
+ * Two checks, because `hasAnyPlay` alone is not enough: it is a cheap,
+ * card-authored existence hint, while the targeting flow is the thing the
+ * engine actually has to walk. A card can pass the hint and still have an empty
+ * first step (Hidden Passage on a gnome whose owner cannot pay its Maize exit;
+ * Pocket Shovel needing two empty spaces when only one is left), and offering
+ * such a card would hand the caller an action that throws on dispatch. Walking
+ * the flow greedily is the same work `beginTargeting` is about to do anyway.
+ */
+function whyNoPlayAvailable(state: GameState, player: PlayerId, def: WhimsyCardDef): string | null {
+  const noTargets = `${def.name} has no legal targets right now`;
+  if (def.hasAnyPlay && !def.hasAnyPlay(state, player)) return noTargets;
+  if (def.needsTargets && firstCompleteTargets(state, player, def.id) === null) return noTargets;
+  return null;
+}
 
 function cardPlayableIgnoringTiming(state: GameState, player: PlayerId, id: CardId): boolean {
   const def = getCardDef(id);
   if (!def) return false;
-  if (def.hasAnyPlay && !def.hasAnyPlay(state, player)) return false;
-  return true;
+  return whyNoPlayAvailable(state, player, def) === null;
 }
 
 /** Sudden cards `player` may play inside a FIGHT Respond window (no Nope). */
@@ -1338,10 +1429,7 @@ export function whyCannotPlayNow(state: GameState, player: PlayerId, cardId: Car
       return `${def.name} is Ritual Magic: playable only during your own Action Phase`;
     }
   }
-  if (def.hasAnyPlay && !def.hasAnyPlay(state, player)) {
-    return `${def.name} has no legal targets right now`;
-  }
-  return null;
+  return whyNoPlayAvailable(state, player, def);
 }
 
 // ---------------------------------------------------------------------------
