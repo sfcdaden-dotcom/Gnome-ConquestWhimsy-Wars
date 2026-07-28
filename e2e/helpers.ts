@@ -24,9 +24,17 @@ export class Game {
 
   // --- setup ---------------------------------------------------------------
 
-  /** Start a 2-player hot-seat game (both seats human) with a fixed seed. */
-  async startTwoPlayer(seed: number): Promise<void> {
+  /**
+   * Start a 2-player hot-seat game (both seats human) with a fixed seed.
+   *
+   * The preset is pinned to a fixed layout on purpose: the shipping default
+   * ("Random") rolls a fresh map on every page load, from a map seed that is
+   * deliberately independent of the game seed, so leaving it selected would
+   * make every board-position assertion below non-deterministic.
+   */
+  async startTwoPlayer(seed: number, preset = 'few'): Promise<void> {
     await this.page.goto('/');
+    await this.page.getByLabel('Extra-garden preset').selectOption(preset);
     await this.page.getByTestId('player-count-2').click();
     // Seat 0 is human by default; make seat 1 human too, so no CPU timer runs
     // and every step of the test is a deliberate click.

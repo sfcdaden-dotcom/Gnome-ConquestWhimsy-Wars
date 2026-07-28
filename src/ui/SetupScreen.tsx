@@ -3,13 +3,30 @@
  * Center Star toggle, optional seed.
  */
 
-import { useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
-import type { AiDifficulty, CreateGameOptions, GardenPreset, GardenPresetDef, PlayerController } from '../engine';
-import { GARDEN_PRESETS, DEFAULT_GARDEN_PRESET_ID } from '../engine';
-import { playerColor, randomSeed, PLAYER_COLOR_NAMES } from './meta';
+import type {
+  AiDifficulty,
+  CreateGameOptions,
+  GardenPreset,
+  GardenPresetDef,
+  PlayerController,
+  RandomLayout,
+} from '../engine';
+import {
+  DEFAULT_CONFIG,
+  DEFAULT_GARDEN_PRESET_ID,
+  GARDEN_PRESETS,
+  generateRandomLayout,
+  posKey,
+  seatHomes,
+} from '../engine';
+import { GARDEN_META, playerColor, randomSeed, PLAYER_COLOR_NAMES } from './meta';
 import { PresetEditor } from './PresetEditor';
 import { CUSTOM_EDITOR_BOARD_SIZE, downloadCustomPreset, parseCustomPresetFile } from './customPresets';
+
+/** Board size the procedural preset previews (and plays) on. */
+const PREVIEW_BOARD_SIZE = DEFAULT_CONFIG.boardSize;
 
 export interface SetupResult {
   options: CreateGameOptions;
@@ -30,6 +47,65 @@ function isCustomPresetId(id: string): boolean {
   return id.startsWith('custom:');
 }
 
+/**
+ * Read-only thumbnail of a rolled map. Homes the current seating won't use
+ * (the north/south pair in a 2-player game) are dimmed rather than hidden, so
+ * the layout's symmetry still reads at a glance.
+ */
+function LayoutPreview({
+  layout,
+  playerCount,
+  centerStar,
+}: {
+  layout: RandomLayout;
+  playerCount: 2 | 4;
+  centerStar: boolean;
+}) {
+  const n = PREVIEW_BOARD_SIZE;
+  const c = (n - 1) / 2;
+  const gardens = new Map(layout.gardens.map((g) => [posKey(g.pos), g.type]));
+  const homeSeat = new Map(seatHomes(layout.homes, playerCount).map((h, i) => [posKey(h), i]));
+  const homeKeys = new Set(layout.homes.map(posKey));
+
+  const summary = `${layout.gardens.length} extra gardens around ${playerCount} home gardens`;
+  return (
+    <div className="board preset-preview" style={{ '--n': n } as CSSProperties} role="img" aria-label={summary}>
+      {Array.from({ length: n * n }, (_, i) => {
+        const pos = { x: i % n, y: Math.floor(i / n) };
+        const key = posKey(pos);
+        const type = gardens.get(key);
+        const seat = homeSeat.get(key);
+        const isHome = homeKeys.has(key);
+        const isCenter = pos.x === c && pos.y === c;
+        const classes = ['cell'];
+        if (type) classes.push(`g-${type}`);
+        if (isHome) classes.push('editor-home');
+        if (isHome && seat === undefined) classes.push('unseated');
+        const title = isHome
+          ? seat === undefined
+            ? 'Home Garden (unused in a 2-player game)'
+            : `${PLAYER_COLOR_NAMES[seat]}'s Home Garden`
+          : type
+            ? GARDEN_META[type].label
+            : isCenter && centerStar
+              ? 'Center Star'
+              : `Space ${key}`;
+        return (
+          <div key={key} className={classes.join(' ')} title={title}>
+            {isHome ? (
+              <span className="garden-emoji">🏡</span>
+            ) : type ? (
+              <span className="garden-emoji">{GARDEN_META[type].emoji}</span>
+            ) : isCenter && centerStar ? (
+              <span className="garden-emoji">⭐</span>
+            ) : null}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export function SetupScreen({ onStart }: { onStart: (r: SetupResult) => void }) {
   const [count, setCount] = useState<2 | 4>(2);
   const [seats, setSeats] = useState<SeatDraft[]>([
@@ -38,17 +114,27 @@ export function SetupScreen({ onStart }: { onStart: (r: SetupResult) => void }) 
     { name: DEFAULT_NAMES[2], controller: 'cpu', difficulty: 'normal' },
     { name: DEFAULT_NAMES[3], controller: 'cpu', difficulty: 'normal' },
   ]);
-  const [preset, setPreset] = useState<GardenPreset>('few');
+  const [preset, setPreset] = useState<GardenPreset>(DEFAULT_GARDEN_PRESET_ID);
   const [customPresets, setCustomPresets] = useState<GardenPresetDef[]>([]);
   const [editing, setEditing] = useState(false);
   const [centerStar, setCenterStar] = useState(true);
   const [seedText, setSeedText] = useState('');
   const [error, setError] = useState<string | null>(null);
+  // The procedural preset's map seed, kept apart from the game seed so
+  // re-rolling the board doesn't also re-roll the dice and the deck.
+  const [layoutSeed, setLayoutSeed] = useState(randomSeed);
   const importInputRef = useRef<HTMLInputElement>(null);
 
   const allPresets = [...GARDEN_PRESETS, ...customPresets];
   const presetDef = allPresets.find((p) => p.id === preset) ?? allPresets.find((p) => p.id === DEFAULT_GARDEN_PRESET_ID)!;
   const editingExisting = isCustomPresetId(preset) ? customPresets.find((p) => p.id === preset) : undefined;
+
+  // What you see in the preview is what you play: the rolled layout is handed
+  // to the engine verbatim rather than re-derived from the game seed.
+  const rolled = useMemo(
+    () => (presetDef.seeded ? generateRandomLayout(PREVIEW_BOARD_SIZE, layoutSeed) : null),
+    [presetDef, layoutSeed],
+  );
 
   function updateSeat(i: number, patch: Partial<SeatDraft>) {
     setSeats((s) => s.map((seat, j) => (j === i ? { ...seat, ...patch } : seat)));
@@ -68,7 +154,7 @@ export function SetupScreen({ onStart }: { onStart: (r: SetupResult) => void }) 
 
   function removeCustomPreset(id: string) {
     setCustomPresets((list) => list.filter((p) => p.id !== id));
-    setPreset('few');
+    setPreset(DEFAULT_GARDEN_PRESET_ID);
   }
 
   function importPresetFile(file: File) {
@@ -86,26 +172,37 @@ export function SetupScreen({ onStart }: { onStart: (r: SetupResult) => void }) 
     reader.readAsText(file);
   }
 
+  /**
+   * The layout half of the engine options. Both the rolled map and a preset
+   * drawn in the editor carry 4 homes (seat order west/north/east/south) and
+   * ride the same `customGardens`/`customHomes` path; built-in fixed presets
+   * pass nothing and let the engine build them from the id.
+   */
+  function layoutOptions(): Partial<CreateGameOptions> {
+    if (rolled) {
+      return {
+        boardSize: PREVIEW_BOARD_SIZE,
+        customGardens: rolled.gardens,
+        customHomes: seatHomes(rolled.homes, count),
+      };
+    }
+    if (!isCustomPresetId(preset)) return {};
+    return {
+      boardSize: CUSTOM_EDITOR_BOARD_SIZE,
+      customGardens: presetDef.build(CUSTOM_EDITOR_BOARD_SIZE),
+      ...(presetDef.homes ? { customHomes: seatHomes(presetDef.homes, count) } : {}),
+    };
+  }
+
   function start() {
     const parsed = seedText.trim() === '' ? randomSeed() : Number(seedText.trim());
     if (!Number.isFinite(parsed)) {
       setError('Seed must be a number (or leave it blank for a random one).');
       return;
     }
-    const isCustom = isCustomPresetId(preset);
-    // Custom presets always carry 4 homes (seat order west/north/east/south);
-    // 2-player games use the opposite pair (indices 0 and 2), matching how
-    // the engine's own default layout picks seats for 2 vs 4 players.
-    const customHomes = presetDef.homes && (count === 2 ? [presetDef.homes[0], presetDef.homes[2]] : presetDef.homes);
     const options: CreateGameOptions = {
       gardenPreset: preset,
-      ...(isCustom
-        ? {
-            boardSize: CUSTOM_EDITOR_BOARD_SIZE,
-            customGardens: presetDef.build(CUSTOM_EDITOR_BOARD_SIZE),
-            ...(customHomes ? { customHomes } : {}),
-          }
-        : {}),
+      ...layoutOptions(),
       centerStar,
       players: seats.slice(0, count).map((s, i) => ({
         name: s.name.trim() || DEFAULT_NAMES[i],
@@ -219,6 +316,22 @@ export function SetupScreen({ onStart }: { onStart: (r: SetupResult) => void }) 
           </select>
         </div>
         <p className="preset-description muted small">{presetDef.description}</p>
+        {rolled && (
+          <div className="layout-preview-row">
+            <LayoutPreview layout={rolled} playerCount={count} centerStar={centerStar} />
+            <div className="btn-row">
+              <button
+                type="button"
+                className="btn small"
+                data-testid="reroll-layout"
+                onClick={() => setLayoutSeed(randomSeed())}
+              >
+                🎲 Re-roll the map
+              </button>
+              <span className="muted small">Map #{layoutSeed}</span>
+            </div>
+          </div>
+        )}
         <div className="btn-row">
           <button type="button" className="btn small" onClick={() => setEditing(true)}>
             🎨 {editingExisting ? 'Edit this preset' : 'New preset'}

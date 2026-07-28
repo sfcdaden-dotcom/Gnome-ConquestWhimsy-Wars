@@ -240,6 +240,36 @@ h2 {
 .preset-description {
   margin: -8px 0 0 132px;
 }
+
+/* Rolled-map thumbnail on the setup screen. Reuses .board/.cell so garden
+   colours stay in one place; only the scale and interactivity differ. */
+.layout-preview-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-left: 132px;
+}
+.preset-preview {
+  width: min(100%, 208px);
+  gap: 2px;
+  padding: 5px;
+  border-radius: 10px;
+  flex: none;
+}
+.preset-preview .cell {
+  cursor: default;
+}
+.preset-preview .cell:hover {
+  filter: none;
+}
+.preset-preview .cell.editor-home {
+  background: color-mix(in srgb, var(--accent) 26%, var(--cell));
+  border-color: var(--accent);
+}
+.preset-preview .cell.unseated {
+  opacity: 0.3;
+}
 .setup-error {
   color: var(--error);
   font-size: 0.9rem;

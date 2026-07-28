@@ -5,13 +5,18 @@
  * else needs to change. `setup.ts` looks presets up by id (no hardcoded
  * switch), and `SetupScreen.tsx` renders the menu straight from this array.
  *
- * Positions scale with board size N, center c = (N - 1) / 2 (shown for the
- * default 7×7, so c = 3). Every preset garden consumes tiles from the shared
- * supply (8 per type, see `SUPPLY_PER_TYPE`), so a preset must not use more
- * than 8 of any one type.
+ * Most entries are fixed layouts whose positions scale with board size N,
+ * center c = (N - 1) / 2 (shown for the default 7×7, so c = 3). The first
+ * entry, "Random", is instead procedural: it builds both its gardens AND its
+ * homes from the game seed (see randomLayout.ts), which is what `seeded` and
+ * `buildHomes` on the definition below exist for.
+ *
+ * Preset gardens are wild tiles — they come from no player's supply (see
+ * `createGame`), so a layout is free to use any mix of types.
  */
 
 import type { PlantableGardenType, Pos } from './types';
+import { RANDOM_LAYOUT_MIN_BOARD_SIZE, generateRandomLayout } from './randomLayout';
 
 export interface GardenPresetDef {
   /** Stable identifier — this is the value stored on `GameConfig.gardenPreset`. */
@@ -22,8 +27,12 @@ export interface GardenPresetDef {
   description: string;
   /** Smallest boardSize this layout fits on (its slots need room around the center). */
   minBoardSize: number;
-  /** Compute the garden positions for a given (odd) board size. */
-  build: (boardSize: number) => Array<{ pos: Pos; type: PlantableGardenType }>;
+  /**
+   * Compute the garden positions for a given (odd) board size. Fixed layouts
+   * ignore `seed` and callers may omit it; a `seeded` preset builds its whole
+   * map from it and falls back to seed 0, so pass the game seed for those.
+   */
+  build: (boardSize: number, seed?: number) => Array<{ pos: Pos; type: PlantableGardenType }>;
   /**
    * Optional override of where the 4 Home Gardens sit (seat order
    * west/north/east/south by convention; 2-player games use indices 0 and
@@ -32,9 +41,26 @@ export interface GardenPresetDef {
    * (`homePositions`) for whatever player count is chosen.
    */
   homes?: Pos[];
+  /** True when `build`/`buildHomes` vary with the seed (see randomLayout.ts). */
+  seeded?: boolean;
+  /**
+   * Seed-dependent home placement, for procedural presets that move the homes
+   * too. Always returns 4 positions in clockwise order, like `homes`.
+   */
+  buildHomes?: (boardSize: number, seed: number) => Pos[];
 }
 
 export const GARDEN_PRESETS: readonly GardenPresetDef[] = [
+  {
+    id: 'random',
+    label: 'Random (symmetrical)',
+    description:
+      'A fresh 4-fold symmetric map every game: homes land equidistant somewhere new, and the extra gardens follow fairness rules that keep hazards off your doorstep.',
+    minBoardSize: RANDOM_LAYOUT_MIN_BOARD_SIZE,
+    seeded: true,
+    build: (n, seed = 0) => generateRandomLayout(n, seed).gardens,
+    buildHomes: (n, seed) => generateRandomLayout(n, seed).homes,
+  },
   {
     id: 'none',
     label: 'None',
@@ -84,7 +110,10 @@ export const GARDEN_PRESETS: readonly GardenPresetDef[] = [
   },
 ];
 
-export const DEFAULT_GARDEN_PRESET_ID = 'none';
+export const DEFAULT_GARDEN_PRESET_ID = 'random';
+
+/** Id of the procedural preset (the one whose map is rolled from the seed). */
+export const RANDOM_GARDEN_PRESET_ID = 'random';
 
 /** Look up a preset by id, or `undefined` if the id isn't registered. */
 export function findGardenPreset(id: string): GardenPresetDef | undefined {

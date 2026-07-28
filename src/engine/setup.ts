@@ -7,8 +7,10 @@
  *   2 players: seat 0 west (0,3), seat 1 east (6,3)
  *   4 players: seat 0 west (0,3), seat 1 north (3,0), seat 2 east (6,3),
  *              seat 3 south (3,6)
- * A caller may override this via `customHomes` (e.g. a preset built in the
- * in-game editor that moved the homes) — see `homePositions` below.
+ * Two things override this formula: `customHomes` (e.g. a preset built in the
+ * in-game editor that moved the homes), and a procedural preset's own
+ * `buildHomes` (the "Random" preset rolls a symmetric home orbit from the
+ * seed). Both still hand 2-player games an exactly-opposite pair.
  *
  * Additional-garden layouts ("presets") are registered in gardenPresets.ts —
  * see that file for the list and for how to add a new one.
@@ -86,11 +88,26 @@ export function homePositions(boardSize: number, playerCount: number): Pos[] {
   return playerCount === 2 ? [west, east] : [west, north, east, south];
 }
 
-/** Additional-garden preset positions (registry: gardenPresets.ts). */
-export function presetGardens(boardSize: number, preset: GardenPreset): Array<{ pos: Pos; type: PlantableGardenType }> {
+/**
+ * Take the seats' share of a 4-home layout: 2-player games use the opposite
+ * pair (indices 0 and 2), mirroring `homePositions` itself.
+ */
+export function seatHomes(fourHomes: readonly Pos[], playerCount: number): Pos[] {
+  return playerCount === 2 ? [fourHomes[0], fourHomes[2]] : fourHomes.slice(0, 4);
+}
+
+/**
+ * Additional-garden preset positions (registry: gardenPresets.ts). `seed` only
+ * matters for procedural presets — fixed layouts ignore it.
+ */
+export function presetGardens(
+  boardSize: number,
+  preset: GardenPreset,
+  seed = 0,
+): Array<{ pos: Pos; type: PlantableGardenType }> {
   const def = findGardenPreset(preset);
   if (!def) badConfig(`Unknown gardenPreset "${preset}"`);
-  return def.build(boardSize);
+  return def.build(boardSize, seed);
 }
 
 // ---------------------------------------------------------------------------
@@ -182,7 +199,14 @@ function resolveConfig(options: CreateGameOptions): GameConfig {
  */
 export function createGame(options: CreateGameOptions, seed: number): GameState {
   const config = resolveConfig(options);
-  const homes = config.customHomes ?? homePositions(config.boardSize, config.players.length);
+  const playerCount = config.players.length;
+  // A procedural preset rolls its own home orbit from the seed; `customHomes`
+  // (the in-game editor, or a layout the setup screen already previewed) wins
+  // over both that and the default edge-midpoint formula.
+  const presetHomes = findGardenPreset(config.gardenPreset)?.buildHomes?.(config.boardSize, seed);
+  const homes =
+    config.customHomes ??
+    (presetHomes ? seatHomes(presetHomes, playerCount) : homePositions(config.boardSize, playerCount));
 
   const players: PlayerState[] = config.players.map((p, i) => ({
     id: i as PlayerId,
@@ -243,7 +267,7 @@ export function createGame(options: CreateGameOptions, seed: number): GameState 
 
   // Preset (or custom) gardens — WILD tiles: they come from no player's
   // supply, and when destroyed they leave the game instead of returning.
-  const layout = config.customGardens ?? presetGardens(config.boardSize, config.gardenPreset);
+  const layout = config.customGardens ?? presetGardens(config.boardSize, config.gardenPreset, seed);
   for (const g of layout) {
     const key = posKey(g.pos);
     if (state.gardens[key]) badConfig(`Preset layout collision at ${key}`);

@@ -12,11 +12,28 @@ export { createRng, normalizeSeed, rngNext, rngInt, rollDie, shuffled } from './
 export type { Rng } from './rng';
 
 // Game creation & layouts.
-export { createGame, DEFAULT_CONFIG, TILES_PER_TYPE, PLANTABLE_GARDEN_TYPES, homePositions, presetGardens } from './setup';
+export {
+  createGame,
+  DEFAULT_CONFIG,
+  TILES_PER_TYPE,
+  PLANTABLE_GARDEN_TYPES,
+  homePositions,
+  seatHomes,
+  presetGardens,
+} from './setup';
 
 // Garden preset registry (UI reads this to render the preset menu).
-export { GARDEN_PRESETS, DEFAULT_GARDEN_PRESET_ID, findGardenPreset } from './gardenPresets';
+export {
+  GARDEN_PRESETS,
+  DEFAULT_GARDEN_PRESET_ID,
+  RANDOM_GARDEN_PRESET_ID,
+  findGardenPreset,
+} from './gardenPresets';
 export type { GardenPresetDef } from './gardenPresets';
+
+// Procedural map generation (the "Random" preset; the setup screen previews it).
+export { generateRandomLayout, orbitOf, rotate90, RANDOM_LAYOUT_MIN_BOARD_SIZE } from './randomLayout';
+export type { RandomLayout } from './randomLayout';
 
 // Core reducer API.
 export {

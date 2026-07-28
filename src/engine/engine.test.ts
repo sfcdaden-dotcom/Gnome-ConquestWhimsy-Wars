@@ -116,7 +116,13 @@ describe('createGame', () => {
     const p = { name: 'X', controller: 'cpu' as const };
     expect(() =>
       createGame(
-        { players: [p, p], boardSize: 7, customGardens: [{ pos: { x: 0, y: 3 }, type: 'tunnel' }] },
+        // 'none' pins the homes to the edge-midpoint formula, so (0,3) is seat 0's.
+        {
+          players: [p, p],
+          boardSize: 7,
+          gardenPreset: 'none',
+          customGardens: [{ pos: { x: 0, y: 3 }, type: 'tunnel' }],
+        },
         1,
       ),
     ).toThrow(EngineError);
