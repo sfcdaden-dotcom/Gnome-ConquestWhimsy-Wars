@@ -109,6 +109,87 @@ test('preserves a valid unit selection and drops it once it is spent', async ({ 
   expect(await g.selectedCell()).toBeNull();
 });
 
+test('picks a specific gnome out of a stack by name', async ({ page }) => {
+  const g = new Game(page);
+  await g.startTwoPlayer(SEED);
+  await g.completeRollOff();
+
+  // Stack two gnomes on the Home Garden: the gnome harvest spawns at homePos,
+  // so taking it on two of this seat's turns (leaving the first where it is)
+  // puts two units on one square — the case that used to be selectable only by
+  // clicking the cell repeatedly with no feedback about which one you had.
+  await g.resolveHarvest('gnome');
+  const me = await g.activePlayer();
+  const [first] = await g.unitsOf(me);
+  const home = first.pos;
+  await g.endTurn(); // opponent's turn
+  await g.resolveHarvest('wish');
+  await g.endTurn(); // back to us
+  await g.resolveHarvest('gnome');
+
+  expect(await g.activePlayer()).toBe(me);
+  const stack = (await g.unitsOf(me)).find((u) => u.pos === home);
+  expect(stack?.count, 'two gnomes should share the home square').toBe(2);
+
+  // Selecting the square offers one chip per gnome, and names the selection.
+  await g.select(home);
+  await expect(page.getByTestId('selected-unit-name')).toBeVisible();
+  const chips = await g.selectChips();
+  expect(chips).toHaveLength(2);
+  expect(chips.every((c) => c.label.length > 0)).toBe(true);
+
+  // Exactly one chip is pressed, and it is the selected unit.
+  const selected = await g.selectedUnit();
+  expect(chips.filter((c) => c.pressed).map((c) => c.unitId)).toEqual([selected]);
+
+  // Clicking the other chip switches the selection to THAT unit — asserted on
+  // the id directly, not inferred from a changed highlight set.
+  const other = chips.find((c) => c.unitId !== selected)!;
+  await g.clickChip(other.unitId);
+  expect(await g.selectedUnit()).toBe(other.unitId);
+  expect((await g.selectChips()).filter((c) => c.pressed).map((c) => c.unitId)).toEqual([
+    other.unitId,
+  ]);
+
+  // Moving proves the RIGHT unit moved: the stack drops to one, the chips are
+  // gone (no stack left to disambiguate), and the selection follows the mover.
+  const to = (await g.moveTargets())[0];
+  expect(to).toBeTruthy();
+  await g.cell(to).click();
+  await g.ready();
+  expect(await g.selectedUnit()).toBe(other.unitId);
+  expect((await g.unitsOf(me)).find((u) => u.pos === home)?.count).toBe(1);
+  expect((await g.unitsOf(me)).some((u) => u.pos === to)).toBe(true);
+  expect(await g.selectChips()).toHaveLength(0);
+});
+
+test('cycles the same ordered stack when the cell itself is clicked', async ({ page }) => {
+  const g = new Game(page);
+  await g.startTwoPlayer(SEED);
+  await g.completeRollOff();
+
+  await g.resolveHarvest('gnome');
+  const me = await g.activePlayer();
+  const home = (await g.unitsOf(me))[0].pos;
+  await g.endTurn();
+  await g.resolveHarvest('wish');
+  await g.endTurn();
+  await g.resolveHarvest('gnome');
+
+  await g.select(home);
+  const order = (await g.selectChips()).map((c) => c.unitId);
+  expect(order).toHaveLength(2);
+
+  // Clicking the cell walks the chip order and wraps — the click path and the
+  // chip row read the same list, so they can never disagree.
+  const startAt = order.indexOf(await g.selectedUnit());
+  expect(startAt).toBeGreaterThanOrEqual(0);
+  for (let i = 1; i <= order.length; i++) {
+    await g.cell(home).click();
+    expect(await g.selectedUnit()).toBe(order[(startAt + i) % order.length]);
+  }
+});
+
 test('marches gnomes together and resolves a fight', async ({ page }) => {
   const g = new Game(page);
   await g.startTwoPlayer(SEED);

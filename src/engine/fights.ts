@@ -30,6 +30,7 @@ import type {
   PlayerId,
   QueuedFight,
   Unit,
+  UnitId,
 } from './types';
 import {
   CURSE_MULCH_FEVER,
@@ -218,16 +219,66 @@ function rollSide(draft: GameState, side: FightSide): number {
   return side.kind === 'player' ? rollPlayerD6(draft, side.player) : draftRollD6(draft);
 }
 
+/**
+ * The unit side `idx` stands to LOSE if it loses the round — a casualty
+ * candidate, not a combatant. Rolls belong to the side (see `rollSide`: a seat
+ * rolls, with that seat's roll modifiers), so no unit ever "fights" another;
+ * this is only who pays when the side loses.
+ *
+ * Returns null when the side risks no gnome: a flytrap (stunned, never
+ * destroyed) or a side whose critters here are all snails (the Immortal Snail
+ * survives its losses). Non-null results are always gnomes.
+ *
+ * This is the destruction rule used by `rollAndResolveRound`, extracted so the
+ * `fightRolled` event can name the units at risk without duplicating it. It is
+ * pure: callers decide WHEN to evaluate it, and the resolver still evaluates it
+ * at the same point it always has.
+ */
+function casualtyCandidate(draft: GameState, f: FightState, idx: 0 | 1): UnitId | null {
+  const side = f.sides[idx];
+  if (side.kind === 'flytrap') return null;
+  if (f.pinned) {
+    const u = draft.units[f.pinned[idx]];
+    return u && u.kind === 'gnome' ? u.id : null;
+  }
+  const here = playerUnitsAt(draft, f.pos, side.player);
+  if (f.targetUnit !== null) {
+    const t = draft.units[f.targetUnit];
+    if (t && t.owner === side.player && samePos(t.pos, f.pos) && t.kind === 'gnome') return t.id;
+  }
+  return here.find((u) => u.kind === 'gnome')?.id ?? null;
+}
+
 function rollAndResolveRound(draft: GameState, f: FightState): void {
   // Roll. Ties reroll — unless Mulch Fever makes the attacker win outright.
   const mulchFever = curseActive(draft, CURSE_MULCH_FEVER);
+  // Evaluated per push rather than hoisted: rolling must never be assumed to
+  // leave the board untouched, so each roll reports who is at risk right then.
+  const atRisk = (): [UnitId | null, UnitId | null] => [
+    casualtyCandidate(draft, f, 0),
+    casualtyCandidate(draft, f, 1),
+  ];
   let a = rollSide(draft, f.sides[0]);
   let b = rollSide(draft, f.sides[1]);
-  pushEvent(draft, { type: 'fightRolled', fightId: f.id, round: f.round, rolls: [a, b], tie: a === b });
+  pushEvent(draft, {
+    type: 'fightRolled',
+    fightId: f.id,
+    round: f.round,
+    rolls: [a, b],
+    tie: a === b,
+    casualtyCandidates: atRisk(),
+  });
   while (a === b && !mulchFever) {
     a = rollSide(draft, f.sides[0]);
     b = rollSide(draft, f.sides[1]);
-    pushEvent(draft, { type: 'fightRolled', fightId: f.id, round: f.round, rolls: [a, b], tie: a === b });
+    pushEvent(draft, {
+      type: 'fightRolled',
+      fightId: f.id,
+      round: f.round,
+      rolls: [a, b],
+      tie: a === b,
+      casualtyCandidates: atRisk(),
+    });
   }
 
   // Mulch Fever tie: the attacker (sides[1]) wins ⇒ defender (sides[0]) loses.
@@ -273,16 +324,14 @@ function rollAndResolveRound(draft: GameState, f: FightState): void {
   // Destroy one losing gnome (the fight's pinned/target unit if it belongs to
   // the losing side, otherwise the lowest-id gnome for determinism). Note the
   // destruction can be prevented by Gnomebody Dies — the round still ends.
-  let victim: Unit | undefined;
-  if (f.pinned) {
-    victim = losers[0];
-  } else if (f.targetUnit !== null) {
-    const t = draft.units[f.targetUnit];
-    if (t && t.owner === loser.player && samePos(t.pos, f.pos) && t.kind === 'gnome') victim = t;
-  }
-  if (!victim) victim = losers.find((u) => u.kind === 'gnome');
+  //
+  // Deliberately evaluated HERE, after the roll and after the snail branch —
+  // exactly where the victim has always been chosen. `casualtyCandidate` only
+  // factors the rule out so `fightRolled` can report it too; it does not move
+  // the decision earlier.
+  const victim = casualtyCandidate(draft, f, loserIdx);
   if (!victim) internal('No gnome to destroy on the losing side');
-  const destroyed = destroyUnit(draft, victim.id, 'fight');
+  const destroyed = destroyUnit(draft, victim, 'fight');
 
   // Pinned (Instigation) fights end after one decisive round.
   if (f.pinned && destroyed) {

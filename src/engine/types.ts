@@ -19,6 +19,16 @@
 
 /** Seat index, 0-based. Seats are arranged clockwise around the board. */
 export type PlayerId = number;
+/**
+ * Unit identifier. **Contract:** `u` followed by a positive decimal integer,
+ * allocated sequentially from `GameState.nextUnitId` across ALL unit kinds —
+ * so snails consume ordinals too, and any one kind's ordinals have gaps.
+ *
+ * The ordinal is a stable, replayable per-game identity, which the UI's gnome
+ * name generator indexes off (`src/ui/gnomeNames.ts`). Changing the format
+ * means giving that generator another stable ordinal first; `engine.test.ts`
+ * asserts the format at every creation site to make that a loud failure.
+ */
 export type UnitId = string;
 export type CardId = string;
 /** `"x,y"` string key into `GameState.gardens`. */
@@ -474,10 +484,10 @@ export type GameEvent =
   | { type: 'wishesGained'; player: PlayerId; requested: number; gained: number; lost: number }
   | { type: 'wishesSpent'; player: PlayerId; amount: number; reason: string }
   | { type: 'gnomeSpawned'; player: PlayerId; unitId: UnitId; pos: Pos }
-  | { type: 'unitMoved'; player: PlayerId; unitId: UnitId; from: Pos; to: Pos }
-  | { type: 'unitSlid'; player: PlayerId; unitId: UnitId; from: Pos; to: Pos; context: 'entry' | 'harvest' }
-  | { type: 'unitTunneled'; player: PlayerId; unitId: UnitId; from: Pos; to: Pos; context: 'entry' | 'harvest' }
-  | { type: 'entryEffectDeclined'; player: PlayerId; unitId: UnitId; pos: Pos }
+  | { type: 'unitMoved'; player: PlayerId; unitId: UnitId; unitKind: UnitKind; from: Pos; to: Pos }
+  | { type: 'unitSlid'; player: PlayerId; unitId: UnitId; unitKind: UnitKind; from: Pos; to: Pos; context: 'entry' | 'harvest' }
+  | { type: 'unitTunneled'; player: PlayerId; unitId: UnitId; unitKind: UnitKind; from: Pos; to: Pos; context: 'entry' | 'harvest' }
+  | { type: 'entryEffectDeclined'; player: PlayerId; unitId: UnitId; unitKind: UnitKind; pos: Pos }
   | { type: 'gardenPlanted'; player: PlayerId; pos: Pos; gardenType: PlantableGardenType }
   | { type: 'gardenDestroyed'; pos: Pos; gardenType: GardenType; cause: 'snail' | 'card' | 'elimination' }
   | { type: 'maizeExitPaid'; player: PlayerId; pos: Pos; cost: number }
@@ -491,16 +501,33 @@ export type GameEvent =
   | { type: 'curseRevealed'; player: PlayerId; cardId: CardId }
   | { type: 'deckReshuffled'; curseAdded: CardId | null }
   | { type: 'rollModified'; player: PlayerId; raw: number; modifier: number; result: number }
-  | { type: 'destructionPrevented'; player: PlayerId; unitId: UnitId }
+  | { type: 'destructionPrevented'; player: PlayerId; unitId: UnitId; unitKind: UnitKind }
   | { type: 'gnomesMarried'; unitA: UnitId; unitB: UnitId }
-  | { type: 'unitTeleported'; player: PlayerId; unitId: UnitId; from: Pos; to: Pos; cardId: CardId }
+  | { type: 'unitTeleported'; player: PlayerId; unitId: UnitId; unitKind: UnitKind; from: Pos; to: Pos; cardId: CardId }
   | { type: 'spacesSwapped'; a: Pos; b: Pos }
   | { type: 'timedEffectStarted'; kind: TimedEffectKind; player: PlayerId; pos: Pos | null }
   | { type: 'timedEffectExpired'; kind: TimedEffectKind; player: PlayerId }
   | { type: 'fightStarted'; fightId: number; pos: Pos; sides: [FightSide, FightSide]; cause: FightCause }
   | { type: 'fightRoundStarted'; fightId: number; round: number }
-  | { type: 'fightRolled'; fightId: number; round: number; rolls: [number, number]; tie: boolean }
-  | { type: 'unitDestroyed'; player: PlayerId; unitId: UnitId; pos: Pos; cause: string }
+  | {
+      type: 'fightRolled';
+      fightId: number;
+      round: number;
+      /**
+       * The two sides' rolls. A roll belongs to the SIDE (a seat, with that
+       * seat's Snake Eyes / 4 Leaf Clover modifiers applied), never to a unit.
+       */
+      rolls: [number, number];
+      tie: boolean;
+      /**
+       * The unit each side stands to lose if it loses this round — NOT a
+       * combatant that rolled. `null` for a flytrap side (it is stunned, never
+       * destroyed) and for a side whose only critters are snails. Always a
+       * gnome when non-null. See `casualtyCandidate` in fights.ts.
+       */
+      casualtyCandidates: [UnitId | null, UnitId | null];
+    }
+  | { type: 'unitDestroyed'; player: PlayerId; unitId: UnitId; unitKind: UnitKind; pos: Pos; cause: string }
   | { type: 'flytrapStunned'; pos: Pos; untilEndOfTurnOf: PlayerId }
   | { type: 'snailSurvivedLoss'; player: PlayerId; pos: Pos }
   | { type: 'fightEnded'; fightId: number; pos: Pos }

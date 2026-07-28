@@ -93,6 +93,24 @@ export class Game {
     return sel ? ((await sel.getAttribute('data-testid')) ?? '').replace('cell-', '') : null;
   }
 
+  /** The id of the currently selected unit ('' when nothing is selected). */
+  selectedUnit = () => this.attr('selected-unit');
+
+  /** Name chips for picking apart a stack: `{ unitId, label, pressed }`. */
+  async selectChips(): Promise<Array<{ unitId: string; label: string; pressed: boolean }>> {
+    return this.page.$$eval('[data-testid="stack-chips"] .chip', (nodes) =>
+      nodes.map((n) => ({
+        unitId: (n.getAttribute('data-testid') ?? '').replace('select-unit-', ''),
+        label: (n.textContent ?? '').trim(),
+        pressed: n.getAttribute('aria-pressed') === 'true',
+      })),
+    );
+  }
+
+  async clickChip(unitId: string): Promise<void> {
+    await this.page.getByTestId(`select-unit-${unitId}`).click();
+  }
+
   async gardenAt(pos: string): Promise<string | null> {
     const cls = (await this.cell(pos).getAttribute('class')) ?? '';
     return cls.match(/\bg-([a-z]+)\b/)?.[1] ?? null;

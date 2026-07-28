@@ -103,7 +103,14 @@ function removePlayerAssets(draft: GameState, player: PlayerId): void {
     delete draft.units[u.id];
     // Removal, not destruction: partners survive, but the marriage dissolves.
     dissolveMarriages(draft, u.id);
-    pushEvent(draft, { type: 'unitDestroyed', player, unitId: u.id, pos: u.pos, cause: 'elimination' });
+    pushEvent(draft, {
+      type: 'unitDestroyed',
+      player,
+      unitId: u.id,
+      unitKind: u.kind,
+      pos: u.pos,
+      cause: 'elimination',
+    });
   }
   const home = gardenAt(draft, p.homePos);
   if (home && home.type === 'home' && home.owner === player) {

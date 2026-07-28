@@ -149,7 +149,7 @@ function doMove(draft: GameState, player: PlayerId, unitId: string, to: Pos): vo
   const from = { ...unit.pos };
   unit.movedOnTurn = t.number;
   unit.pos = { x: to.x, y: to.y };
-  pushEvent(draft, { type: 'unitMoved', player, unitId, from, to: unit.pos });
+  pushEvent(draft, { type: 'unitMoved', player, unitId, unitKind: unit.kind, from, to: unit.pos });
   handleEntry(draft, unitId);
 }
 

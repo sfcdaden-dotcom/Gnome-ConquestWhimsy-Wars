@@ -8,6 +8,7 @@ import type { CSSProperties } from 'react';
 import type { GameState, Pos, Unit } from '../engine';
 import { centerPos, posKey, samePos, unitsAt } from '../engine';
 import { GARDEN_META, playerColor } from './meta';
+import { unitNameLive } from './gnomeNames';
 
 export type HighlightKind = 'move' | 'decision' | 'target' | 'picked';
 
@@ -146,7 +147,11 @@ function cellTitle(state: GameState, pos: Pos): string {
     if (g.skipNextHarvest) parts.push('Skips its next harvest.');
   }
   for (const u of unitsAt(state, pos)) {
-    parts.push(`${state.players[u.owner]?.name}'s ${u.kind}`);
+    parts.push(
+      u.kind === 'snail'
+        ? unitNameLive(state, u.id)
+        : `${unitNameLive(state, u.id)} (${state.players[u.owner]?.name})`,
+    );
   }
   return parts.join('\n');
 }
