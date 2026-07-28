@@ -753,13 +753,22 @@ function planCardPlay(
       return isHard(state, player) ? planSundownSabotage(state, player) : null;
     case 'pocket-shovel':
       return isHard(state, player) ? planPocketShovel(state, player) : null;
-    case 'plot-twist':
-      return isHard(state, player) ? planPlotTwist(state, player) : null;
     case 'gnomio-and-juliet':
       return isHard(state, player) ? planGnomioAndJuliet(state, player) : null;
     case 'lost-in-the-maize':
       return isHard(state, player) ? planLostInTheMaize(state, player) : null;
 
+    // Plot Twist is held by every difficulty. A Hard-only planner used to swap
+    // one of our gnomes into an enemy home holding a lone defender, on the
+    // premise that the swap "relocates the defender away with no Entry trigger"
+    // for a free capture. It does not: a garden and the critters standing on it
+    // move TOGETHER, and the two spaces' contents cross rather than merge, so
+    // the defender arrives at the other space still standing on its own home
+    // and our gnome lands on the square the home just vacated. The play spent a
+    // card to shuffle the enemy's home one space. Removed 2026-07-28; if Plot
+    // Twist is planned again, score it on what a swap can actually do
+    // (repositioning a garden and its occupants as a unit), and pin the
+    // occupancy invariant in a test first.
     default:
       // Roll/shield cards are held for respond windows regardless of difficulty.
       return null;
@@ -831,29 +840,6 @@ function planPocketShovel(state: GameState, player: PlayerId): { action: Action;
   if (spaces.length < required) return null;
   const a = tryPlayCard(state, player, 'pocket-shovel', { spaces });
   return a ? { action: a, score: 5 } : null;
-}
-
-/**
- * Swap one of our gnomes adjacent to an enemy's home into that home when it
- * has exactly one defender — the swap relocates the defender away with no
- * Entry trigger, so it bypasses the fight entirely and captures for free.
- */
-function planPlotTwist(state: GameState, player: PlayerId): { action: Action; score: number } | null {
-  for (const p of state.players) {
-    if (p.id === player || p.status !== 'playing') continue;
-    const homeGarden = gardenAt(state, p.homePos);
-    if (!homeGarden || homeGarden.type !== 'home' || homeGarden.owner !== p.id) continue;
-    const defenders = playerUnitsAt(state, p.homePos, p.id).filter((u) => u.kind === 'gnome');
-    if (defenders.length !== 1) continue; // only a lone defender is worth the swap
-    for (const d of ORTHOGONALS) {
-      const n = { x: p.homePos.x + d.x, y: p.homePos.y + d.y };
-      const ours = playerUnitsAt(state, n, player).filter((u) => u.kind === 'gnome');
-      if (ours.length === 0) continue;
-      const a = tryPlayCard(state, player, 'plot-twist', { spaces: [n, p.homePos] });
-      if (a) return { action: a, score: 10 };
-    }
-  }
-  return null;
 }
 
 /** Marry two of the SAME opponent's gnomes — pure upside: no cost to us, and any future kill of one takes both. */

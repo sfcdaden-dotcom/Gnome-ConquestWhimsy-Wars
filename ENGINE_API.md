@@ -126,6 +126,15 @@ legal move for the player who must act, with card plays left **untargeted**
 (one `playCard` / `respondPlayCard` intent per playable card, no `targets`).
 Cheap: no combinatorial work. This is what the UI and the AI use.
 
+Everything it returns is **dispatchable**: applying any entry never throws. For
+a targeted card that means its targeting flow has a completable path, not just
+that its cheap `hasAnyPlay` hint passed — the two can disagree (a gnome whose
+owner cannot pay its Maize exit satisfies "you have a gnome" but is filtered out
+of Hidden Passage's first step), and the enumerator resolves that disagreement
+in favour of the flow. Callers may therefore use the intent list directly as an
+action mask: to render a hand card as enabled, to drive a UI respond window, or
+as the legal-option set a learned policy scores.
+
 Targets are chosen **one step at a time**, not built by the caller. Dispatching
 a targeted play without `targets` opens a `cardTargeting` decision; the engine
 then offers the legal options for the current step only:

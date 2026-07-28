@@ -318,6 +318,39 @@ describe('Plot Twist', () => {
     expect(s.gardens[posKey(empty)]?.type).toBe('home');
     expect(s.gardens[posKey(foeHome)]).toBeUndefined();
   });
+
+  /**
+   * The occupancy invariant: a garden and the critters standing on it move
+   * TOGETHER, and the two spaces' contents cross rather than merge — so a swap
+   * can never hand a Home Garden to someone else, and no capture check belongs
+   * in `resolve`. Pinned because the Hard AI once spent the card on exactly this
+   * play, believing the swap stranded the defender (see `planCardPlay`).
+   */
+  it('cannot capture a home: the defender travels with its garden', () => {
+    let { s, me, foe } = scenario();
+    const foeHome = { ...s.players[foe].homePos };
+    const adj: Pos = { x: foeHome.x, y: foeHome.y - 1 };
+    // A lone defender on the enemy home, one of our gnomes next to it — the
+    // exact shape the removed heuristic targeted.
+    s = mutate(s, (d) => {
+      for (const u of Object.values(d.units)) delete d.units[u.id];
+    });
+    const defender = withGnome(s, foe, foeHome);
+    const ours = withGnome(defender.state, me, adj);
+    s = withHand(ours.state, me, 'plot-twist');
+
+    s = play(s, me, 'plot-twist', { spaces: [adj, foeHome] });
+
+    // The home garden moved to `adj` — and so did its defender.
+    expect(s.gardens[posKey(adj)]?.type).toBe('home');
+    expect(s.gardens[posKey(foeHome)]).toBeUndefined();
+    expect(s.units[defender.unitId]?.pos).toEqual(adj);
+    // Our gnome landed on the square the home vacated: an empty space.
+    expect(s.units[ours.unitId]?.pos).toEqual(foeHome);
+    // Nothing was captured, and nothing is queued to be.
+    expect(s.players[foe].status).toBe('playing');
+    expect(s.eliminationQueue).toHaveLength(0);
+  });
 });
 
 describe('Great Wall Of Whimsy', () => {

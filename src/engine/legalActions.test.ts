@@ -24,7 +24,7 @@ import {
   isGameOver,
 } from './index';
 import { CARD_DEFINITIONS, getCardDef } from './cards';
-import { mutate, toActionPhase, withGnome, withHand } from './testkit';
+import { mutate, toActionPhase, withGarden, withGnome, withHand } from './testkit';
 
 /** Cards that need a target payload, by id. */
 const TARGETED = CARD_DEFINITIONS.filter((c) => c.needsTargets).map((c) => c.id);
@@ -126,10 +126,88 @@ describe('getLegalActions returns executable actions', () => {
     s = withHand(s, me, 'instigation');
 
     expect(payloadsFor(s, me, 'instigation')).toHaveLength(0);
-    // The untargeted intent still surfaces (the cheap check passes) — dispatching
-    // it would open a targeting decision that reports "no legal targets"; it is
-    // the COMPLETE expansion that must not offer an unplayable action.
     expect(getLegalActions(s, me).some((a) => a.type === 'playCard' && a.cardId === 'instigation')).toBe(false);
+    // Neither form offers it: both APIs return only dispatchable actions.
+    expect(getLegalActionIntents(s, me).some((a) => a.type === 'playCard' && a.cardId === 'instigation')).toBe(
+      false,
+    );
+  });
+});
+
+/**
+ * Both enumerators promise everything they return can be dispatched. For a
+ * targeted card that means the card's own targeting FLOW must have a completable
+ * path, not merely that its cheap `hasAnyPlay` hint says yes — the two can
+ * disagree, and an intent built on the hint alone throws ILLEGAL_ACTION when the
+ * engine tries to open its first targeting step.
+ */
+describe('intents are dispatchable, not just plausible', () => {
+  /** One gnome, stuck on an active Maize Garden with no Wishes to pay the exit. */
+  function maizeLocked(seed: number, cardId: string): { s: GameState; me: number } {
+    let s = toActionPhase(seed);
+    const me = activeSeat(s);
+    s = mutate(s, (d) => {
+      for (const u of Object.values(d.units)) delete d.units[u.id];
+      for (const p of d.players) p.wishes = 0;
+    });
+    const spot = { x: 2, y: 2 };
+    s = withGarden(s, spot, 'maize', 0);
+    s = withGnome(s, me, spot).state;
+    return { s: withHand(s, me, cardId), me };
+  }
+
+  // Each of these passes its own `hasAnyPlay` (a gnome exists) while its first
+  // targeting step filters that gnome out, because its owner cannot pay the
+  // Maize exit cost the move would incur.
+  for (const cardId of ['hidden-passage', 'gust-of-wind', 'slippery-trail', 'gnome-place-like-home']) {
+    it(`${cardId}: not offered when its targeting flow cannot start`, () => {
+      const { s, me } = maizeLocked(7, cardId);
+      expect(getCardDef(cardId)?.hasAnyPlay?.(s, me)).toBe(true); // the cheap hint says yes
+      expect(getLegalActionIntents(s, me).some((a) => a.type === 'playCard' && a.cardId === cardId)).toBe(false);
+      expect(getLegalActions(s, me).some((a) => a.type === 'playCard' && a.cardId === cardId)).toBe(false);
+    });
+  }
+
+  it('pocket-shovel: not offered when only one empty space remains', () => {
+    let s = toActionPhase(13);
+    const me = activeSeat(s);
+    // Fill every space but one with a garden, leaving two tunnel tiles in
+    // supply — so `hasAnyPlay` (a tunnel tile and an empty space) passes while
+    // the card's second required space step has nothing to offer.
+    s = mutate(s, (d) => {
+      const n = d.config.boardSize;
+      for (let y = 0; y < n; y++) {
+        for (let x = 0; x < n; x++) {
+          if (x === 0 && y === 0) continue; // the single empty space
+          d.gardens[`${x},${y}`] ??= {
+            type: 'dandelion',
+            plantedOnTurn: 0,
+            stunnedForPlayerTurn: null,
+            doubledForPlayerTurn: null,
+          };
+        }
+      }
+      d.supply.tunnel = 2;
+    });
+    s = withHand(s, me, 'pocket-shovel');
+
+    expect(getCardDef('pocket-shovel')?.hasAnyPlay?.(s, me)).toBe(true);
+    expect(getLegalActionIntents(s, me).some((a) => a.type === 'playCard' && a.cardId === 'pocket-shovel')).toBe(
+      false,
+    );
+  });
+
+  it('every intent across a whole AI game dispatches without throwing', () => {
+    let s = createGame(
+      { players: [{ name: 'A', controller: 'cpu' }, { name: 'B', controller: 'cpu' }] },
+      99,
+    );
+    for (let i = 0; i < 900 && !isGameOver(s); i++) {
+      for (const intent of getLegalActionIntents(s)) {
+        expect(() => applyAction(s, intent), `${JSON.stringify(intent)}`).not.toThrow();
+      }
+      s = applyAction(s, chooseAiAction(s));
+    }
   });
 });
 
