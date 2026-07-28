@@ -529,7 +529,15 @@ export function resolveSlide(draft: GameState, player: PlayerId, to: Pos): void 
   consumeHarvestMove(draft, d.context, d.unitId);
   const from = { ...unit.pos };
   unit.pos = { x: to.x, y: to.y };
-  pushEvent(draft, { type: 'unitSlid', player, unitId: unit.id, from, to: unit.pos, context: d.context });
+  pushEvent(draft, {
+    type: 'unitSlid',
+    player,
+    unitId: unit.id,
+    unitKind: unit.kind,
+    from,
+    to: unit.pos,
+    context: d.context,
+  });
   handleEntry(draft, unit.id);
 }
 
@@ -549,7 +557,15 @@ export function resolveTunnel(draft: GameState, player: PlayerId, to: Pos): void
   }
   const from = { ...unit.pos };
   unit.pos = { x: to.x, y: to.y };
-  pushEvent(draft, { type: 'unitTunneled', player, unitId: unit.id, from, to: unit.pos, context: d.context });
+  pushEvent(draft, {
+    type: 'unitTunneled',
+    player,
+    unitId: unit.id,
+    unitKind: unit.kind,
+    from,
+    to: unit.pos,
+    context: d.context,
+  });
   handleEntry(draft, unit.id);
 }
 
@@ -559,17 +575,21 @@ export function resolveDeclineEffect(draft: GameState, player: PlayerId): void {
     illegal('No declinable effect is pending');
   }
   if (d.player !== player) illegal(`It is player ${d.player}'s decision, not player ${player}'s`);
+  // The declining unit is still on the board: the decision names it and nothing
+  // resolves between opening the decision and answering it.
+  const unit = draft.units[d.unitId];
+  if (!unit) internal('Declining unit vanished');
   if (d.kind === 'snailMove') {
     // Snailmaggedon moves are optional ("snails CAN move").
     draft.pendingDecision = null;
     const h = draft.harvest;
     if (h && h.snailMoves[0] === player) h.snailMoves.shift();
-    pushEvent(draft, { type: 'entryEffectDeclined', player, unitId: d.unitId, pos: d.from });
+    pushEvent(draft, { type: 'entryEffectDeclined', player, unitId: d.unitId, unitKind: unit.kind, pos: d.from });
     return;
   }
   if (!d.optional) illegal('This effect is a mandatory harvest activation and cannot be declined');
   draft.pendingDecision = null;
-  pushEvent(draft, { type: 'entryEffectDeclined', player, unitId: d.unitId, pos: d.from });
+  pushEvent(draft, { type: 'entryEffectDeclined', player, unitId: d.unitId, unitKind: unit.kind, pos: d.from });
 }
 
 /** Snailmaggedon: move the snail 1 space during another player's Harvest Phase. */
@@ -585,7 +605,7 @@ export function resolveSnailMove(draft: GameState, player: PlayerId, to: Pos): v
   if (h && h.snailMoves[0] === player) h.snailMoves.shift();
   const from = { ...snail.pos };
   snail.pos = { x: to.x, y: to.y };
-  pushEvent(draft, { type: 'unitMoved', player, unitId: snail.id, from, to: snail.pos });
+  pushEvent(draft, { type: 'unitMoved', player, unitId: snail.id, unitKind: snail.kind, from, to: snail.pos });
   // This is a bonus move: it does not consume the snail's own-turn movement,
   // and no end-of-turn garden destruction happens here (not the snail's turn).
   handleEntry(draft, snail.id);

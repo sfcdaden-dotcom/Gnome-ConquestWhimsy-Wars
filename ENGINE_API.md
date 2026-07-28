@@ -233,6 +233,30 @@ added by this action" as `next.events.slice(next.events.length -
 (next.eventCount - prev.eventCount))`. Add new event kinds as mechanics land,
 and give them `describeEvent` text in `src/ui/meta.ts`.
 
+**Events are historical records, so they carry their own identity facts.** An
+event is rendered long after the state it describes — a gnome that moved on turn
+3 is gone from `state.units` by the time you scroll back to its line. Every event
+referencing a unit therefore carries the whole `{ unitId, player, unitKind }`
+triple (`unitMoved`, `unitSlid`, `unitTunneled`, `unitTeleported`,
+`entryEffectDeclined`, `destructionPrevented`, `unitDestroyed`), and consumers
+must label a unit from the event rather than looking it up in current state. The
+two exemptions state their kind in the event name: `gnomeSpawned` and
+`gnomesMarried`. Follow the same rule for new event kinds.
+
+`fightRolled` additionally carries `casualtyCandidates: [UnitId | null, UnitId |
+null]` — the unit each side stands to LOSE that round, parallel to `rolls`. It is
+not a combatant: a roll belongs to the **side** (a seat, with that seat's Snake
+Eyes / 4 Leaf Clover modifiers), so no unit ever rolls against another. `null`
+means the side risks no gnome — a flytrap, which is only ever stunned. The engine
+picks the losing side's victim with the same `casualtyCandidate` rule at the same
+point in resolution it always has; the event just reports it too.
+
+`UnitId` is contractually `u<n>` with `n` a positive integer allocated
+sequentially from `nextUnitId` across all unit kinds. The ordinal is a stable
+per-game identity that `src/ui/gnomeNames.ts` indexes to derive gnome names, so
+`engine.test.ts` asserts the format at every creation site — change the format
+and that generator needs another stable ordinal first.
+
 ## Errors
 
 All rejections are `EngineError { code }`: `ILLEGAL_ACTION` (not legal now),

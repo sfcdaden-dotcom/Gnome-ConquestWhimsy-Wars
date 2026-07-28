@@ -17,12 +17,14 @@ import type {
   Pos,
   UnitId,
 } from '../engine';
-import { getLegalActionIntents, getPendingDecisionOptions, posKey, samePos, unitsAt } from '../engine';
+import { getLegalActionIntents, getPendingDecisionOptions, posKey, samePos } from '../engine';
 import { Board } from './Board';
 import type { HighlightKind } from './Board';
 import { DecisionPanel } from './DecisionPanel';
 import { FightPanel, FightPlaybackOverlay, GameLog, HandPanel, PlayerPanels } from './panels';
 import { GARDEN_META, cardName, decisionLabel, playerColor, pname } from './meta';
+import { unitNameLive } from './gnomeNames';
+import { actionableUnitsAt, nextInCycle, unitChipLabels } from './selection';
 import { useGame } from './useGame';
 
 // ---------------------------------------------------------------------------
@@ -215,25 +217,12 @@ export function GameScreen({ options, seed, onPlayAgain, onQuit }: GameScreenPro
       }
     }
 
-    // 4) Select (or cycle through) own actionable units on the clicked space —
-    // "actionable" means a legal move OR a legal plant at that space (a gnome
-    // that already moved this turn can't move again, but can still plant).
-    const actionable = unitsAt(state, pos).filter(
-      (u) =>
-        u.owner === playerToAct &&
-        (legal.some((a) => a.type === 'move' && a.unitId === u.id) ||
-          legal.some((a) => a.type === 'plant' && samePos(a.pos, pos))),
-    );
-    if (actionable.length > 0) {
-      let next = actionable[0];
-      if (sel.kind === 'unit') {
-        const i = actionable.findIndex((u) => u.id === sel.unitId);
-        if (i >= 0) next = actionable[(i + 1) % actionable.length];
-      }
-      setSel({ kind: 'unit', unitId: next.id });
-      return;
-    }
-    setSel(NO_SEL);
+    // 4) Select (or cycle through) own actionable units on the clicked space.
+    // The same ordered list backs the name chips in the action bar, so clicking
+    // and picking a chip can never disagree about what is selectable.
+    const actionable = actionableUnitsAt(state, playerToAct, pos, legal);
+    const next = nextInCycle(actionable, sel.kind === 'unit' ? sel.unitId : null);
+    setSel(next ? { kind: 'unit', unitId: next.id } : NO_SEL);
   }
 
   // --- highlights ---------------------------------------------------------------
@@ -282,21 +271,37 @@ export function GameScreen({ options, seed, onPlayAgain, onQuit }: GameScreenPro
     return map;
   }, [state, sel, decision, legal, interactive, targetingOptions]);
 
-  const selectedKey =
-    sel.kind === 'unit' && state.units[sel.unitId] ? posKey(state.units[sel.unitId].pos) : null;
+  const selectedUnit = sel.kind === 'unit' ? (state.units[sel.unitId] ?? null) : null;
+  const selectedKey = selectedUnit ? posKey(selectedUnit.pos) : null;
+
+  /**
+   * Everything the acting player could select on the selected unit's space.
+   * More than one ⇒ the action bar offers a chip per gnome, so a stack can be
+   * picked apart by name instead of by blind repeated clicking.
+   */
+  const stackChoices = useMemo(
+    () =>
+      selectedUnit && playerToAct !== null
+        ? actionableUnitsAt(state, playerToAct, selectedUnit.pos, legal)
+        : [],
+    [state, selectedUnit, playerToAct, legal],
+  );
+  const stackChips = useMemo(
+    () => (stackChoices.length > 1 ? unitChipLabels(state, stackChoices) : []),
+    [state, stackChoices],
+  );
 
   // --- action bar (active human, action phase) ------------------------------------
 
   const showActionBar =
     interactive && !decision && state.turn?.phase === 'action' && state.turn.activePlayer === playerToAct;
   const canDraw = legal.some((a) => a.type === 'drawCard');
-  const plantActions =
-    sel.kind === 'unit' && state.units[sel.unitId]
-      ? legal.filter(
-          (a): a is Extract<Action, { type: 'plant' }> =>
-            a.type === 'plant' && samePos(a.pos, state.units[(sel as { unitId: UnitId }).unitId].pos),
-        )
-      : [];
+  const plantActions = selectedUnit
+    ? legal.filter(
+        (a): a is Extract<Action, { type: 'plant' }> =>
+          a.type === 'plant' && samePos(a.pos, selectedUnit.pos),
+      )
+    : [];
 
   return (
     /* The data-* attributes mirror already-visible game state (status, phase,
@@ -312,6 +317,7 @@ export function GameScreen({ options, seed, onPlayAgain, onQuit }: GameScreenPro
       data-player-to-act={playerToAct ?? ''}
       data-decision={decision?.kind ?? ''}
       data-interactive={interactive ? 'true' : 'false'}
+      data-selected-unit={selectedUnit?.id ?? ''}
     >
       <header className="topbar">
         <span className="brand">🧙 Whimsy Wars</span>
@@ -367,6 +373,28 @@ export function GameScreen({ options, seed, onPlayAgain, onQuit }: GameScreenPro
               />
             ) : showActionBar ? (
               <div className="action-bar" data-testid="action-bar">
+                {selectedUnit && (
+                  <span className="selected-unit" data-testid="selected-unit-name">
+                    🧙 {unitNameLive(state, selectedUnit.id)}
+                  </span>
+                )}
+                {stackChips.length > 0 && (
+                  <span className="stack-chips" data-testid="stack-chips">
+                    {stackChips.map((c) => (
+                      <button
+                        key={c.unitId}
+                        type="button"
+                        className={`btn small chip${c.unitId === selectedUnit?.id ? ' on' : ''}`}
+                        aria-pressed={c.unitId === selectedUnit?.id}
+                        title={c.full}
+                        data-testid={`select-unit-${c.unitId}`}
+                        onClick={() => setSel({ kind: 'unit', unitId: c.unitId })}
+                      >
+                        {c.short}
+                      </button>
+                    ))}
+                  </span>
+                )}
                 <button
                   type="button"
                   className="btn"

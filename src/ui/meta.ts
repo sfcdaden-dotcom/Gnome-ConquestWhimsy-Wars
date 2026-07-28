@@ -5,6 +5,8 @@
 
 import type { Action, CardTarget, FightSide, GameEvent, GameState, GardenType, Pos } from '../engine';
 import { getCardDef, getCurseDef } from '../engine';
+import type { UnitEventRef } from './gnomeNames';
+import { gnomeName, unitNameFromEvent, unitNameLive } from './gnomeNames';
 
 // ---------------------------------------------------------------------------
 // Player + garden presentation
@@ -69,6 +71,27 @@ export function posStr(p: Pos): string {
 // Event → sentence
 // ---------------------------------------------------------------------------
 
+/**
+ * "Bramblewick the Bold (Red)" — a unit named from the identity facts its event
+ * carries, so the line still reads correctly long after the unit is off the
+ * board. Snail labels already name their seat, so they are not doubled up.
+ */
+function who(state: GameState, ref: UnitEventRef): string {
+  const name = unitNameFromEvent(state, ref);
+  return ref.unitKind === 'snail' ? name : `${name} (${pname(state, ref.player)})`;
+}
+
+/**
+ * " — at risk: X vs Y." for a fight round. A side with no gnome on the line
+ * (a flytrap, which is only ever stunned) is simply left out rather than
+ * suppressing the whole clause, so a mixed fight still names its one casualty
+ * candidate. Empty when neither side risks a gnome.
+ */
+function atRiskClause(state: GameState, candidates: readonly (string | null)[]): string {
+  const named = candidates.filter((id): id is string => id !== null).map((id) => gnomeName(state.seed, id));
+  return named.length === 0 ? '' : ` — at risk: ${named.join(' vs ')}.`;
+}
+
 export function describeEvent(state: GameState, ev: GameEvent): string {
   switch (ev.type) {
     case 'rollOffRolled':
@@ -100,15 +123,15 @@ export function describeEvent(state: GameState, ev: GameEvent): string {
     case 'wishesSpent':
       return `${pname(state, ev.player)} spends ${ev.amount} Wish${ev.amount === 1 ? '' : 'es'} (${ev.reason}).`;
     case 'gnomeSpawned':
-      return `A gnome for ${pname(state, ev.player)} appears at ${posStr(ev.pos)}.`;
+      return `${gnomeName(state.seed, ev.unitId)} joins ${pname(state, ev.player)} at ${posStr(ev.pos)}.`;
     case 'unitMoved':
-      return `${pname(state, ev.player)} moves ${posStr(ev.from)} → ${posStr(ev.to)}.`;
+      return `${who(state, ev)} moves ${posStr(ev.from)} → ${posStr(ev.to)}.`;
     case 'unitSlid':
-      return `${pname(state, ev.player)}'s gnome slides ${posStr(ev.from)} → ${posStr(ev.to)}.`;
+      return `${who(state, ev)} slides ${posStr(ev.from)} → ${posStr(ev.to)}.`;
     case 'unitTunneled':
-      return `${pname(state, ev.player)}'s gnome tunnels ${posStr(ev.from)} → ${posStr(ev.to)}.`;
+      return `${who(state, ev)} tunnels ${posStr(ev.from)} → ${posStr(ev.to)}.`;
     case 'entryEffectDeclined':
-      return `${pname(state, ev.player)} declines the entry effect at ${posStr(ev.pos)}.`;
+      return `${who(state, ev)} declines the entry effect at ${posStr(ev.pos)}.`;
     case 'gardenPlanted':
       return `${pname(state, ev.player)} plants a ${GARDEN_META[ev.gardenType].label} ${GARDEN_META[ev.gardenType].emoji} at ${posStr(ev.pos)}.`;
     case 'gardenDestroyed':
@@ -132,11 +155,11 @@ export function describeEvent(state: GameState, ev: GameEvent): string {
     case 'rollModified':
       return `${pname(state, ev.player)}'s roll is modified: ${ev.raw} ${ev.modifier >= 0 ? '+' : '−'} ${Math.abs(ev.modifier)} → ${ev.result}.`;
     case 'destructionPrevented':
-      return `🛡️ ${pname(state, ev.player)}'s gnome is saved (Gnomebody Dies)!`;
+      return `🛡️ ${who(state, ev)} is saved (Gnomebody Dies)!`;
     case 'gnomesMarried':
-      return '💍 Two gnomes are married — till death do them join.';
+      return `💍 ${gnomeName(state.seed, ev.unitA)} and ${gnomeName(state.seed, ev.unitB)} are married — till death do them join.`;
     case 'unitTeleported':
-      return `${pname(state, ev.player)}'s gnome moves ${posStr(ev.from)} → ${posStr(ev.to)} (${cardName(ev.cardId)}).`;
+      return `${who(state, ev)} moves ${posStr(ev.from)} → ${posStr(ev.to)} (${cardName(ev.cardId)}).`;
     case 'spacesSwapped':
       return `🔀 Plot Twist! ${posStr(ev.a)} and ${posStr(ev.b)} swap contents.`;
     case 'timedEffectStarted':
@@ -154,9 +177,15 @@ export function describeEvent(state: GameState, ev: GameEvent): string {
     case 'fightRoundStarted':
       return `⚔️ Round ${ev.round}…`;
     case 'fightRolled':
-      return `Rolls: ${dieFace(ev.rolls[0])} ${ev.rolls[0]} vs ${dieFace(ev.rolls[1])} ${ev.rolls[1]}${ev.tie ? ' — tie, reroll!' : ''}`;
+      // The rolls belong to the SIDES (a seat rolls, with that seat's
+      // modifiers) — the named gnomes are who each side stands to lose, not
+      // duellists. `fightStarted` just above already names the two sides.
+      return (
+        `Rolls: ${dieFace(ev.rolls[0])} ${ev.rolls[0]} vs ${dieFace(ev.rolls[1])} ${ev.rolls[1]}` +
+        `${ev.tie ? ' — tie, reroll!' : ''}${atRiskClause(state, ev.casualtyCandidates)}`
+      );
     case 'unitDestroyed':
-      return `${pname(state, ev.player)} loses a unit at ${posStr(ev.pos)} (${ev.cause}).`;
+      return `${who(state, ev)} is destroyed at ${posStr(ev.pos)} — ${ev.cause}.`;
     case 'flytrapStunned':
       return `The Flytrap at ${posStr(ev.pos)} is stunned!`;
     case 'snailSurvivedLoss':
@@ -213,7 +242,7 @@ export function describeAction(state: GameState, a: Action): string {
       return a.accept ? '🐌 Become the Immortal Snail' : 'Leave the game';
     case 'sacrificeGnome': {
       const u = state.units[a.unitId];
-      return `Sacrifice the gnome at ${u ? posStr(u.pos) : a.unitId}`;
+      return `Sacrifice ${unitNameLive(state, a.unitId)}${u ? ` at ${posStr(u.pos)}` : ''}`;
     }
     case 'snailMove':
       return `Move the snail to ${posStr(a.to)}`;

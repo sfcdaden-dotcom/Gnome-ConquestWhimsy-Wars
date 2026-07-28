@@ -240,6 +240,137 @@ describe('fights', () => {
     expect(s.events.some((e) => e.type === 'fightStarted')).toBe(true);
     expect(s.events.some((e) => e.type === 'unitDestroyed' && e.cause === 'fight')).toBe(true);
   });
+
+  it('reports both sides casualty candidates on a gnome-vs-gnome roll', () => {
+    let s = toActionPhase(11);
+    const me = activePlayer(s);
+    const foe = (me + 1) % 2;
+    const a = withGnome(s, me, { x: 2, y: 1 });
+    const b = withGnome(a.state, foe, { x: 3, y: 1 });
+    s = applyAction(b.state, { type: 'move', player: me, unitId: a.unitId, to: { x: 3, y: 1 } });
+
+    const rolls = s.events.filter((e) => e.type === 'fightRolled');
+    expect(rolls.length).toBeGreaterThan(0);
+    for (const r of rolls) {
+      if (r.type !== 'fightRolled') continue;
+      // Both sides are gnomes here, so both stand to lose someone.
+      expect(r.casualtyCandidates[0]).not.toBeNull();
+      expect(r.casualtyCandidates[1]).not.toBeNull();
+      expect(new Set(r.casualtyCandidates)).toContain(a.unitId);
+      expect(new Set(r.casualtyCandidates)).toContain(b.unitId);
+    }
+  });
+
+  it('leaves the flytraps casualty candidate null — it is stunned, never destroyed', () => {
+    let s = toActionPhase(11);
+    const me = activePlayer(s);
+    s = withGarden(s, { x: 3, y: 1 }, 'flytrap');
+    const a = withGnome(s, me, { x: 2, y: 1 });
+    s = applyAction(a.state, { type: 'move', player: me, unitId: a.unitId, to: { x: 3, y: 1 } });
+
+    const rolls = s.events.filter((e) => e.type === 'fightRolled');
+    expect(rolls.length).toBeGreaterThan(0);
+    for (const r of rolls) {
+      if (r.type !== 'fightRolled') continue;
+      // Exactly one side is the flytrap, so exactly one candidate is null.
+      const nulls = r.casualtyCandidates.filter((c) => c === null);
+      expect(nulls).toHaveLength(1);
+      expect(r.casualtyCandidates.find((c) => c !== null)).toBe(a.unitId);
+    }
+  });
+
+  it('destroys exactly the casualty candidate the last roll reported', () => {
+    // The equivalence guard for extracting `casualtyCandidate` out of the
+    // resolver: reporting and destruction must never drift apart. Swept across
+    // many seeded AI games so stack fights, flytraps and pinned fights all
+    // pass through it.
+    let checked = 0;
+    for (const seed of [3, 11, 17, 23, 41]) {
+      const s = drive(newGame(seed, { gardenPreset: 'few' }), () => false, 1500);
+      let pending: (readonly (string | null)[]) | null = null;
+      for (const ev of s.events) {
+        if (ev.type === 'fightRolled') pending = ev.casualtyCandidates;
+        else if (ev.type === 'unitDestroyed' && ev.cause === 'fight') {
+          expect(pending).not.toBeNull();
+          expect(pending).toContain(ev.unitId);
+          checked += 1;
+          pending = null;
+        } else if (ev.type === 'fightEnded') pending = null;
+      }
+    }
+    expect(checked).toBeGreaterThan(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Unit identity (the `UnitId` contract + identity facts on events)
+// ---------------------------------------------------------------------------
+
+describe('unit identity', () => {
+  const UNIT_ID = /^u[1-9][0-9]*$/;
+
+  it('allocates ids as u<n> at every creation path', () => {
+    // The UnitId contract documented in types.ts. The UI's name generator
+    // indexes off this ordinal, so a change of format must fail loudly here
+    // rather than silently degrade every gnome name to a raw id.
+    let s = toActionPhase(7);
+    const me = activePlayer(s);
+
+    const before = s.nextUnitId;
+    const spawned = withGnome(s, me, { x: 2, y: 2 });
+    expect(spawned.unitId).toMatch(UNIT_ID);
+    expect(spawned.state.nextUnitId).toBe(before + 1);
+
+    // The engine's own spawn path (Home Garden harvest) and the snail
+    // conversion path both draw from the same counter.
+    s = drive(newGame(7), (x) => Object.keys(x.units).length > 0, 400);
+    const ids = Object.keys(s.units);
+    expect(ids.length).toBeGreaterThan(0);
+    for (const id of ids) expect(id).toMatch(UNIT_ID);
+    expect(s.nextUnitId).toBeGreaterThan(Number(ids[0].slice(1)));
+  });
+
+  it('keeps ids well-formed and the counter monotonic across a full game', () => {
+    let last = 0;
+    const s = drive(newGame(13, { gardenPreset: 'few' }), () => false, 1500);
+    for (const ev of s.events) {
+      if (ev.type !== 'gnomeSpawned') continue;
+      expect(ev.unitId).toMatch(UNIT_ID);
+      const n = Number(ev.unitId.slice(1));
+      expect(n).toBeGreaterThan(last);
+      last = n;
+    }
+    expect(last).toBeGreaterThan(0);
+  });
+
+  it('carries unitId, player and unitKind on every historical unit event', () => {
+    // Log lines render long after a unit is gone from state.units, so the
+    // identity facts must live on the event, not be re-derived from the board.
+    const audited = new Set([
+      'unitMoved',
+      'unitSlid',
+      'unitTunneled',
+      'unitTeleported',
+      'entryEffectDeclined',
+      'destructionPrevented',
+      'unitDestroyed',
+    ]);
+    const seen = new Set<string>();
+    for (const seed of [3, 11, 17, 23, 41]) {
+      const s = drive(newGame(seed, { gardenPreset: 'few' }), () => false, 1500);
+      for (const ev of s.events) {
+        if (!audited.has(ev.type)) continue;
+        const e = ev as { type: string; unitId?: string; player?: number; unitKind?: string };
+        seen.add(e.type);
+        expect(e.unitId).toMatch(UNIT_ID);
+        expect(typeof e.player).toBe('number');
+        expect(['gnome', 'snail']).toContain(e.unitKind);
+      }
+    }
+    // Guard against the sweep passing because nothing was emitted.
+    expect(seen.has('unitMoved')).toBe(true);
+    expect(seen.has('unitDestroyed')).toBe(true);
+  });
 });
 
 // ---------------------------------------------------------------------------

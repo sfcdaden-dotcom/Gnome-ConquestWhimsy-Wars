@@ -347,11 +347,11 @@ export function destroyUnit(draft: GameState, unitId: UnitId, cause: string): bo
   if (!u) return false;
   if (u.kind === 'gnome' && draft.preventionShields > 0) {
     draft.preventionShields -= 1;
-    pushEvent(draft, { type: 'destructionPrevented', player: u.owner, unitId });
+    pushEvent(draft, { type: 'destructionPrevented', player: u.owner, unitId, unitKind: u.kind });
     return false;
   }
   delete draft.units[unitId];
-  pushEvent(draft, { type: 'unitDestroyed', player: u.owner, unitId, pos: u.pos, cause });
+  pushEvent(draft, { type: 'unitDestroyed', player: u.owner, unitId, unitKind: u.kind, pos: u.pos, cause });
   if (u.kind === 'gnome') {
     const p = getPlayer(draft, u.owner);
     p.gnomesLost += 1;

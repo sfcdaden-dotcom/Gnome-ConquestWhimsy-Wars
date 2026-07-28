@@ -845,6 +845,34 @@ h2 {
   font-size: 0.9rem;
 }
 
+/* Selected gnome + the per-gnome chips for picking a stack apart by name.
+   The bar already wraps, so a long name or a deep stack pushes to its own row
+   instead of overflowing — no truncation needed for the readout itself, since
+   reading the name is the entire point. Chips keep a bound (26ch clears the
+   longest possible full name) purely so nothing can hog a row. */
+.selected-unit {
+  font-size: 0.85rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.stack-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+}
+.btn.chip {
+  max-width: 26ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.btn.chip.on {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 22%, var(--panel));
+  font-weight: 600;
+}
+
 /* ------------------------------------------------------------------ */
 /* Overlays & toasts                                                   */
 /* ------------------------------------------------------------------ */

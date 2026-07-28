@@ -219,6 +219,7 @@ function executeCardMove(
     type: 'unitTeleported',
     player: unit.owner,
     unitId: unit.id,
+    unitKind: unit.kind,
     from,
     to: unit.pos,
     cardId: entry.cardId,
