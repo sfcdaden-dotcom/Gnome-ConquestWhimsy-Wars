@@ -156,10 +156,12 @@ Any non-Home garden can be upgraded once to a stronger form — see each garden'
 **Upgraded** entry below.
 
 - **Cost & timing**: 2 Wishes, during your Action Phase, while a gnome you
-  control occupies the garden and no enemy critters are on the space. You may
+  control occupies the garden and no enemy units are on the space. You may
   upgrade a garden you didn't plant (including one you captured), and you may
   upgrade a garden the turn it was planted (it still becomes Active on the
-  normal schedule).
+  normal schedule). **[RULING]** A flytrap does not block the upgrading of its
+  own garden — a gnome standing on an inactive or stunned flytrap may upgrade
+  it. (Compost Combustion doubles *planting* costs only; upgrades stay at 2.)
 - **[RULING] Upgrades belong to the tile, not the player.** Whoever controls the
   garden gets the upgraded effect — capturing an upgraded garden captures the
   upgrade. (Flytraps stay neutral: upgrading one strengthens it against

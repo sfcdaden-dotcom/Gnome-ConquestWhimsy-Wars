@@ -502,6 +502,14 @@ h2 {
   font-size: 12px;
   pointer-events: none;
 }
+.upgraded {
+  position: absolute;
+  top: 2px;
+  left: 4px;
+  font-size: clamp(9px, calc(24cqi / var(--n, 7)), 13px);
+  pointer-events: none;
+  filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.45));
+}
 
 .tokens {
   position: absolute;
@@ -677,6 +685,19 @@ h2 {
   gap: 10px;
   flex-wrap: wrap;
   font-size: 0.9rem;
+}
+
+.supply-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 2px;
+}
+.supply-owner {
+  min-width: 3.5em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .curse-panel {

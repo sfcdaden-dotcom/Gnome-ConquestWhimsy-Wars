@@ -82,7 +82,7 @@ export function Board({ state, highlights, selectedKey, onCellClick }: BoardProp
           data-highlight={hl ?? ''}
           data-selected={selectedKey === key ? 'true' : 'false'}
           onClick={() => onCellClick(pos)}
-          aria-label={`Space ${key}${garden ? `, ${GARDEN_META[garden.type].label}` : ''}`}
+          aria-label={`Space ${key}${garden ? `, ${garden.upgraded ? GARDEN_META[garden.type].upgradeLabel : GARDEN_META[garden.type].label}` : ''}`}
           title={cellTitle(state, pos)}
         >
           {garden && (
@@ -90,6 +90,7 @@ export function Board({ state, highlights, selectedKey, onCellClick }: BoardProp
               {GARDEN_META[garden.type].emoji}
             </span>
           )}
+          {garden?.upgraded && <span className="upgraded" data-testid="upgraded-badge">⭐</span>}
           {garden?.type === 'flytrap' && garden.stunnedForPlayerTurn !== null && (
             <span className="stun">💫</span>
           )}
@@ -139,7 +140,9 @@ function cellTitle(state: GameState, pos: Pos): string {
   if (g) {
     const meta = GARDEN_META[g.type];
     parts.push(
-      `${meta.label}${g.owner !== undefined ? ` (${state.players[g.owner]?.name})` : ''} — ${meta.blurb}`,
+      g.upgraded
+        ? `${meta.upgradeLabel} (upgraded ${meta.label})${g.owner !== undefined ? ` (${state.players[g.owner]?.name})` : ''} — ${meta.upgradeBlurb}`
+        : `${meta.label}${g.owner !== undefined ? ` (${state.players[g.owner]?.name})` : ''} — ${meta.blurb}`,
     );
     if (gardenInactive(state, g.plantedOnTurn)) parts.push('Freshly planted (inactive until next turn).');
     if (g.type === 'flytrap' && g.stunnedForPlayerTurn !== null) parts.push('Stunned this turn.');

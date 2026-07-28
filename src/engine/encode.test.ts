@@ -220,16 +220,16 @@ describe('encodeOption', () => {
     const s = toActionPhase(2);
     const v = encodeOption(s, activePlayer(s), firstOfType(s, 'endTurn'));
     expect(v.reduce((sum, x) => sum + (x !== 0 ? 1 : 0), 0)).toBe(1);
-    expect(v[19]).toBe(1); // 'endTurn' is ACTION_TYPES[19]
+    expect(v[20]).toBe(1); // 'endTurn' is ACTION_TYPES[20] (schema v2 added 'upgrade')
   });
 
   it('a move encodes both origin and destination blocks', () => {
     const s = toActionPhase(3);
     const move = firstOfType(s, 'move');
     const v = encodeOption(s, activePlayer(s), move);
-    const OPT_DEST = 20 + ENCODED_CARD_IDS.length + 6 + 5 + 4;
+    const OPT_DEST = 21 + ENCODED_CARD_IDS.length + 6 + 5 + 4;
     expect(v[OPT_DEST]).toBe(1); // destination present
-    expect(v[OPT_DEST + 14]).toBe(1); // origin present
+    expect(v[OPT_DEST + 15]).toBe(1); // origin present
   });
 
   it('distinguishes plant options by garden type and destination contents', () => {
@@ -259,7 +259,7 @@ describe('encodeOption', () => {
     const actor = found.pendingDecision!.player;
     const options = getLegalActionIntents(found);
     expect(options.length).toBeGreaterThan(1);
-    const OPT_DEST = 20 + ENCODED_CARD_IDS.length + 6 + 5 + 4;
+    const OPT_DEST = 21 + ENCODED_CARD_IDS.length + 6 + 5 + 4;
     for (const a of options) {
       const v = encodeOption(found, actor, a);
       expect(v[OPT_DEST]).toBe(1); // every harvest source has a position

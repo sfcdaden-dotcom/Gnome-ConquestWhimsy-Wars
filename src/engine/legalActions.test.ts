@@ -187,7 +187,7 @@ describe('intents are dispatchable, not just plausible', () => {
           };
         }
       }
-      d.supply.tunnel = 2;
+      d.players[me].supply.tunnel = 2;
     });
     s = withHand(s, me, 'pocket-shovel');
 

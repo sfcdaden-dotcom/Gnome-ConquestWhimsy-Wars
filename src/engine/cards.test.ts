@@ -224,7 +224,8 @@ describe('Wild Growth', () => {
     s = play(s, me, 'wild-growth', { spaces: [{ x: 2, y: 4 }], gardenType: 'slippery' });
     expect(s.gardens['2,4']?.type).toBe('slippery');
     expect(s.gardens['2,4']?.plantedOnTurn).toBe(s.turn?.number);
-    expect(s.supply.slippery).toBe(7);
+    expect(s.gardens['2,4']?.plantedBy).toBe(me); // tile comes from the card player's supply
+    expect(s.players[me].supply.slippery).toBe(3);
     expect(s.players[me].wishes).toBe(wishes);
   });
 
@@ -274,12 +275,12 @@ describe('Lawnmower Of Doom', () => {
   it('destroys a non-Home garden orthogonally adjacent to an own gnome', () => {
     let { s, me } = scenario();
     const g = withGnome(s, me, { x: 2, y: 2 });
-    s = withGarden(g.state, { x: 2, y: 3 }, 'dandelion');
+    s = withGarden(g.state, { x: 2, y: 3 }, 'dandelion', 0, me);
     s = withHand(s, me, 'lawnmower-of-doom');
-    const supply = s.supply.dandelion;
+    const supply = s.players[me].supply.dandelion;
     s = play(s, me, 'lawnmower-of-doom', { spaces: [{ x: 2, y: 3 }] });
     expect(s.gardens['2,3']).toBeUndefined();
-    expect(s.supply.dandelion).toBe(supply + 1); // tile returns to supply
+    expect(s.players[me].supply.dandelion).toBe(supply + 1); // tile returns to its planter
   });
 
   it('cannot destroy Home Gardens', () => {
@@ -484,15 +485,16 @@ describe('Mushroom Cloud', () => {
     let { s, me, foe } = scenario();
     const a = withGnome(s, foe, { x: 4, y: 4 });
     const b = withGnome(a.state, foe, { x: 4, y: 4 });
-    s = withGarden(b.state, { x: 4, y: 4 }, 'mushroom');
+    s = withGarden(b.state, { x: 4, y: 4 }, 'mushroom', 0, foe);
     s = withHand(s, me, 'mushroom-cloud');
-    const supply = s.supply.mushroom;
+    const supply = s.players[foe].supply.mushroom;
     s = play(s, me, 'mushroom-cloud', { spaces: [{ x: 4, y: 4 }] });
     expect(s.gardens['4,4']).toBeUndefined();
     expect(s.units[a.unitId]).toBeUndefined();
     expect(s.units[b.unitId]).toBeUndefined();
     expect(s.players[foe].gnomesLost).toBe(2);
-    expect(s.supply.mushroom).toBe(supply + 1);
+    expect(s.players[foe].supply.mushroom).toBe(supply + 1); // planter gets the tile back
+
   });
 });
 
@@ -503,20 +505,20 @@ describe('Pocket Shovel', () => {
     s = play(s, me, 'pocket-shovel', { spaces: [{ x: 2, y: 4 }, { x: 4, y: 2 }] });
     expect(s.gardens['2,4']?.type).toBe('tunnel');
     expect(s.gardens['4,2']?.type).toBe('tunnel');
-    expect(s.supply.tunnel).toBe(6);
+    expect(s.players[me].supply.tunnel).toBe(2);
   });
 
-  it('with 1 tunnel left, requires (and plants) exactly one', () => {
+  it('with 1 of the player\'s tunnels left, requires (and plants) exactly one', () => {
     let { s, me } = scenario();
     s = mutate(withHand(s, me, 'pocket-shovel'), (d) => {
-      d.supply.tunnel = 1;
+      d.players[me].supply.tunnel = 1;
     });
     expect(() => play(s, me, 'pocket-shovel', { spaces: [{ x: 2, y: 4 }, { x: 4, y: 2 }] })).toThrow(
       /exactly 1/i,
     );
     s = play(s, me, 'pocket-shovel', { spaces: [{ x: 2, y: 4 }] });
     expect(s.gardens['2,4']?.type).toBe('tunnel');
-    expect(s.supply.tunnel).toBe(0);
+    expect(s.players[me].supply.tunnel).toBe(0);
   });
 });
 

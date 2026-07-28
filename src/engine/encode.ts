@@ -39,10 +39,11 @@ import type {
 } from './types';
 import { CARD_DEFINITIONS, CURSE_DEFINITIONS } from './cards';
 import { centerPos, gardenIsActive, parsePos, samePos, wishCap } from './helpers';
-import { SUPPLY_PER_TYPE } from './setup';
 
 /** Bump whenever any encoder layout changes; trained weights gate on this. */
-export const ENCODING_SCHEMA = 1;
+// v2: garden upgrades (upgraded plane + dest flag, 'upgrade' action type) and
+// per-player tile supplies (per-relative-seat supply scalars).
+export const ENCODING_SCHEMA = 2;
 
 /** Per-player feature slots. Absent seats (2-player games) encode as zeros. */
 export const MAX_SEATS = 4;
@@ -63,7 +64,7 @@ const ACTION_TYPES: readonly Action['type'][] = [
   'rollOff', 'chooseHarvest', 'homeHarvest', 'mushroomClones', 'slide', 'tunnel',
   'declineEffect', 'respondPass', 'respondPlayCard', 'discardCard', 'snailify',
   'sacrificeGnome', 'snailMove', 'selectTarget', 'cancelTargeting',
-  'move', 'plant', 'drawCard', 'playCard', 'endTurn',
+  'move', 'plant', 'upgrade', 'drawCard', 'playCard', 'endTurn',
 ];
 
 const DECISION_KINDS: readonly PendingDecision['kind'][] = [
@@ -102,8 +103,9 @@ const DECK_TOTAL = CARD_DEFINITIONS.reduce((sum, c) => sum + c.copies, 0);
  *   23     Center Star space
  *   24     Great Wall Of Whimsy (entry blocked)
  *   25     current fight position
+ *   26     garden is upgraded
  */
-export const OBS_PLANES = 26;
+export const OBS_PLANES = 27;
 
 const PLANE_GNOME = 0;
 const PLANE_SNAIL = 4;
@@ -116,6 +118,7 @@ const PLANE_SKIP_HARVEST = 22;
 const PLANE_CENTER = 23;
 const PLANE_WALL = 24;
 const PLANE_FIGHT = 25;
+const PLANE_UPGRADED = 26;
 
 /** Scalar block size (see writeScalars for the exact field order). */
 export const OBS_SCALARS =
@@ -133,7 +136,7 @@ export const OBS_SCALARS =
   1 + // decision is mine
   6 + // fight block: present, I defend, I attack, vs flytrap, round, pinned
   5 + // shields, turnMustEnd, card stack depth, response queue, marriages
-  PLANTABLE_TYPES.length + // garden supply remaining per type
+  MAX_SEATS * PLANTABLE_TYPES.length + // per-relative-seat tile supply remaining per type
   2; // board size, player count
 
 /** Flat observation length for a given board size. */
@@ -181,6 +184,7 @@ export function encodeObservation(state: GameState, seat: PlayerId): Float32Arra
     if (g.stunnedForPlayerTurn !== null) out[at(PLANE_STUNNED, pos)] = 1;
     if (g.doubledForPlayerTurn !== null) out[at(PLANE_DOUBLED, pos)] = 1;
     if (g.skipNextHarvest) out[at(PLANE_SKIP_HARVEST, pos)] = 1;
+    if (g.upgraded) out[at(PLANE_UPGRADED, pos)] = 1;
   }
 
   if (state.config.centerStar) out[at(PLANE_CENTER, centerPos(state))] = 1;
@@ -286,7 +290,15 @@ export function encodeObservation(state: GameState, seat: PlayerId): Float32Arra
   put(Math.min(state.responseQueue.length, 3) / 3);
   put(Math.min(state.marriages.length, 4) / 4);
 
-  for (const t of PLANTABLE_TYPES) put(state.supply[t] / SUPPLY_PER_TYPE);
+  // Per-relative-seat tile supplies (public). Absent seats stay zero.
+  for (let rel = 0; rel < MAX_SEATS; rel++) {
+    const id = (seat + rel) % state.players.length;
+    if (rel > 0 && (state.players.length <= rel || id === seat)) {
+      i += PLANTABLE_TYPES.length;
+      continue;
+    }
+    for (const t of PLANTABLE_TYPES) put(state.players[id].supply[t] / cfg.tilesPerType);
+  }
 
   put(N / 9);
   put(state.players.length / MAX_SEATS);
@@ -308,13 +320,14 @@ export function encodeObservation(state: GameState, seat: PlayerId): Float32Arra
  *   plantable garden type one-hot                6
  *   target kind one-hot (selectTarget)           5
  *   relative seat one-hot (player/unit target)   4
- *   destination space block                     14
- *     present, x, y, garden one-hot(7), active, my units, enemy units, center
+ *   destination space block                     15
+ *     present, x, y, garden one-hot(7), active, my units, enemy units, center,
+ *     upgraded
  *   origin space block                           3   (present, x, y)
  *   unit flags                                   2   (is snail, is mine)
  *   choice scalars                               4   (clone count, take wish, take gnome, accept)
  */
-export const OPTION_SIZE = ACTION_TYPES.length + ENCODED_CARD_IDS.length + PLANTABLE_TYPES.length + TARGET_KINDS.length + MAX_SEATS + 14 + 3 + 2 + 4;
+export const OPTION_SIZE = ACTION_TYPES.length + ENCODED_CARD_IDS.length + PLANTABLE_TYPES.length + TARGET_KINDS.length + MAX_SEATS + 15 + 3 + 2 + 4;
 
 const OPT_TYPE = 0;
 const OPT_CARD = OPT_TYPE + ACTION_TYPES.length;
@@ -322,7 +335,7 @@ const OPT_PLANTABLE = OPT_CARD + ENCODED_CARD_IDS.length;
 const OPT_TARGET_KIND = OPT_PLANTABLE + PLANTABLE_TYPES.length;
 const OPT_REL_SEAT = OPT_TARGET_KIND + TARGET_KINDS.length;
 const OPT_DEST = OPT_REL_SEAT + MAX_SEATS;
-const OPT_FROM = OPT_DEST + 14;
+const OPT_FROM = OPT_DEST + 15;
 const OPT_UNIT = OPT_FROM + 3;
 const OPT_CHOICE = OPT_UNIT + 2;
 
@@ -351,6 +364,7 @@ export function encodeOption(state: GameState, seat: PlayerId, action: Action): 
     if (g) {
       out[OPT_DEST + 3 + (gardenIndex.get(g.type) ?? 0)] = 1;
       out[OPT_DEST + 10] = gardenIsActive(state, g) ? 1 : 0;
+      out[OPT_DEST + 14] = g.upgraded ? 1 : 0;
     }
     let mine = 0;
     let enemy = 0;
@@ -398,6 +412,9 @@ export function encodeOption(state: GameState, seat: PlayerId, action: Action): 
     case 'plant':
       setDest(action.pos);
       out[OPT_PLANTABLE + (plantableIndex.get(action.gardenType) ?? 0)] = 1;
+      break;
+    case 'upgrade':
+      setDest(action.pos);
       break;
     case 'slide':
     case 'tunnel':

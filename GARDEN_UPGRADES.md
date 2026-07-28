@@ -1,6 +1,8 @@
 # Garden Upgrades & Per-Player Supply — Design + Implementation Notes
 
-Design finalized with the designer on 2026-07-28. The rules themselves live in
+Design finalized with the designer on 2026-07-28; implemented the same day
+(see ROADMAP.md milestone 14 for the delivery summary — the implementation map
+below doubles as a guide to where everything lives). The rules themselves live in
 **RULES.md** (settings table, Action Phase, "Garden Upgrades", and the
 per-garden **Upgraded** entries) — that stays the single source of truth. This
 document records the *why* behind the rulings and maps the work onto the
@@ -89,3 +91,12 @@ codebase for the implementation phase.
 - Glacier sliding past blockers — check it doesn't trivialize flytrap/maize
   defenses.
 - 4-player tile abundance (16/type total) — board may get crowded on 7×7.
+- **Observed after implementation (2026-07-28)**: 2-player Hard AI-vs-AI games
+  now end around turn 11 by home capture, noticeably faster than before —
+  upgraded mushroom economies build armies quickly, and the AI sinks its
+  wishes into planting + upgrading instead of drawing cards (default-config
+  self-play seeds 1–40 contained zero card plays). Games stay coherent and
+  terminate, and the AI card-play machinery still works when wishes are
+  plentiful (the ML sample-extractor test now uses a wish-rich config for
+  exactly this reason) — but the pace and the card economy's role are real
+  design shifts to evaluate in playtesting.

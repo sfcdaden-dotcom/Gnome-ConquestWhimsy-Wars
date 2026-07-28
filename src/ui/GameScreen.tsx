@@ -17,7 +17,7 @@ import type {
   Pos,
   UnitId,
 } from '../engine';
-import { getLegalActionIntents, getPendingDecisionOptions, posKey, samePos } from '../engine';
+import { gardenAt, getLegalActionIntents, getPendingDecisionOptions, posKey, samePos } from '../engine';
 import { Board } from './Board';
 import type { HighlightKind } from './Board';
 import { DecisionPanel } from './DecisionPanel';
@@ -42,15 +42,17 @@ const NO_SEL: Sel = { kind: 'none' };
 
 /**
  * Is the selected unit still actionable? It must still exist and still have a
- * legal move or a legal plant on its space (the same test the board click
- * uses), so a stale selection can never survive a state update.
+ * legal move or a legal plant/upgrade on its space (the same test the board
+ * click uses), so a stale selection can never survive a state update.
  */
 function selectionStillValid(state: GameState, legal: readonly Action[], sel: Sel): boolean {
   if (sel.kind === 'none') return true;
   const u = state.units[sel.unitId];
   if (!u) return false;
   return legal.some(
-    (a) => (a.type === 'move' && a.unitId === u.id) || (a.type === 'plant' && samePos(a.pos, u.pos)),
+    (a) =>
+      (a.type === 'move' && a.unitId === u.id) ||
+      ((a.type === 'plant' || a.type === 'upgrade') && samePos(a.pos, u.pos)),
   );
 }
 
@@ -302,6 +304,13 @@ export function GameScreen({ options, seed, onPlayAgain, onQuit }: GameScreenPro
           a.type === 'plant' && samePos(a.pos, selectedUnit.pos),
       )
     : [];
+  const upgradeAction = selectedUnit
+    ? legal.find(
+        (a): a is Extract<Action, { type: 'upgrade' }> =>
+          a.type === 'upgrade' && samePos(a.pos, selectedUnit.pos),
+      )
+    : undefined;
+  const upgradeGardenType = upgradeAction ? gardenAt(state, upgradeAction.pos)?.type : undefined;
 
   return (
     /* The data-* attributes mirror already-visible game state (status, phase,
@@ -409,6 +418,17 @@ export function GameScreen({ options, seed, onPlayAgain, onQuit }: GameScreenPro
                     {GARDEN_META[a.gardenType].emoji} Plant {GARDEN_META[a.gardenType].label}
                   </button>
                 ))}
+                {upgradeAction && upgradeGardenType && upgradeGardenType !== 'home' && (
+                  <button
+                    type="button"
+                    className="btn"
+                    data-testid="upgrade-garden"
+                    title={GARDEN_META[upgradeGardenType].upgradeBlurb}
+                    onClick={() => act(upgradeAction)}
+                  >
+                    ⭐ Upgrade to {GARDEN_META[upgradeGardenType].upgradeLabel} (2 ✨)
+                  </button>
+                )}
                 {sel.kind === 'unit' && (
                   <button type="button" className="btn small" data-testid="deselect" onClick={() => setSel(NO_SEL)}>
                     Deselect
@@ -512,14 +532,24 @@ function bannerText(state: GameState, playerToAct: PlayerId | null): string {
 function SupplyPanel({ state }: { state: GameState }) {
   return (
     <div className="supply-panel">
-      <div className="panel-title">Garden supply</div>
-      <div className="supply-grid">
-        {Object.entries(state.supply).map(([type, count]) => (
-          <span key={type} title={GARDEN_META[type as keyof typeof GARDEN_META].label}>
-            {GARDEN_META[type as keyof typeof GARDEN_META].emoji} {count}
-          </span>
+      <div className="panel-title">Garden tiles</div>
+      {state.players
+        .filter((p) => p.status === 'playing')
+        .map((p) => (
+          <div key={p.id} className="supply-row">
+            <span className="small supply-owner">{p.name}</span>
+            <span className="supply-grid">
+              {Object.entries(p.supply).map(([type, count]) => (
+                <span
+                  key={type}
+                  title={`${GARDEN_META[type as keyof typeof GARDEN_META].label} — ${p.name} has ${count} tile(s)`}
+                >
+                  {GARDEN_META[type as keyof typeof GARDEN_META].emoji} {count}
+                </span>
+              ))}
+            </span>
+          </div>
         ))}
-      </div>
     </div>
   );
 }

@@ -22,6 +22,7 @@ import {
   isOrthAdjacent,
   maizeExitCost,
   plantWishCost,
+  playerUnitsAt,
   posKey,
   pushEvent,
   requireTurn,
@@ -101,6 +102,8 @@ export function dispatch(draft: GameState, action: Action): void {
       return doMove(draft, action.player, action.unitId, action.to);
     case 'plant':
       return doPlant(draft, action.player, action.pos, action.gardenType);
+    case 'upgrade':
+      return doUpgrade(draft, action.player, action.pos);
     case 'drawCard':
       return doDrawCard(draft, action.player);
     case 'playCard':
@@ -159,22 +162,49 @@ function doPlant(draft: GameState, player: PlayerId, pos: Pos, gardenType: strin
   const p = getPlayer(draft, player);
   if (p.status !== 'playing') illegal('Snails cannot plant gardens');
   if (gardenType === 'home') illegal('A second Home Garden can never be planted');
-  if (!(gardenType in draft.supply)) badArg(`Unknown garden type: ${gardenType}`);
-  const gt = gardenType as keyof GameState['supply'];
+  if (!(gardenType in p.supply)) badArg(`Unknown garden type: ${gardenType}`);
+  const gt = gardenType as keyof typeof p.supply;
   if (!inBounds(draft, pos)) badArg(`(${pos.x},${pos.y}) is off the board`);
   if (gardenAt(draft, pos)) illegal(`(${pos.x},${pos.y}) already has a garden`);
   if (enemyUnitsAt(draft, pos, player).length > 0) illegal(`(${pos.x},${pos.y}) contains enemy critters`);
   if (!canPlantAt(draft, player, pos)) {
     illegal(`You need one of your gnomes on (${pos.x},${pos.y}) to plant there`);
   }
-  if (draft.supply[gt] <= 0) illegal(`The shared supply has no ${gardenType} tiles left`);
+  if (p.supply[gt] <= 0) illegal(`Your supply has no ${gardenType} tiles left`);
   const cost = plantWishCost(draft); // 1, or 2 under Compost Combustion
   if (p.wishes < cost) illegal(`Planting a garden costs ${cost} Wish(es)`);
 
   spendWishes(draft, player, cost, 'plant garden');
-  draft.supply[gt] -= 1;
-  draft.gardens[posKey(pos)] = makeGarden(gt, t.number);
+  p.supply[gt] -= 1;
+  draft.gardens[posKey(pos)] = makeGarden(gt, t.number, undefined, player);
   pushEvent(draft, { type: 'gardenPlanted', player, pos: { ...pos }, gardenType: gt });
+}
+
+/** Flat upgrade cost (deliberately NOT doubled by Compost Combustion, which
+ *  taxes planting specifically). */
+export const UPGRADE_WISH_COST = 2;
+
+function doUpgrade(draft: GameState, player: PlayerId, pos: Pos): void {
+  requireActionPhaseActor(draft, player);
+  const p = getPlayer(draft, player);
+  if (p.status !== 'playing') illegal('Snails cannot upgrade gardens');
+  if (!inBounds(draft, pos)) badArg(`(${pos.x},${pos.y}) is off the board`);
+  const g = gardenAt(draft, pos);
+  if (!g) illegal(`(${pos.x},${pos.y}) has no garden to upgrade`);
+  if (g.type === 'home') illegal('Home Gardens cannot be upgraded');
+  if (g.upgraded) illegal(`The ${g.type} garden at (${pos.x},${pos.y}) is already upgraded`);
+  // Control = your gnome occupies it, no enemy units. The flytrap itself does
+  // not block upgrading its own garden (an inactive or stunned flytrap can be
+  // stood on); enemy units always do.
+  if (enemyUnitsAt(draft, pos, player).length > 0) illegal(`(${pos.x},${pos.y}) contains enemy units`);
+  if (!playerUnitsAt(draft, pos, player).some((u) => u.kind === 'gnome')) {
+    illegal(`You need one of your gnomes on (${pos.x},${pos.y}) to upgrade the garden there`);
+  }
+  if (p.wishes < UPGRADE_WISH_COST) illegal(`Upgrading a garden costs ${UPGRADE_WISH_COST} Wishes`);
+
+  spendWishes(draft, player, UPGRADE_WISH_COST, 'upgrade garden');
+  g.upgraded = true;
+  pushEvent(draft, { type: 'gardenUpgraded', player, pos: { ...pos }, gardenType: g.type });
 }
 
 function doDrawCard(draft: GameState, player: PlayerId): void {

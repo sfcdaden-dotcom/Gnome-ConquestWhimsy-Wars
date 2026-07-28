@@ -456,6 +456,31 @@ function scoreActionPhase(state: GameState, player: PlayerId, action: Action): n
       // AI never plants one on purpose.
       return -1;
     }
+    case 'upgrade': {
+      // Upgrades are tile-sticky investments — anyone who takes the garden
+      // takes the upgrade — so only buy one on a garden we can actually hold:
+      // the defended economy cluster near home. Keep a 1-wish buffer over the
+      // 2-wish cost (mirrors the plant buffer).
+      if (p.wishes < 3) return -1;
+      const g = gardenAt(state, action.pos);
+      if (!g) return -Infinity;
+      const home = p.homePos;
+      if (g.type === 'dandelion' || g.type === 'mushroom') {
+        // Golden Dandelion (+1 wish cap while held) / Elder Mushroom (clone up
+        // to 3). Score just above the corresponding plant: deepening a held
+        // garden beats starting an unheld one.
+        if (manhattan(action.pos, home) > ECONOMY_CLUSTER_RADIUS) return -1;
+        if (g.type === 'mushroom' && reserveGnomes(state, player) < 6) return -1;
+        return 9.5;
+      }
+      if (g.type === 'maize') {
+        // Thorn Maize: double the toll on a maize already guarding our approach.
+        return manhattan(action.pos, home) <= 2 ? 4 : -1;
+      }
+      // Flytrap bites its upgrader too; slippery/tunnel upgrades are too
+      // situational for the heuristic — skip.
+      return -1;
+    }
     case 'drawCard': {
       // Draw only when wish-rich with hand room: cheap enough not to starve
       // plants/attacks (scores below them and above endTurn's 0.1), and never
@@ -820,7 +845,7 @@ function planSundownSabotage(state: GameState, player: PlayerId): { action: Acti
 
 /** Plant free Tunnel(s) adjacent to our own gnomes (immediate access, no wish cost). */
 function planPocketShovel(state: GameState, player: PlayerId): { action: Action; score: number } | null {
-  const required = Math.min(2, state.supply.tunnel);
+  const required = Math.min(2, state.players[player].supply.tunnel);
   if (required <= 0) return null;
   const n = state.config.boardSize;
   const isEmpty = (pos: Pos) =>
@@ -943,7 +968,7 @@ function planWildGrowth(
   const fewEconomy = ownedEconomyGardens(state, player) < 2;
   const wanted: Array<'mushroom' | 'dandelion'> =
     deepReserves && fewEconomy ? ['mushroom', 'dandelion'] : ['dandelion', 'mushroom'];
-  const gardenType = wanted.find((g) => state.supply[g] > 0);
+  const gardenType = wanted.find((g) => state.players[player].supply[g] > 0);
   if (!gardenType) return null;
 
   const home = ownHomePos(state, player) ?? state.players[player].homePos;

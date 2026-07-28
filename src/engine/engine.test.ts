@@ -44,10 +44,11 @@ function checkInvariants(s: GameState): void {
     expect(u.pos.x).toBeLessThan(n);
     expect(u.pos.y).toBeLessThan(n);
   }
-  for (const count of Object.values(s.supply)) {
-    expect(count).toBeGreaterThanOrEqual(0);
-  }
   for (const p of s.players) {
+    for (const count of Object.values(p.supply)) {
+      expect(count).toBeGreaterThanOrEqual(0);
+      expect(count).toBeLessThanOrEqual(s.config.tilesPerType);
+    }
     expect(p.wishes).toBeGreaterThanOrEqual(0);
     expect(p.gnomesSpawned).toBeLessThanOrEqual(s.config.totalReinforcements);
     expect(p.gnomesLost).toBeLessThanOrEqual(p.gnomesSpawned);
@@ -78,7 +79,10 @@ describe('createGame', () => {
     expect(s.rollModifiers).toEqual([0, 0, 0, 0]);
     // 'many' preset: 4 homes + 16 preset gardens.
     expect(Object.keys(s.gardens)).toHaveLength(20);
-    expect(s.supply.tunnel).toBe(4); // 8 − 4 preset tunnels
+    // Preset gardens are WILD tiles: nobody's supply pays for them, and none
+    // records a planter.
+    for (const p of s.players) expect(p.supply.tunnel).toBe(4);
+    for (const g of Object.values(s.gardens)) expect(g.plantedBy).toBeUndefined();
   });
 
   it('accepts a custom garden layout, bypassing the built-in preset registry', () => {
@@ -101,8 +105,11 @@ describe('createGame', () => {
     ]);
     expect(s.gardens['1,1'].type).toBe('dandelion');
     expect(s.gardens['5,5'].type).toBe('maize');
-    expect(s.supply.dandelion).toBe(7);
-    expect(s.supply.maize).toBe(7);
+    // Custom-layout gardens are wild: supplies stay untouched.
+    for (const p of s.players) {
+      expect(p.supply.dandelion).toBe(4);
+      expect(p.supply.maize).toBe(4);
+    }
   });
 
   it('rejects a custom layout that collides with a Home Garden space', () => {
@@ -617,8 +624,8 @@ describe('AI policies', () => {
     const pos = { x: home.x + 1, y: home.y };
     const g = withGnome(s, me, pos);
     s = mutate(g.state, (d) => {
-      d.supply.dandelion = 0;
-      d.supply.mushroom = 0;
+      d.players[me].supply.dandelion = 0;
+      d.players[me].supply.mushroom = 0;
       d.players[me].wishes = 5;
       d.units[g.unitId].movedOnTurn = d.turn!.number; // no move competes with the plant
     });
@@ -634,10 +641,10 @@ describe('AI policies', () => {
     s = mutate(g.state, (d) => {
       const blank = { plantedOnTurn: 0, stunnedForPlayerTurn: null, doubledForPlayerTurn: null };
       d.gardens['0,0'] = { type: 'tunnel', ...blank }; // an existing tunnel elsewhere to link to
-      d.supply.dandelion = 0;
-      d.supply.mushroom = 0;
-      d.supply.maize = 0;
-      d.supply.flytrap = 0;
+      d.players[me].supply.dandelion = 0;
+      d.players[me].supply.mushroom = 0;
+      d.players[me].supply.maize = 0;
+      d.players[me].supply.flytrap = 0;
       d.players[me].wishes = 5;
       d.units[g.unitId].movedOnTurn = d.turn!.number;
     });
@@ -716,7 +723,7 @@ describe('AI policies', () => {
         if (Math.abs(x - home.x) + Math.abs(y - home.y) <= 3) delete d.gardens[key];
       }
       delete d.gardens[`${pos.x},${pos.y}`];
-      d.supply.mushroom = 0; // force the dandelion branch for a stable assertion
+      d.players[me].supply.mushroom = 0; // force the dandelion branch for a stable assertion
       d.players[me].wishes = 5;
       d.players[me].hand = [];
       d.units[g.unitId].movedOnTurn = d.turn!.number; // no move competes with the plant
@@ -754,9 +761,9 @@ describe('AI policies', () => {
     s = mutate(s, (d) => {
       for (const id of Object.keys(d.units)) if (d.units[id].owner === me) delete d.units[id];
       delete d.gardens[`${pos.x},${pos.y}`];
-      d.supply.dandelion = 0; // take the economy plant off the table
-      d.supply.mushroom = 0;
-      d.supply.tunnel = 0;
+      d.players[me].supply.dandelion = 0; // take the economy plant off the table
+      d.players[me].supply.mushroom = 0;
+      d.players[me].supply.tunnel = 0;
       d.players[me].wishes = 2; // enough to plant, too few to make drawing worthwhile
       d.players[me].hand = [];
     });

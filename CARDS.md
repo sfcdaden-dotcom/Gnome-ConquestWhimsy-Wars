@@ -56,7 +56,8 @@ implementation rulings marked **[IMPL]**. This file is the source of truth for
 ## Ritual Magic (13 cards)
 
 1. **Wild Growth** — Plant any garden on any empty space. [IMPL]: free (no wish
-   cost), no gnome required; normal supply limits; "empty" = no garden, no critters.
+   cost), no gnome required; the tile comes from the **card player's own supply**
+   (per-player supply, RULES.md); "empty" = no garden, no critters.
 2. **Instigation** — 2 target gnomes fight. [IMPL]: any two gnomes with different
    owners, anywhere on the board; they fight per the 3 R's without moving; the first-
    chosen target is the "attacker" for tie-break curse purposes.
@@ -83,7 +84,8 @@ implementation rulings marked **[IMPL]**. This file is the source of truth for
 11. **Mushroom Cloud** — Target non-Home garden and all gnomes on its space are
     destroyed.
 12. **Pocket Shovel** — Plant two Tunnel Gardens on any two empty spaces (free;
-    supply limits apply; if only 1 tunnel left in supply, plant 1).
+    tiles come from the **card player's own supply**; if only 1 of their tunnel
+    tiles remains, plant 1).
 13. **Lost In The Maize** — Gnomes can't leave Maize Gardens until your next turn
     (even by paying, sliding, tunneling, or card effects).
 
