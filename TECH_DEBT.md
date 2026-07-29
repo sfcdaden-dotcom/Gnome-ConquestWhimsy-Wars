@@ -178,6 +178,29 @@ blocks · **P3** opportunistic.
   chain always terminates (see the `slide`/`tunnel`/`snailMove` case in
   `ai.ts`). That heuristic still stands; the cap is now the hard floor beneath
   it, so no policy — human or learned — can stall a game this way.
+- **The seed is still a secret worth protecting (Milestone 11, server side).**
+  Per-seat redaction landed 2026-07-29 (`view.ts`): `viewFor(state, seat)`
+  strips `rngState`, `seed`, the draw pile, foreign hands, the private half of
+  the pending decision, and the card identities in draw/steal events, keeping
+  every count structurally intact. That closes the *broadcast* leak. Two holes
+  remain and both belong to the server, not the engine:
+  1. **Who picks the seed.** Today the client passes it to `createGame`. A
+     client that knows the seed knows the deck order and every future die roll,
+     redaction or no redaction. The room server must generate it (crypto
+     random) and never send it.
+  2. **The `random` preset's layout is seed-derived and visible.** So the board
+     itself narrows the seed: an attacker can search the 2^32 space, generating
+     layouts until one matches, then replay the deck. Feasible offline for a
+     motivated person. Fixes, cheapest first: re-seed `rngState` from a fresh
+     crypto-random value *and* reshuffle the deck after setup, so the layout
+     and the deck stop sharing a secret; or generate the layout from a separate,
+     publishable seed. Not urgent for friend-room play, but it is the difference
+     between "hidden" and "hidden from casual players".
+
+  Also unresolved: the hand panel renders `HIDDEN_CARD_ID` as its literal
+  string. Nothing shows another seat's hand today, so it is unreachable —
+  give it a face-down card back when the multiplayer UI lands.
+
 - **Stall vectors that rules cannot close (host responsibility, Milestone 11).**
   Audited 2026-07-29 alongside the chain cap. Two remain, and both are the same
   shape: legal actions that change nothing.

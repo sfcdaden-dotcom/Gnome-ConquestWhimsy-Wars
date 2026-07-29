@@ -32,6 +32,7 @@ implementation detail and may move again.
 | `gardens.ts` | harvests, planting, entry effects |
 | `fights.ts` | fight resolution (Respond → Roll → Resolve) |
 | `cards.ts` | card framework, definitions, the card stack |
+| `view.ts` | per-seat redaction: `GameState` → `PlayerView` (multiplayer) |
 | `helpers.ts` | shared queries and draft mutators |
 | `setup.ts` / `gardenPresets.ts` / `randomLayout.ts` / `rng.ts` / `types.ts` | creation, layouts, procedural map generation, RNG, types |
 
@@ -160,6 +161,57 @@ nothing about the board, so a chatty CPU leaks no information), then takes its
 real action on the next call. The coin flip and the phrase are hashed from
 (seed, turn, seat), so the AI stays deterministic, and the engine's own
 `quickChatsThisTurn` counter is what stops it repeating within a turn.
+
+## Hidden information & per-seat views (multiplayer)
+
+`GameState` is a **full-information** object, and deliberately so: on one
+device the holder sees everything anyway, and the tests, the AI and the
+encoders all want the whole truth. Over a network that is the entire game
+given away. Raw state carries every hand, the deck order, and `rngState` —
+from which every future draw and every future die roll is computable.
+
+`view.ts` is the boundary:
+
+```ts
+viewFor(state, seat) → PlayerView   // what `seat` may see; seat = null ⇒ spectator
+isPlayerView(state) → boolean
+nameSaltOf(state) → number          // cosmetic salt: seed locally, nameSalt over the wire
+```
+
+The rule is the one `encode.ts` already pins for the learned CPU: **your own
+hand in full; every other hidden zone as counts only.** Counts are preserved
+*structurally* — a hidden card is present in the array as `HIDDEN_CARD_ID` —
+so `deck.length`, `hand.length` and "how many cards does Red hold" keep
+working while the identities are gone.
+
+| Redacted | Public, deliberately |
+|---|---|
+| `rngState`, `seed` | hand SIZES, deck/discard COUNTS |
+| `deck`, `cursePool` contents | the discard pile itself (face up) |
+| every other seat's `hand` | the card stack (a played card is announced) |
+| `fightRespond` / `cardResponse` `playableCards` of other seats — emptied, not just hidden, because the count is itself information | active curses, timed effects, the whole board |
+| another seat's in-progress `cardTargeting` (`cardId` **and** `prompt`, which names the card) — the card is still in hand until the last target is picked, and `cancelTargeting` puts it back | `cardPlayed` / `cardResolved` / `cardCancelled` / `cardFizzled` / `cardDiscarded` / `curseRevealed` events |
+| `cardDrawn.cardId` (except the drawer), `cardStolen.cardId` (except the two parties), `deckReshuffled.curseAdded` | everything else in the event log |
+
+Two consequences worth knowing:
+
+- **A `PlayerView` is structurally a `GameState`**, so rendering code takes it
+  unchanged — but it is *not* a legal engine input. `rngState` is zeroed and
+  the hidden zones are placeholders, so applying actions to one would silently
+  diverge from the authoritative game rather than fail. `applyAction` rejects
+  a view outright (`EngineError('INTERNAL')`).
+- **Gnome names can no longer read `seed`.** They are derived from
+  `(seed, unitId)`, and the seed with `config` regenerates the whole deck, so
+  a view carries `nameSalt` — a *truncated* (16-bit) hash instead. Truncation
+  is the point: `normalizeSeed` is a bijection on uint32, so the untruncated
+  hash would be an invertible copy of the seed. UI name code calls
+  `nameSaltOf(state)`, which is the seed for local play and the salt for a
+  view.
+
+Not solved here, and a server's job: the seed must be server-chosen and
+server-kept (a client that picks it knows the deck), and with the `random`
+garden preset the visible layout is seed-derived, so a determined attacker can
+search the 2^32 seed space against the board. See TECH_DEBT.md.
 
 ## Turn structure
 
