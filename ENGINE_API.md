@@ -89,6 +89,47 @@ stack / response queue / fight queue / elimination queue depths, harvest
 progress, `turnMustEnd` and the step count — so the stalled branch is
 identifiable from the message alone.
 
+## Termination & anti-stall (multiplayer)
+
+The settle loop only guarantees that *one* action converges. A turn is a
+different question: what stops a player from taking legal actions forever, or
+from taking none at all? Three layers answer it.
+
+**1. Bounded actions (rules).** Every Action-Phase action is either
+self-limiting (`move` — one per unit per turn) or paid for out of a finite
+resource (`plant`, `upgrade`, `drawCard` cost Wishes; `playCard` costs a card).
+
+**2. Capped entry-effect chains (rules).** Mobility entry effects re-trigger on
+arrival, so tunnel→tunnel (or two adjacent Slippery Gardens) is a loop a client
+could ride forever — every hop is a legal action, so the engine never hangs, but
+the turn never ends either. `MAX_ENTRY_EFFECT_HOPS` (3, `gardens.ts`) bounds it:
+`handleEntry(draft, unitId, hops)` stops offering the effect once the chain hits
+the cap, and each `slide` / `tunnel` decision carries the `hops` it is answering
+so the count survives across actions without extra state. A fresh arrival
+(normal move, card placement) starts at 0; a mandatory harvest activation opens
+a fresh chain and counts as its first relocation. Reaching the cap logs
+`entryChainCapped`. Mandatory harvest relocations are never blocked by it.
+
+**3. Shot clock (host).** A client that simply stops sending actions — or spins
+on state-neutral ones like `playCard` → `cancelTargeting` → `playCard` — cannot
+be answered by rules, and the engine deliberately holds no wall clock. The host
+decides when a seat has run out of time and calls:
+
+```ts
+getTimeoutAction(state) → Action | null   // the default answer for whoever must act
+applyTimeout(state) → GameState           // apply it until control leaves that seat
+isOnTheClock(state, player) → boolean
+```
+
+`getTimeoutAction` picks the most passive legal option — `declineEffect`,
+then `respondPass`, `cancelTargeting`, `endTurn`, otherwise the first action of
+the engine's own deterministic enumeration (the first harvest source,
+`mushroomClones: 0`, the first forced move under Antsy Pants…). It never plays a
+card. `applyTimeout` repeats that until somebody else is on the clock, so one
+call closes a whole stalled turn including the moves Antsy Pants forces before
+`endTurn` becomes legal. It is pure, like `applyAction`, and identical on every
+host — a timed-out game replays deterministically.
+
 ## Turn structure
 
 - `startTurn`: expire the player's own "until your next turn" effects
@@ -112,7 +153,7 @@ identifiable from the message alone.
 | `chooseHarvest` | `chooseHarvest` |
 | `homeHarvest` | `homeHarvest` |
 | `mushroomClones` | `mushroomClones` |
-| `slide` / `tunnel` | `slide` / `tunnel`, `declineEffect` when optional |
+| `slide` / `tunnel` | `slide` / `tunnel`, `declineEffect` when optional (carries `hops`, capped by `MAX_ENTRY_EFFECT_HOPS`) |
 | `fightRespond` | `respondPass`, `respondPlayCard` |
 | `cardResponse` | `respondPass`, `respondPlayCard` (incl. Nope-Gnome) |
 | `cardTargeting` | `selectTarget` (one of `getPendingDecisionOptions`), `cancelTargeting` |

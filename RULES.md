@@ -92,6 +92,15 @@ The turn ends when all your units have used their movement or you choose to pass
 - Entering a garden with an entry effect lets you **choose** to activate the entry
   effect, if: the garden wasn't planted this turn, and it contains no enemies.
   (Flytrap entry is NOT optional — see Flytrap.)
+- **[RULING] Entry-effect chains are capped at 3 relocations.** An entry effect
+  that relocates a gnome (Tunnel, Slippery) triggers the destination's entry
+  effect in turn, so a chain can keep going. A single arrival chain may relocate
+  a gnome **at most 3 times** — the gnome is too dizzy to hop again and stays
+  where it landed. The count starts at each fresh arrival (your own move, a card
+  placement) and a mandatory harvest activation opens a fresh chain and counts as
+  its first relocation. Without the cap, two tunnels (or two adjacent Slippery
+  Gardens) can be hopped between forever, which is a stalling tactic rather than
+  a play.
 - Per-player limits: max 8 on board, 16 total ever spawned. When all 16 have been
   spawned and destroyed, that player is out of reinforcements and is eliminated.
 
@@ -235,7 +244,8 @@ Any non-Home garden can be upgraded once to a stronger form — see each garden'
 - On Harvest (mandatory activation, slide itself is the player's choice of
   destination — may include diagonal spaces): slide to any adjacent or diagonal space.
 - Slides do not consume the unit's movement action. Slides can trigger the entered
-  space's entry effects/fights as normal entry.
+  space's entry effects/fights as normal entry — subject to the 3-relocation chain
+  cap under **Gnomes**.
 - **Upgraded — Glacier**:
   - On Entry (optional): slide to an adjacent **or diagonal** space.
   - On Harvest (mandatory activation, destination is the player's choice):
@@ -251,7 +261,7 @@ Any non-Home garden can be upgraded once to a stronger form — see each garden'
 - On Harvest: move to any other tunnel garden, OR to any garden occupied by one of
   your own gnomes.
 - Tunnel moves don't consume movement actions; arriving is an Entry (triggers
-  effects/fights).
+  effects/fights) — subject to the 3-relocation chain cap under **Gnomes**.
 - **Upgraded — Grand Burrow**: the *entry* effect offers the full harvest
   destination list (any other tunnel garden, OR any garden occupied by one of
   your own gnomes).

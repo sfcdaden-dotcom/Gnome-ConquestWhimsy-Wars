@@ -366,6 +366,12 @@ export type PendingDecision =
       /** true ⇒ entry effect (may be declined); false ⇒ mandatory harvest slide. */
       optional: boolean;
       context: 'entry' | 'harvest';
+      /**
+       * Relocations this unit has already taken in the current chain (this one
+       * is hop number `hops + 1`). Bounds entry-effect chains — see
+       * MAX_ENTRY_EFFECT_HOPS in gardens.ts.
+       */
+      hops: number;
     }
   | {
       kind: 'tunnel';
@@ -375,6 +381,8 @@ export type PendingDecision =
       options: Pos[];
       optional: boolean;
       context: 'entry' | 'harvest';
+      /** See the `slide` decision's `hops`. */
+      hops: number;
     }
   | {
       kind: 'fightRespond';
@@ -508,6 +516,7 @@ export type GameEvent =
   | { type: 'unitSlid'; player: PlayerId; unitId: UnitId; unitKind: UnitKind; from: Pos; to: Pos; context: 'entry' | 'harvest' }
   | { type: 'unitTunneled'; player: PlayerId; unitId: UnitId; unitKind: UnitKind; from: Pos; to: Pos; context: 'entry' | 'harvest' }
   | { type: 'entryEffectDeclined'; player: PlayerId; unitId: UnitId; unitKind: UnitKind; pos: Pos }
+  | { type: 'entryChainCapped'; player: PlayerId; unitId: UnitId; unitKind: UnitKind; pos: Pos; hops: number }
   | { type: 'gardenPlanted'; player: PlayerId; pos: Pos; gardenType: PlantableGardenType }
   | { type: 'gardenUpgraded'; player: PlayerId; pos: Pos; gardenType: PlantableGardenType }
   | { type: 'gardenDestroyed'; pos: Pos; gardenType: GardenType; cause: 'snail' | 'card' | 'elimination' }

@@ -14,6 +14,7 @@ import { describe, expect, it } from 'vitest';
 import type { CreateGameOptions, GameState } from './index';
 import {
   EngineError,
+  MAX_ENTRY_EFFECT_HOPS,
   applyAction,
   chooseAiAction,
   createGame,
@@ -232,6 +233,109 @@ describe('turn lifecycle', () => {
   it('stays JSON-serializable mid-game', () => {
     const s = drive(newGame(3, { gardenPreset: 'few' }), () => false, 200);
     expect(JSON.parse(JSON.stringify(s))).toEqual(s);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Entry-effect chains (anti-stall)
+// ---------------------------------------------------------------------------
+
+describe('entry-effect chains', () => {
+  /** A 4-tunnel network plus one gnome of the active player poised to step in. */
+  function tunnelNetwork(seed = 5) {
+    let s = toActionPhase(seed);
+    const me = activePlayer(s);
+    for (const p of [
+      { x: 3, y: 1 },
+      { x: 5, y: 1 },
+      { x: 5, y: 5 },
+      { x: 3, y: 5 },
+    ]) {
+      s = withGarden(s, p, 'tunnel');
+    }
+    const g = withGnome(s, me, { x: 2, y: 1 });
+    return { state: g.state, me, unitId: g.unitId };
+  }
+
+  /** Accept every offered hop (the griefer's policy) until the chain closes. */
+  function hopForever(state: GameState, me: number, kind: 'tunnel' | 'slide'): { state: GameState; hops: number } {
+    let s = state;
+    let hops = 0;
+    while (s.pendingDecision?.kind === kind) {
+      expect(s.pendingDecision.hops).toBe(hops);
+      const from = s.units[s.pendingDecision.unitId].pos;
+      // Griefer's policy: always hop onto another mobility garden, so the
+      // chain would re-trigger forever if the engine let it.
+      const elsewhere = s.pendingDecision.options.filter((p) => p.x !== from.x || p.y !== from.y);
+      const to = elsewhere.find((p) => {
+        const g = s.gardens[posKey(p)];
+        return g?.type === 'tunnel' || g?.type === 'slippery';
+      });
+      expect(to).toBeDefined();
+      s = applyAction(s, { type: kind, player: me, to: to! });
+      hops += 1;
+      expect(hops).toBeLessThanOrEqual(MAX_ENTRY_EFFECT_HOPS); // never unbounded
+    }
+    return { state: s, hops };
+  }
+
+  it('caps a chained tunnel hop-fest instead of letting it run forever', () => {
+    const { state, me, unitId } = tunnelNetwork();
+    const moved = applyAction(state, { type: 'move', player: me, unitId, to: { x: 3, y: 1 } });
+    expect(moved.pendingDecision?.kind).toBe('tunnel');
+
+    const { state: s, hops } = hopForever(moved, me, 'tunnel');
+    expect(hops).toBe(MAX_ENTRY_EFFECT_HOPS);
+    expect(s.events.at(-1)).toMatchObject({ type: 'entryChainCapped', unitId, hops: MAX_ENTRY_EFFECT_HOPS });
+    // The turn carries on normally — the gnome simply stops hopping.
+    expect(s.pendingDecision).toBeNull();
+    expect(s.turn?.activePlayer).toBe(me);
+    expect(s.turn?.phase).toBe('action');
+    expect(getLegalActions(s).some((a) => a.type === 'endTurn')).toBe(true);
+  });
+
+  it('caps a slippery ping-pong between two adjacent slippery gardens', () => {
+    let s = toActionPhase(5);
+    const me = activePlayer(s);
+    s = withGarden(s, { x: 3, y: 1 }, 'slippery');
+    s = withGarden(s, { x: 4, y: 1 }, 'slippery');
+    const g = withGnome(s, me, { x: 2, y: 1 });
+    const moved = applyAction(g.state, { type: 'move', player: me, unitId: g.unitId, to: { x: 3, y: 1 } });
+    expect(moved.pendingDecision?.kind).toBe('slide');
+
+    const { state: after, hops } = hopForever(moved, me, 'slide');
+    expect(hops).toBe(MAX_ENTRY_EFFECT_HOPS);
+    expect(after.pendingDecision).toBeNull();
+    expect(after.turn?.phase).toBe('action');
+  });
+
+  it('declining still ends the chain immediately', () => {
+    const { state, me, unitId } = tunnelNetwork();
+    const moved = applyAction(state, { type: 'move', player: me, unitId, to: { x: 3, y: 1 } });
+    const s = applyAction(moved, { type: 'declineEffect', player: me });
+    expect(s.pendingDecision).toBeNull();
+    expect(s.units[unitId].pos).toEqual({ x: 3, y: 1 });
+  });
+
+  it('a mandatory harvest relocation opens a fresh chain and counts toward the cap', () => {
+    // Gnome parked on a tunnel: next Harvest Phase forces a tunnel relocation
+    // (hops 0), whose arrival may chain — but only up to the cap in total.
+    const { state, me } = tunnelNetwork(5);
+    const parked = withGnome(state, me, { x: 3, y: 5 });
+    const s = drive(
+      applyAction(parked.state, { type: 'endTurn', player: me }),
+      (x) => x.turn?.activePlayer === me && x.pendingDecision?.kind === 'tunnel',
+      400,
+    );
+    const d = s.pendingDecision;
+    expect(d?.kind).toBe('tunnel');
+    if (d?.kind !== 'tunnel') throw new Error('unreachable');
+    expect(d.context).toBe('harvest');
+    expect(d.optional).toBe(false);
+    expect(d.hops).toBe(0);
+
+    const { hops } = hopForever(s, me, 'tunnel');
+    expect(hops).toBe(MAX_ENTRY_EFFECT_HOPS); // 1 forced + 2 chained
   });
 });
 
@@ -676,6 +780,7 @@ describe('AI policies', () => {
         options: [{ x: 5, y: 5 }],
         optional: true,
         context: 'entry',
+        hops: 0,
       };
     });
     expect(chooseAiAction(s)).toEqual({ type: 'declineEffect', player: me });

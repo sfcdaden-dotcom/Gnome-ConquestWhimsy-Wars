@@ -47,6 +47,10 @@ export {
   boardGnomes,
 } from './engine';
 export { MAX_SETTLE_STEPS } from './settle';
+export { MAX_ENTRY_EFFECT_HOPS } from './gardens';
+
+// Shot-clock enforcement (multiplayer hosts; the engine holds no wall clock).
+export { getTimeoutAction, applyTimeout, isOnTheClock, MAX_TIMEOUT_STEPS } from './timeout';
 
 // Read-only state queries (safe for UI use).
 export {

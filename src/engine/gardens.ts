@@ -65,14 +65,34 @@ import { queueFight } from './fights';
 // ---------------------------------------------------------------------------
 
 /**
+ * Maximum relocations one arrival chain may make (**[RULING]**, see RULES.md
+ * "Entry effect chains").
+ *
+ * Mobility entry effects re-trigger on arrival, so tunnel→tunnel (or two
+ * adjacent slippery gardens) can be hopped forever: every hop is a legal
+ * action, so the engine never hangs, but a griefing client could keep a turn
+ * open indefinitely and no opponent could ever act. Capping the chain makes the
+ * rules self-terminating instead of relying on players (or the AI's heuristics)
+ * to stop voluntarily. 3 leaves every real line intact — a harvest relocation
+ * plus two chained hops crosses the whole tunnel network — while making
+ * ping-pong impossible.
+ */
+export const MAX_ENTRY_EFFECT_HOPS = 3;
+
+/**
  * Process a unit's arrival on its current space:
  *  1. Active un-stunned flytrap here → mandatory fight vs the arriving unit
  *     (queued first).
  *  2. Enemy units here → fight(s) queued (one per distinct enemy owner).
  *  3. No fights → home-capture elimination check; then optional entry effect
  *     for gnomes on an Active slippery/tunnel garden.
+ *
+ * `hops` is how many relocations this arrival chain has already made (0 for a
+ * fresh arrival: a normal move, a card placement, an elimination shuffle).
+ * Slide/tunnel resolutions pass their own count + 1, and the entry effect stops
+ * being offered once the chain hits MAX_ENTRY_EFFECT_HOPS.
  */
-export function handleEntry(draft: GameState, unitId: UnitId): void {
+export function handleEntry(draft: GameState, unitId: UnitId, hops = 0): void {
   const unit = draft.units[unitId];
   if (!unit) return; // destroyed mid-chain
   const pos = unit.pos;
@@ -122,6 +142,22 @@ export function handleEntry(draft: GameState, unitId: UnitId): void {
   // Optional entry effects (gnomes only; garden must be Active).
   if (unit.kind !== 'gnome' || !garden || !gardenIsActive(draft, garden)) return;
 
+  // Chain cap: the gnome has hopped enough for one arrival — it stays put.
+  // Only mobility gardens can chain, so the event is only worth logging there.
+  if (hops >= MAX_ENTRY_EFFECT_HOPS) {
+    if (garden.type === 'slippery' || garden.type === 'tunnel') {
+      pushEvent(draft, {
+        type: 'entryChainCapped',
+        player: unit.owner,
+        unitId: unit.id,
+        unitKind: unit.kind,
+        pos: { ...pos },
+        hops,
+      });
+    }
+    return;
+  }
+
   if (garden.type === 'slippery') {
     // Glacier (upgraded): the entry slide may also go diagonally.
     const neighbors = garden.upgraded ? allNeighbors(draft, pos) : orthNeighbors(draft, pos);
@@ -135,6 +171,7 @@ export function handleEntry(draft: GameState, unitId: UnitId): void {
         options,
         optional: true,
         context: 'entry',
+        hops,
       };
     }
   } else if (garden.type === 'tunnel') {
@@ -155,6 +192,7 @@ export function handleEntry(draft: GameState, unitId: UnitId): void {
         options,
         optional: true,
         context: 'entry',
+        hops,
       };
     }
   }
@@ -315,6 +353,7 @@ export function continueHarvest(draft: GameState): void {
         options,
         optional: false,
         context: 'harvest',
+        hops: 0, // a harvest activation opens a fresh chain
       };
       return;
     }
@@ -332,6 +371,7 @@ export function continueHarvest(draft: GameState): void {
       options,
       optional: false,
       context: 'harvest',
+      hops: 0, // a harvest activation opens a fresh chain
     };
     return;
   }
@@ -593,7 +633,7 @@ export function resolveSlide(draft: GameState, player: PlayerId, to: Pos): void 
     to: unit.pos,
     context: d.context,
   });
-  handleEntry(draft, unit.id);
+  handleEntry(draft, unit.id, d.hops + 1);
 }
 
 export function resolveTunnel(draft: GameState, player: PlayerId, to: Pos): void {
@@ -621,7 +661,7 @@ export function resolveTunnel(draft: GameState, player: PlayerId, to: Pos): void
     to: unit.pos,
     context: d.context,
   });
-  handleEntry(draft, unit.id);
+  handleEntry(draft, unit.id, d.hops + 1);
 }
 
 export function resolveDeclineEffect(draft: GameState, player: PlayerId): void {

@@ -179,6 +179,8 @@ export function describeEvent(state: GameState, ev: GameEvent): string {
       return `${who(state, ev)} tunnels ${posStr(ev.from)} → ${posStr(ev.to)}.`;
     case 'entryEffectDeclined':
       return `${who(state, ev)} declines the entry effect at ${posStr(ev.pos)}.`;
+    case 'entryChainCapped':
+      return `${who(state, ev)} is too dizzy to keep hopping (${ev.hops} in a row) and stays at ${posStr(ev.pos)}.`;
     case 'gardenPlanted':
       return `${pname(state, ev.player)} plants a ${GARDEN_META[ev.gardenType].label} ${GARDEN_META[ev.gardenType].emoji} at ${posStr(ev.pos)}.`;
     case 'gardenUpgraded':
