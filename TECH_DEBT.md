@@ -134,6 +134,17 @@ blocks · **P3** opportunistic.
   one square. If revisited, make the split *reactive* to an actual blocker, not
   proactive, and prove it moves the win rate before re-adding branching.
 
+- **Quick chat is single-device only so far.** The engine half is
+  multiplayer-ready (a `quickChat` action relays and replays like any other),
+  but the UI speaks for exactly one seat — the revealed human — so in hot-seat
+  play you can only chat as whoever is holding the device, and CPU seats never
+  chat at all — **partly resolved the same day**: the CPU now mutters a
+  rhetorical `musings` line when it sits on a playable Whimsy Card, off a
+  (seed, turn, seat) hash rather than RNG so `chooseAiAction` stays
+  deterministic. That is its whole personality; it never reacts to fights,
+  losses or wins. Decide when real multiplayer lands: per-connection sender
+  identity, and whether the CPU's chatter should react to events (which needs
+  a trigger table, and a rule that it still says nothing informative).
 - **Board size > 7 UI.** Tokens/emoji now scale via container-query units ×
   `--n` (2026-07-16), so 9×9+ renders proportionally — but it has only been
   eyeballed at 7×7; do a visual pass on 9×9/11×11 before exposing board size
@@ -145,9 +156,18 @@ blocks · **P3** opportunistic.
   split into a `test:full` tier and keep 3 games in the default run.
 - **schemaVersion policy.** Still `1`; define bump/migration rules before
   save/load (Milestone 7) ships.
-- **Optional entry-effect chains are unbounded (engine side).** Tunnel→tunnel
-  hops can chain indefinitely if a player keeps accepting (each hop is one
-  action, so the engine never hangs). The **AI** no longer loops here: its
+- ~~**Optional entry-effect chains are unbounded (engine side).**~~ **FIXED
+  2026-07-29.** Tunnel→tunnel hops could chain indefinitely if a player kept
+  accepting (each hop is one action, so the engine never hung — but the turn
+  never ended and no opponent could ever act). `MAX_ENTRY_EFFECT_HOPS` (3) now
+  caps one arrival chain: `handleEntry` takes the chain's `hops` count, each
+  `slide`/`tunnel` decision carries it, and the effect stops being offered at
+  the cap (`entryChainCapped` event). Two adjacent Slippery Gardens were the
+  same loop and are covered by the same cap. Mandatory harvest relocations are
+  never blocked — they open a fresh chain and count as its first hop.
+  **[RULING]** recorded in RULES.md ("Gnomes"); rationale and the surrounding
+  termination argument in ENGINE_API.md ("Termination & anti-stall"). The
+  original AI-side history: its
   "decline non-improving hops" guard (since 2026-07-16) had a hole — a chained
   hop re-scores against `primaryTarget` recomputed from the mover's new
   position, so the target could flip between two tunnels and rate the return
@@ -156,5 +176,22 @@ blocks · **P3** opportunistic.
   by gating each declinable hop on strict progress toward a chain-STABLE anchor
   (the enemy home nearest our own base) — a monotone, bounded potential, so the
   chain always terminates (see the `slide`/`tunnel`/`snailMove` case in
-  `ai.ts`). Still open for multiplayer (Milestone 11): an engine-level [RULING]
-  cap so a griefing *human* client can't stall a game.
+  `ai.ts`). That heuristic still stands; the cap is now the hard floor beneath
+  it, so no policy — human or learned — can stall a game this way.
+- **Stall vectors that rules cannot close (host responsibility, Milestone 11).**
+  Audited 2026-07-29 alongside the chain cap. Two remain, and both are the same
+  shape: legal actions that change nothing.
+  1. **A client that simply never acts.** No rule can fix this.
+  2. **State-neutral spins.** `playCard` (opens `cardTargeting`) →
+     `cancelTargeting` → repeat is free and unbounded by design — the card never
+     leaves the hand, which is exactly what makes cancel safe. Same for
+     re-selecting units in the UI.
+
+  The answer to both is a shot clock, so the engine now ships the *policy* half
+  of one: `getTimeoutAction` / `applyTimeout` / `isOnTheClock` (`timeout.ts`,
+  covered by `timeout.test.ts`, including a full game where one seat never acts).
+  Still to build when multiplayer lands: the clock itself (server-side per-seat
+  timer, since the engine holds no wall clock), whatever grace/warning UX the
+  table wants, and a policy for repeat offenders (auto-resign after N
+  timeouts?). Everything else in the Action Phase is already bounded — one move
+  per unit per turn, and Wishes/cards gate the rest.

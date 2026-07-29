@@ -7,6 +7,7 @@
 
 import type { ReactNode } from 'react';
 import type { Action, CardId, GameState, PendingDecision, PlayerId } from '../engine';
+import { MAX_ENTRY_EFFECT_HOPS } from '../engine';
 import { GARDEN_META, cardName, describeAction, pname, posStr } from './meta';
 
 export interface DecisionPanelProps {
@@ -114,7 +115,8 @@ export function DecisionPanel({ state, decision, legal, interactive, act, onResp
         <Panel title={`${decision.kind === 'slide' ? '🧊' : '🕳️'} ${who}: ${verb.toLowerCase()} from ${posStr(decision.from)}`}>
           <div className="small muted">
             Click a highlighted destination on the board
-            {decision.context === 'harvest' ? ' (harvest effect — must resolve)' : ''}.
+            {decision.context === 'harvest' ? ' (harvest effect — must resolve)' : ''}. Hop{' '}
+            {decision.hops + 1} of {MAX_ENTRY_EFFECT_HOPS} — a gnome gets too dizzy to chain further.
           </div>
           <div className="btn-row">
             {decision.optional && (

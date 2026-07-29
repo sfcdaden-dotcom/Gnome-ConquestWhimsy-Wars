@@ -3,8 +3,8 @@
  * Pure functions over engine data — no rule logic lives here.
  */
 
-import type { Action, CardTarget, FightSide, GameEvent, GameState, GardenType, Pos } from '../engine';
-import { getCardDef, getCurseDef } from '../engine';
+import type { Action, CardTarget, FightSide, GameEvent, GameState, GardenType, Pos, QuickChatId } from '../engine';
+import { getCardDef, getCurseDef, getQuickChatPhrase } from '../engine';
 import type { UnitEventRef } from './gnomeNames';
 import { gnomeName, unitNameFromEvent, unitNameLive } from './gnomeNames';
 
@@ -18,6 +18,12 @@ export const PLAYER_COLOR_NAMES = ['Red', 'Blue', 'Gold', 'Purple'];
 
 export function playerColor(id: number): string {
   return PLAYER_COLORS[id % PLAYER_COLORS.length];
+}
+
+/** "👋 Hi!" for a quick-chat phrase id (raw id if it is not in the catalogue). */
+export function quickChatText(phraseId: QuickChatId): string {
+  const p = getQuickChatPhrase(phraseId);
+  return p ? `${p.emoji} ${p.text}` : phraseId;
 }
 
 /** A fresh random game seed (UI convenience; the engine itself never rolls). */
@@ -179,6 +185,10 @@ export function describeEvent(state: GameState, ev: GameEvent): string {
       return `${who(state, ev)} tunnels ${posStr(ev.from)} → ${posStr(ev.to)}.`;
     case 'entryEffectDeclined':
       return `${who(state, ev)} declines the entry effect at ${posStr(ev.pos)}.`;
+    case 'quickChatSaid':
+      return `💬 ${pname(state, ev.player)}: ${quickChatText(ev.phraseId)}`;
+    case 'entryChainCapped':
+      return `${who(state, ev)} is too dizzy to keep hopping (${ev.hops} in a row) and stays at ${posStr(ev.pos)}.`;
     case 'gardenPlanted':
       return `${pname(state, ev.player)} plants a ${GARDEN_META[ev.gardenType].label} ${GARDEN_META[ev.gardenType].emoji} at ${posStr(ev.pos)}.`;
     case 'gardenUpgraded':

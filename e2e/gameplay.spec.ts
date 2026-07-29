@@ -440,3 +440,112 @@ test('plays exactly the map the setup screen previewed', async ({ page }) => {
 
   expect(await readLayout(page, '[data-testid="game-screen"] .board')).toEqual(previewed);
 });
+
+test('quick chat sends fixed phrases only, and runs out for the turn', async ({ page }) => {
+  const g = new Game(page);
+  await g.startTwoPlayer(SEED);
+  await g.completeRollOff();
+  await g.resolveHarvest('wish');
+
+  const panel = page.getByTestId('chat-panel');
+  await expect(panel).toBeVisible();
+  // The whole point of quick chat: there is nowhere to type.
+  expect(await panel.locator('input, textarea, [contenteditable="true"]').count()).toBe(0);
+  await expect(page.getByTestId('quickchat-left')).toHaveText('4/4');
+
+  // Two steps: the wheel of categories, then that category's phrases.
+  await page.getByTestId('quickchat-open').click();
+  await expect(page.getByTestId('quickchat-group-manners')).toBeVisible();
+  await expect(page.getByTestId('quickchat-say-sorry')).toBeHidden(); // not until a category is picked
+  await page.getByTestId('quickchat-group-manners').click();
+  await page.getByTestId('quickchat-say-sorry').click();
+
+  // It shows up as a bubble over the board and as a line in the transcript.
+  await expect(page.getByTestId('quickchat-bubble-sorry')).toBeVisible();
+  await expect(page.getByTestId('chat-transcript')).toContainText('Sorry!');
+  await expect(page.getByTestId('quickchat-left')).toHaveText('3/4');
+  // The picker closes after a pick, so chat never blocks the board.
+  await expect(page.getByTestId('quickchat-menu')).toBeHidden();
+
+  // Spend the rest of the allowance: the button locks until the next turn.
+  for (const [group, phrase] of [
+    ['greetings', 'hi'],
+    ['compliments', 'wow'],
+    ['musings', 'why-the-hats'],
+  ]) {
+    await page.getByTestId('quickchat-open').click();
+    await page.getByTestId(`quickchat-group-${group}`).click();
+    await page.getByTestId(`quickchat-say-${phrase}`).click();
+  }
+  await expect(page.getByTestId('quickchat-left')).toHaveText('0/4');
+  await expect(page.getByTestId('quickchat-open')).toBeDisabled();
+
+  // A new turn refills it (and the next seat can chat too).
+  await g.endTurn();
+  await expect(page.getByTestId('quickchat-left')).toHaveText('4/4');
+});
+
+test('the phrase picker steps back out of a category and closes', async ({ page }) => {
+  const g = new Game(page);
+  await g.startTwoPlayer(SEED);
+  await g.completeRollOff();
+  await g.resolveHarvest('wish');
+
+  await page.getByTestId('quickchat-open').click();
+  await page.getByTestId('quickchat-group-tactics').click();
+  await expect(page.getByTestId('quickchat-say-watch-the-flytrap')).toBeVisible();
+
+  // Back returns to the wheel without spending anything.
+  await page.getByTestId('quickchat-back').click();
+  await expect(page.getByTestId('quickchat-group-tactics')).toBeVisible();
+  await page.getByTestId('quickchat-close').click();
+  await expect(page.getByTestId('quickchat-menu')).toBeHidden();
+  await expect(page.getByTestId('quickchat-left')).toHaveText('4/4');
+});
+
+test('chat and game log share one window, and unread chat is badged', async ({ page }) => {
+  const g = new Game(page);
+  await g.startTwoPlayer(SEED);
+  await g.completeRollOff();
+  await g.resolveHarvest('wish');
+
+  // Chat tab first: the transcript is shown, the event log is not.
+  await expect(page.getByTestId('chat-transcript')).toBeVisible();
+  await expect(page.getByTestId('game-log')).toBeHidden();
+
+  // Switch to the log tab, then say something: the chat tab badges it.
+  await page.getByTestId('chat-tab-log').click();
+  await expect(page.getByTestId('game-log')).toBeVisible();
+  await expect(page.getByTestId('chat-transcript')).toBeHidden();
+  await expect(page.getByTestId('chat-unread')).toBeHidden();
+
+  await page.getByTestId('quickchat-open').click();
+  await page.getByTestId('quickchat-group-greetings').click();
+  await page.getByTestId('quickchat-say-good-luck').click();
+  await expect(page.getByTestId('chat-unread')).toHaveText('1');
+
+  // Reading the chat clears the badge.
+  await page.getByTestId('chat-tab-chat').click();
+  await expect(page.getByTestId('chat-transcript')).toContainText('Good luck!');
+  await expect(page.getByTestId('chat-unread')).toBeHidden();
+
+  // Collapsing hides both bodies but keeps the composer reachable.
+  await page.getByTestId('chat-collapse').click();
+  await expect(page.getByTestId('chat-transcript')).toBeHidden();
+  await expect(page.getByTestId('quickchat-open')).toBeVisible();
+});
+
+test('muting hides chat bubbles but keeps the transcript honest', async ({ page }) => {
+  const g = new Game(page);
+  await g.startTwoPlayer(SEED);
+  await g.completeRollOff();
+  await g.resolveHarvest('wish');
+
+  await page.getByTestId('quickchat-mute').click();
+  await page.getByTestId('quickchat-open').click();
+  await page.getByTestId('quickchat-group-greetings').click();
+  await page.getByTestId('quickchat-say-hi').click();
+
+  await expect(page.getByTestId('quickchat-feed')).toBeHidden();
+  await expect(page.getByTestId('chat-transcript')).toContainText('Hi!');
+});

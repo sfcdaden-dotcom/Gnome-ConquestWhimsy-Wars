@@ -89,6 +89,78 @@ stack / response queue / fight queue / elimination queue depths, harvest
 progress, `turnMustEnd` and the step count — so the stalled branch is
 identifiable from the message alone.
 
+## Termination & anti-stall (multiplayer)
+
+The settle loop only guarantees that *one* action converges. A turn is a
+different question: what stops a player from taking legal actions forever, or
+from taking none at all? Three layers answer it.
+
+**1. Bounded actions (rules).** Every Action-Phase action is either
+self-limiting (`move` — one per unit per turn) or paid for out of a finite
+resource (`plant`, `upgrade`, `drawCard` cost Wishes; `playCard` costs a card).
+
+**2. Capped entry-effect chains (rules).** Mobility entry effects re-trigger on
+arrival, so tunnel→tunnel (or two adjacent Slippery Gardens) is a loop a client
+could ride forever — every hop is a legal action, so the engine never hangs, but
+the turn never ends either. `MAX_ENTRY_EFFECT_HOPS` (3, `gardens.ts`) bounds it:
+`handleEntry(draft, unitId, hops)` stops offering the effect once the chain hits
+the cap, and each `slide` / `tunnel` decision carries the `hops` it is answering
+so the count survives across actions without extra state. A fresh arrival
+(normal move, card placement) starts at 0; a mandatory harvest activation opens
+a fresh chain and counts as its first relocation. Reaching the cap logs
+`entryChainCapped`. Mandatory harvest relocations are never blocked by it.
+
+**3. Shot clock (host).** A client that simply stops sending actions — or spins
+on state-neutral ones like `playCard` → `cancelTargeting` → `playCard` — cannot
+be answered by rules, and the engine deliberately holds no wall clock. The host
+decides when a seat has run out of time and calls:
+
+```ts
+getTimeoutAction(state) → Action | null   // the default answer for whoever must act
+applyTimeout(state) → GameState           // apply it until control leaves that seat
+isOnTheClock(state, player) → boolean
+```
+
+`getTimeoutAction` picks the most passive legal option — `declineEffect`,
+then `respondPass`, `cancelTargeting`, `endTurn`, otherwise the first action of
+the engine's own deterministic enumeration (the first harvest source,
+`mushroomClones: 0`, the first forced move under Antsy Pants…). It never plays a
+card. `applyTimeout` repeats that until somebody else is on the clock, so one
+call closes a whole stalled turn including the moves Antsy Pants forces before
+`endTurn` becomes legal. It is pure, like `applyAction`, and identical on every
+host — a timed-out game replays deterministically.
+
+## Quick chat (out-of-band action)
+
+`{ type: 'quickChat', player, phraseId }` says one of the fixed phrases in
+`quickchat.ts`. There is no free-text field anywhere in the action — a phrase
+id that is not in `QUICK_CHAT_PHRASES` is simply an illegal action, so a host
+never has to moderate strings, and clients cannot smuggle text through chat.
+
+It is the one action that is **not a game move**:
+
+- it is never returned by `getLegalActionIntents` / `getLegalActions` (the AI
+  and the learned-policy option space stay exactly as they were), and
+  `extractSamples` replays it without emitting a training sample;
+- any seat may send one at any time — out of turn, while another player's
+  decision is open, even after `status === 'finished'` (the one exception to
+  `applyAction`'s game-over guard, so "gg" still lands);
+- it changes nothing but the event log (`quickChatSaid`) and the sender's
+  remaining allowance.
+
+Spam is bounded the same way everything else is: `QUICK_CHAT_PER_TURN` (4) per
+player, refilled for everyone at the start of every turn and once more when the
+game ends. `quickChatsLeft(state, player)` is the same number the UI disables
+its button on.
+
+`chooseAiAction` uses it too: when the CPU could play a Whimsy Card this Action
+Phase and picks something else, it sometimes says one line from the `musings`
+group first (`QUICK_CHAT_MUSINGS` — rhetorical gnome questions that describe
+nothing about the board, so a chatty CPU leaks no information), then takes its
+real action on the next call. The coin flip and the phrase are hashed from
+(seed, turn, seat), so the AI stays deterministic, and the engine's own
+`quickChatsThisTurn` counter is what stops it repeating within a turn.
+
 ## Turn structure
 
 - `startTurn`: expire the player's own "until your next turn" effects
@@ -112,7 +184,7 @@ identifiable from the message alone.
 | `chooseHarvest` | `chooseHarvest` |
 | `homeHarvest` | `homeHarvest` |
 | `mushroomClones` | `mushroomClones` |
-| `slide` / `tunnel` | `slide` / `tunnel`, `declineEffect` when optional |
+| `slide` / `tunnel` | `slide` / `tunnel`, `declineEffect` when optional (carries `hops`, capped by `MAX_ENTRY_EFFECT_HOPS`) |
 | `fightRespond` | `respondPass`, `respondPlayCard` |
 | `cardResponse` | `respondPass`, `respondPlayCard` (incl. Nope-Gnome) |
 | `cardTargeting` | `selectTarget` (one of `getPendingDecisionOptions`), `cancelTargeting` |

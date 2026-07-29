@@ -19,6 +19,7 @@ import {
   pushEvent,
 } from './helpers';
 import { handleEntry } from './gardens';
+import { refillQuickChat } from './quickchat';
 
 export function processNextElimination(draft: GameState): void {
   const e = draft.eliminationQueue[0];
@@ -125,5 +126,6 @@ export function finishGame(draft: GameState, winner: PlayerId | null): void {
   draft.fight = null;
   draft.fightQueue = [];
   draft.harvest = null;
+  refillQuickChat(draft); // no more turns to refill on — everyone gets to say "gg"
   pushEvent(draft, { type: 'gameFinished', winner });
 }

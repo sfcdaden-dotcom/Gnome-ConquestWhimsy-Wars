@@ -98,6 +98,13 @@ export function extractSamples(record: MatchRecord, opts: ExtractOptions = {}): 
       throw new Error(`extractSamples: seed ${record.seed}, action ${step} (${action.type}): ${msg}`);
     };
     const seat = action.player;
+    // Quick chat is not a decision point (it is never in the option set, and
+    // "say nothing" is not an option the policy chooses): replay it, sample
+    // nothing.
+    if (action.type === 'quickChat') {
+      state = applyAction(state, action);
+      return;
+    }
     // Decision-point model: the recorded actor must be the engine's player to
     // act. (A spontaneous out-of-turn Sudden Magic interrupt — possible for
     // humans, never emitted by the recorder's AI loop — has no well-defined

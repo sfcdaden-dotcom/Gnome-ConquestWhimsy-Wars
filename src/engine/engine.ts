@@ -50,7 +50,9 @@ export function isGameOver(state: GameState): boolean {
  * message and leave the input state untouched.
  */
 export function applyAction(state: GameState, action: Action): GameState {
-  if (state.status === 'finished') {
+  // Quick chat is the one action a finished game still accepts — "gg" belongs
+  // after the last fight, and it can touch nothing but the event log anyway.
+  if (state.status === 'finished' && action.type !== 'quickChat') {
     illegal(`The game is over (winner: ${state.winner === null ? 'none' : state.winner})`);
   }
   const draft = structuredClone(state) as GameState;

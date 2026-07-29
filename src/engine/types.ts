@@ -31,6 +31,17 @@ export type PlayerId = number;
  */
 export type UnitId = string;
 export type CardId = string;
+/** Id of a fixed quick-chat phrase (see quickchat.ts). Free text never exists. */
+export type QuickChatId = string;
+
+/** One entry of the quick-chat catalogue. */
+export interface QuickChatPhrase {
+  id: QuickChatId;
+  /** Leading emoji, shown with the text everywhere. */
+  emoji: string;
+  /** The one and only wording a player can send with this id. */
+  text: string;
+}
 /** `"x,y"` string key into `GameState.gardens`. */
 export type PosKey = string;
 
@@ -186,6 +197,11 @@ export interface PlayerState {
    * Destroyed gardens return to their original planter's supply.
    */
   supply: Record<PlantableGardenType, number>;
+  /**
+   * Quickchats sent since the allowance last refilled (start of any turn, and
+   * game end). Capped by QUICK_CHAT_PER_TURN — see quickchat.ts.
+   */
+  quickChatsThisTurn: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -366,6 +382,12 @@ export type PendingDecision =
       /** true ⇒ entry effect (may be declined); false ⇒ mandatory harvest slide. */
       optional: boolean;
       context: 'entry' | 'harvest';
+      /**
+       * Relocations this unit has already taken in the current chain (this one
+       * is hop number `hops + 1`). Bounds entry-effect chains — see
+       * MAX_ENTRY_EFFECT_HOPS in gardens.ts.
+       */
+      hops: number;
     }
   | {
       kind: 'tunnel';
@@ -375,6 +397,8 @@ export type PendingDecision =
       options: Pos[];
       optional: boolean;
       context: 'entry' | 'harvest';
+      /** See the `slide` decision's `hops`. */
+      hops: number;
     }
   | {
       kind: 'fightRespond';
@@ -481,7 +505,9 @@ export type Action =
   | { type: 'upgrade'; player: PlayerId; pos: Pos }
   | { type: 'drawCard'; player: PlayerId }
   | { type: 'playCard'; player: PlayerId; cardId: CardId; targets?: CardTargets }
-  | { type: 'endTurn'; player: PlayerId };
+  | { type: 'endTurn'; player: PlayerId }
+  // --- out-of-band (not a game move; never enumerated as a legal action) -------
+  | { type: 'quickChat'; player: PlayerId; phraseId: QuickChatId };
 
 export type ActionType = Action['type'];
 
@@ -508,6 +534,8 @@ export type GameEvent =
   | { type: 'unitSlid'; player: PlayerId; unitId: UnitId; unitKind: UnitKind; from: Pos; to: Pos; context: 'entry' | 'harvest' }
   | { type: 'unitTunneled'; player: PlayerId; unitId: UnitId; unitKind: UnitKind; from: Pos; to: Pos; context: 'entry' | 'harvest' }
   | { type: 'entryEffectDeclined'; player: PlayerId; unitId: UnitId; unitKind: UnitKind; pos: Pos }
+  | { type: 'entryChainCapped'; player: PlayerId; unitId: UnitId; unitKind: UnitKind; pos: Pos; hops: number }
+  | { type: 'quickChatSaid'; player: PlayerId; phraseId: QuickChatId }
   | { type: 'gardenPlanted'; player: PlayerId; pos: Pos; gardenType: PlantableGardenType }
   | { type: 'gardenUpgraded'; player: PlayerId; pos: Pos; gardenType: PlantableGardenType }
   | { type: 'gardenDestroyed'; pos: Pos; gardenType: GardenType; cause: 'snail' | 'card' | 'elimination' }
