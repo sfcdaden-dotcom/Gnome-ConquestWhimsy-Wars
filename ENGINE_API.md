@@ -230,7 +230,9 @@ the path end to end.
   Maize, maize exit cost payable.
 - Flytraps are never destroyed by fights — stunned until the end of the
   winner's turn. The Immortal Snail is never destroyed; losing a fight on its
-  own turn ends that turn (skipping its garden-destruction step).
+  own turn ends that turn (skipping its garden-destruction step), and its
+  end-of-turn garden destruction only fires when no enemy units share its
+  space (defenders who survived fighting it keep the garden safe).
 - Home-capture elimination is checked after all fights on the space resolve.
 
 ## Events
