@@ -65,6 +65,7 @@ export {
   enemyUnitsAt,
   playerUnits,
   gnomesOnBoard,
+  gnomeBoardCap,
   reserveGnomes,
   gardenIsActive,
   wishCap,

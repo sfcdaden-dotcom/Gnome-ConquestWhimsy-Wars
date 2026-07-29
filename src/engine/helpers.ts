@@ -182,6 +182,23 @@ export function wishCap(state: GameState, player: PlayerId): number {
 }
 
 /**
+ * Current gnome board limit: base config limit, +1 per Elder Mushroom
+ * (upgraded mushroom garden) the player controls (occupied by their gnome,
+ * no enemy units). Bonuses stack. Losing control never destroys gnomes
+ * already on the board — it only blocks new spawns while over the limit.
+ */
+export function gnomeBoardCap(state: GameState, player: PlayerId): number {
+  let cap = state.config.gnomeBoardLimit;
+  for (const [key, g] of Object.entries(state.gardens)) {
+    if (g.type !== 'mushroom' || !g.upgraded) continue;
+    const pos = parsePos(key);
+    if (enemyUnitsAt(state, pos, player).length > 0) continue;
+    if (playerUnitsAt(state, pos, player).some((u) => u.kind === 'gnome')) cap += 1;
+  }
+  return cap;
+}
+
+/**
  * Maize exit cost for a unit leaving `from`, or 0 when no active maize garden
  * is there. (A maize garden planted this turn does not tax exits yet —
  * see ENGINE_API.md "interpretations".) Thorn Maize (upgraded) charges a base
@@ -321,7 +338,7 @@ export function spendWishes(draft: GameState, player: PlayerId, amount: number, 
 /** Can this player legally receive one more gnome on the board right now? */
 export function canSpawnGnome(state: GameState, player: PlayerId): boolean {
   return (
-    gnomesOnBoard(state, player) < state.config.gnomeBoardLimit &&
+    gnomesOnBoard(state, player) < gnomeBoardCap(state, player) &&
     reserveGnomes(state, player) > 0
   );
 }

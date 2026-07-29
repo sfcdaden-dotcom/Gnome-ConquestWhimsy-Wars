@@ -9,6 +9,7 @@ import type { CardId, GameEvent, GameState, PlayerId } from '../engine';
 import {
   getCardDef,
   getPlayerToAct,
+  gnomeBoardCap,
   gnomesOnBoard,
   reserveGnomes,
   wishCap,
@@ -53,7 +54,7 @@ export function PlayerPanels({ state }: { state: GameState }) {
             {p.status === 'playing' ? (
               <div className="pp-stats">
                 <span title={`Wishes (cap ${cap})`}>✨ {p.wishes}/{cap}</span>
-                <span title="Gnomes on board / limit">🧙 {gnomesOnBoard(state, p.id)}/{state.config.gnomeBoardLimit}</span>
+                <span title="Gnomes on board / limit">🧙 {gnomesOnBoard(state, p.id)}/{gnomeBoardCap(state, p.id)}</span>
                 <span title="Reserve gnomes remaining">📦 {reserveGnomes(state, p.id)}</span>
                 <span title="Cards in hand">🃏 {p.hand.length}</span>
               </div>

@@ -80,6 +80,7 @@ import {
   enemyUnitsAt,
   gardenAt,
   gardenIsActive,
+  gnomeBoardCap,
   gnomesOnBoard,
   manhattan,
   orthNeighbors,
@@ -466,11 +467,16 @@ function scoreActionPhase(state: GameState, player: PlayerId, action: Action): n
       if (!g) return -Infinity;
       const home = p.homePos;
       if (g.type === 'dandelion' || g.type === 'mushroom') {
-        // Golden Dandelion (+1 wish cap while held) / Elder Mushroom (clone up
-        // to 3). Score just above the corresponding plant: deepening a held
-        // garden beats starting an unheld one.
+        // Golden Dandelion (+1 wish cap while held) / Elder Mushroom (+1 gnome
+        // board limit while held). Score just above the corresponding plant:
+        // deepening a held garden beats starting an unheld one.
         if (manhattan(action.pos, home) > ECONOMY_CLUSTER_RADIUS) return -1;
-        if (g.type === 'mushroom' && reserveGnomes(state, player) < 6) return -1;
+        if (g.type === 'mushroom') {
+          // The bigger board only pays off when the limit is actually
+          // pinching and there are reserves left to spend into the new room.
+          const room = gnomeBoardCap(state, player) - gnomesOnBoard(state, player);
+          if (room > 1 || reserveGnomes(state, player) === 0) return -1;
+        }
         return 9.5;
       }
       if (g.type === 'maize') {
