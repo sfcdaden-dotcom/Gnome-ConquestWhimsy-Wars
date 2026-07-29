@@ -16,9 +16,10 @@ import {
   applyAction,
   isPlayerView,
   nameSaltOf,
+  sealHiddenState,
   viewFor,
 } from './index';
-import { activePlayer, mutate, newGame, toActionPhase, withHand } from './testkit';
+import { activePlayer, drive, mutate, newGame, toActionPhase, withHand } from './testkit';
 
 /** The two seats of a 2-player game, as (me, opponent). */
 function seats(s: GameState): [PlayerId, PlayerId] {
@@ -280,5 +281,63 @@ describe('viewFor — contract', () => {
     const base = toActionPhase(24);
     expect(nameSaltOf(base)).toBe(base.seed);
     expect(nameSaltOf(viewFor(base, 0))).toBe(viewFor(base, 0).nameSalt);
+  });
+});
+
+describe('sealHiddenState — the visible board must not imply the deck', () => {
+  it('keeps the map the seed drew, but re-orders the deck', () => {
+    const base = newGame(31, { gardenPreset: 'random' });
+    const sealed = sealHiddenState(base, 0xdecafbad);
+
+    // The board is what the seed is allowed to determine, and it is unchanged.
+    expect(sealed.gardens).toEqual(base.gardens);
+    expect(sealed.seed).toBe(base.seed);
+    // The deck is not: same cards, different order.
+    expect([...sealed.deck].sort()).toEqual([...base.deck].sort());
+    expect(sealed.deck).not.toEqual(base.deck);
+  });
+
+  it('makes two games with the same map play out differently', () => {
+    const base = newGame(32, { gardenPreset: 'random' });
+    const a = sealHiddenState(base, 1111);
+    const b = sealHiddenState(base, 2222);
+
+    expect(a.gardens).toEqual(b.gardens);
+    expect(a.deck).not.toEqual(b.deck);
+    expect(a.rngState).not.toBe(b.rngState);
+
+    // ...all the way through a played game: same board, different dice.
+    const playedA = drive(a, () => false, 400);
+    const playedB = drive(b, () => false, 400);
+    expect(playedA.events).not.toEqual(playedB.events);
+  });
+
+  it('stays deterministic: the same secret always seals the same game', () => {
+    const base = newGame(33, { gardenPreset: 'random' });
+    expect(sealHiddenState(base, 4242)).toEqual(sealHiddenState(base, 4242));
+    expect(drive(sealHiddenState(base, 4242), () => false, 300).events).toEqual(
+      drive(sealHiddenState(base, 4242), () => false, 300).events,
+    );
+  });
+
+  it('never mutates the game it seals', () => {
+    const base = newGame(34);
+    const before = structuredClone(base);
+    sealHiddenState(base, 999);
+    expect(base).toEqual(before);
+  });
+
+  it('refuses a game already under way — those cards have been seen', () => {
+    const started = toActionPhase(35);
+    expect(() => sealHiddenState(started, 999)).toThrow(/freshly created/);
+  });
+
+  it('leaves nothing seed-derived in the view a player receives', () => {
+    const sealed = sealHiddenState(newGame(36, { gardenPreset: 'random' }), 0x5eed);
+    const view = viewFor(sealed, 0);
+
+    expect(view.seed).toBe(0);
+    expect(view.rngState).toBe(0);
+    expect(view.deck.every((c) => c === HIDDEN_CARD_ID)).toBe(true);
   });
 });

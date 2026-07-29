@@ -208,10 +208,30 @@ Two consequences worth knowing:
   `nameSaltOf(state)`, which is the seed for local play and the salt for a
   view.
 
-Not solved here, and a server's job: the seed must be server-chosen and
-server-kept (a client that picks it knows the deck), and with the `random`
-garden preset the visible layout is seed-derived, so a determined attacker can
-search the 2^32 seed space against the board. See TECH_DEBT.md.
+### Sealing the deck
+
+Redaction stops the state from being *broadcast*, but `createGame` derives the
+layout, the deck and the dice from one seed — and the layout is then drawn on
+the board. That makes the seed searchable: generate layouts for candidate
+seeds until one matches, and the deck falls out with it (~0.4 ms per layout, so
+a full 2^32 sweep is ~480 core-hours — a reusable precomputation, not a
+per-game cost). Keeping the seed secret does not fix it; the board is the leak.
+
+```ts
+const secret = crypto.getRandomValues(new Uint32Array(1))[0];
+let state = sealHiddenState(createGame(options, mapSeed), secret);
+```
+
+`sealHiddenState` replaces `rngState` with the secret and reshuffles the deck
+under it, leaving the layout alone. Afterwards the two are cleanly split:
+`state.seed` is only the MAP seed (it reproduces the board and nothing else, so
+a host may publish it), while the deck order and every future die roll follow
+from the `secret`, which never leaves the host. Pure, and deterministic per
+`(seed, secret)` — but note that a sealed game no longer replays from
+`config + seed + actions` alone, so `MatchRecord` needs the secret too.
+
+Still a server's job: generating that secret from a CSPRNG, and not offering a
+seed field in the multiplayer setup UI at all. See TECH_DEBT.md.
 
 ## Turn structure
 

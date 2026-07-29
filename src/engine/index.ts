@@ -20,6 +20,7 @@ export {
   homePositions,
   seatHomes,
   presetGardens,
+  sealHiddenState,
 } from './setup';
 
 // Garden preset registry (UI reads this to render the preset menu).

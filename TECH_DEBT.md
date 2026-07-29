@@ -183,19 +183,31 @@ blocks · **P3** opportunistic.
   strips `rngState`, `seed`, the draw pile, foreign hands, the private half of
   the pending decision, and the card identities in draw/steal events, keeping
   every count structurally intact. That closes the *broadcast* leak. Two holes
-  remain and both belong to the server, not the engine:
-  1. **Who picks the seed.** Today the client passes it to `createGame`. A
+  remained; the second is now closed in the engine and the first is the
+  server's to close:
+  1. **Who picks the seed — still open, server side.** Today the client passes
+     it to `createGame`, and the setup screen even lets a player type one. A
      client that knows the seed knows the deck order and every future die roll,
-     redaction or no redaction. The room server must generate it (crypto
-     random) and never send it.
-  2. **The `random` preset's layout is seed-derived and visible.** So the board
-     itself narrows the seed: an attacker can search the 2^32 space, generating
-     layouts until one matches, then replay the deck. Feasible offline for a
-     motivated person. Fixes, cheapest first: re-seed `rngState` from a fresh
-     crypto-random value *and* reshuffle the deck after setup, so the layout
-     and the deck stop sharing a secret; or generate the layout from a separate,
-     publishable seed. Not urgent for friend-room play, but it is the difference
-     between "hidden" and "hidden from casual players".
+     redaction or no redaction. The room server must generate the secret
+     (`crypto.getRandomValues`) and never send it, and the multiplayer setup UI
+     must not offer a seed field at all.
+  2. ~~**The `random` preset's layout is seed-derived and visible.**~~ **FIXED
+     2026-07-29** by `sealHiddenState` (`setup.ts`). The board itself narrowed
+     the seed: an attacker generates layouts for candidate seeds until one
+     matches what is on screen, and the deck falls out with it. Measured at
+     ~0.4 ms per layout, a full 2^32 sweep is ~480 core-hours — cheap, and a
+     *reusable* precomputation rather than a per-game cost, so keeping the seed
+     secret was never going to be enough on its own. A host now calls
+     `sealHiddenState(createGame(options, mapSeed), secret)` once at creation:
+     it replaces `rngState` with a CSPRNG secret and reshuffles the deck under
+     it, leaving the layout untouched. `seed` is thereafter only the MAP seed —
+     it reproduces the board and nothing else, and is safe to publish — while
+     the deck and the dice follow from the secret alone.
+
+     Consequence for replay (Milestone 8) and `MatchRecord` (selfplay.ts):
+     `config + seed + actions` no longer reconstructs a sealed game. The record
+     needs the secret too, which means a finished game's record is also the
+     natural place to *reveal* it.
 
   Also unresolved: the hand panel renders `HIDDEN_CARD_ID` as its literal
   string. Nothing shows another seat's hand today, so it is unreachable —
