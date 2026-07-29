@@ -467,11 +467,17 @@ export class Room {
    * local game runs.
    */
   private async act(c: ConnState, action: Action): Promise<void> {
-    if (this.data.phase !== 'playing' || !this.state) {
-      throw new RoomError('WRONG_PHASE', 'No game is running');
-    }
     if (typeof action !== 'object' || action === null || typeof action.type !== 'string') {
       throw new RoomError('PROTOCOL', 'Malformed action');
+    }
+    // Quick chat is the one action a finished game still accepts — "gg"
+    // belongs after the last fight, and the engine allows it (see
+    // applyAction). Blocking it here would be the room overriding the rules.
+    const open =
+      this.data.phase === 'playing' ||
+      (this.data.phase === 'finished' && action.type === 'quickChat');
+    if (!open || !this.state) {
+      throw new RoomError('WRONG_PHASE', 'No game is running');
     }
     if (c.seat === null) throw new RoomError('NOT_YOUR_SEAT', 'Spectators cannot act');
     if (action.player !== c.seat) {
@@ -489,16 +495,21 @@ export class Room {
     } catch (err) {
       throw new RoomError('ILLEGAL_ACTION', err instanceof Error ? err.message : String(err));
     }
+    const wasFinished = this.data.phase === 'finished';
     this.state = next;
     this.data.actions.push(action);
     if (isGameOver(next)) this.data.phase = 'finished';
+    const justFinished = !wasFinished && this.data.phase === 'finished';
 
     await this.save();
     this.broadcastState();
 
     if (this.data.phase === 'finished') {
-      this.reveal();
-      this.broadcastRoom();
+      // Reveal on the transition only; chat continues afterwards.
+      if (justFinished) {
+        this.reveal();
+        this.broadcastRoom();
+      }
       return;
     }
     await this.driveCpu();

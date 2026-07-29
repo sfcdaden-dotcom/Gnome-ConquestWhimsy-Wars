@@ -1,86 +1,86 @@
 /**
- * Game session hook: holds the single GameState, dispatches actions through
- * the engine (EngineError → toast, never a crash), drives CPU seats on a
- * timer, replays fight events as a step-through, and gates pass-and-play
- * privacy between human seats.
+ * Local game session hook: holds the single GameState, dispatches actions
+ * through the engine (EngineError → toast, never a crash), drives CPU seats on
+ * a timer, and gates pass-and-play privacy between human seats.
+ *
+ * The screen-facing shape is `GameSession`, which `useNetGame` also satisfies
+ * — GameScreen renders either without knowing which it has. The fields whose
+ * meaning shifts between the two:
+ *
+ *  - `humanSeats`: the seats THIS DEVICE controls. Locally that is every
+ *    human seat (hot-seat); online it is just yours. GameScreen gates
+ *    interactivity on it, which is what stops an online client acting during
+ *    a remote human's turn.
+ *  - `dispatch` returns whether the action was ACCEPTED — immediately truthful
+ *    locally; optimistically true online (a server rejection arrives later as
+ *    a toast).
+ *  - `revealedSeat` / `needsPass` / `confirmPass`: the pass-the-device
+ *    interstitial. Online they pin to your seat / false / no-op.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { Action, CreateGameOptions, GameEvent, GameState, PlayerId } from '../engine';
+import type { Action, CreateGameOptions, GameState, PlayerId } from '../engine';
 import { applyAction, chooseAiAction, createGame, getPlayerToAct } from '../engine';
+import type { ChatBubble, FightPlayback, Toast } from './sessionFx';
+import { addedEvents, useChatBubbles, useFightPlayback, useToasts } from './sessionFx';
+
+export type { ChatBubble, FightPlayback, Toast };
 
 // ---------------------------------------------------------------------------
-// Types
+// The session contract GameScreen renders
 // ---------------------------------------------------------------------------
 
-export interface Toast {
-  id: number;
-  text: string;
-  kind: 'error' | 'info';
+export interface GameSession {
+  /** Authoritative state locally; the seat's redacted PlayerView online. */
+  state: GameState;
+  /** Apply/request one action. False = known-rejected (local only). */
+  dispatch: (action: Action) => boolean;
+  toasts: Toast[];
+  pushToast: (text: string, kind?: Toast['kind']) => void;
+  /** Skip CPU pacing and fight animations. Meaningless online. */
+  fastForward: boolean;
+  setFastForward: (on: boolean) => void;
+  /** Whether the fast-forward toggle does anything (hidden otherwise). */
+  canFastForward: boolean;
+  playback: FightPlayback | null;
+  skipPlayback: () => void;
+  chatBubbles: ChatBubble[];
+  chatMuted: boolean;
+  toggleChatMuted: () => void;
+  playerToAct: PlayerId | null;
+  actorIsCpu: boolean;
+  /** Seats THIS DEVICE controls — the interactivity gate. */
+  humanSeats: PlayerId[];
+  /** Whose private info (hand) is on screen. */
+  revealedSeat: PlayerId | null;
+  /** Pass-the-device interstitial required before the next human acts. */
+  needsPass: boolean;
+  confirmPass: () => void;
+  /** Short label for the top bar: the seed locally, the room code online. */
+  tag: string;
 }
-
-/** One quickchat on screen. Bubbles expire on their own timer. */
-export interface ChatBubble {
-  id: number;
-  player: PlayerId;
-  phraseId: string;
-}
-
-export interface FightPlayback {
-  /** Fight-related events appended by the last action, replayed stepwise. */
-  events: GameEvent[];
-  /** Number of events currently revealed (0..events.length). */
-  shown: number;
-}
-
-const FIGHT_EVENT_TYPES = new Set<GameEvent['type']>([
-  'fightStarted',
-  'fightRoundStarted',
-  'fightRolled',
-  'rollModified',
-  'destructionPrevented',
-  'unitDestroyed',
-  'flytrapStunned',
-  'snailSurvivedLoss',
-  'fightEnded',
-  'playerEliminated',
-]);
 
 const CPU_DELAY_MS = 400;
 const CPU_FAST_MS = 25;
-/** How long a quickchat bubble stays on the board, and how many stack up. */
-const CHAT_BUBBLE_MS = 6000;
-const CHAT_BUBBLE_MAX = 4;
-
-let toastSeq = 1;
-let chatSeq = 1;
 
 // ---------------------------------------------------------------------------
 // Hook
 // ---------------------------------------------------------------------------
 
-export function useGame(options: CreateGameOptions, seed: number) {
+export function useGame(options: CreateGameOptions, seed: number): GameSession {
   const [state, setState] = useState<GameState>(() => createGame(options, seed));
-  const [toasts, setToasts] = useState<Toast[]>([]);
   const [fastForward, setFastForward] = useState(false);
-  const [playback, setPlayback] = useState<FightPlayback | null>(null);
   /** Which human seat's private info (hand) is currently on screen. */
   const [revealedSeat, setRevealedSeat] = useState<PlayerId | null>(null);
-  const [chatBubbles, setChatBubbles] = useState<ChatBubble[]>([]);
-  const [chatMuted, setChatMuted] = useState(false);
+
+  const { toasts, pushToast } = useToasts();
+  const { playback, noticeFightEvents, skipPlayback } = useFightPlayback(fastForward);
+  const { chatBubbles, chatMuted, toggleChatMuted, noticeChatEvents } = useChatBubbles();
 
   const stateRef = useRef(state);
   stateRef.current = state;
   const fastRef = useRef(fastForward);
   fastRef.current = fastForward;
-  const mutedRef = useRef(chatMuted);
-  mutedRef.current = chatMuted;
-
-  const pushToast = useCallback((text: string, kind: Toast['kind'] = 'error') => {
-    const id = toastSeq++;
-    setToasts((ts) => [...ts.slice(-3), { id, text, kind }]);
-    window.setTimeout(() => setToasts((ts) => ts.filter((t) => t.id !== id)), 4500);
-  }, []);
 
   /** Apply one action; illegal actions surface as toasts and change nothing. */
   const dispatch = useCallback(
@@ -93,64 +93,15 @@ export function useGame(options: CreateGameOptions, seed: number) {
         pushToast(err instanceof Error ? err.message : String(err), 'error');
         return false;
       }
-      // `events` is a trimmed rolling window, so diff via the monotonic
-      // eventCount, not array lengths.
-      const addedCount = Math.min(next.eventCount - prev.eventCount, next.events.length);
-      const added = addedCount > 0 ? next.events.slice(next.events.length - addedCount) : [];
-
-      // Fight step-through: replay the fight events this action produced,
-      // unless fast-forwarding or the engine stopped inside the fight anyway
-      // (a live Respond window shows its own panel).
-      if (!fastRef.current && next.pendingDecision?.kind !== 'fightRespond') {
-        const fightEvents = added.filter((e) => FIGHT_EVENT_TYPES.has(e.type));
-        if (fightEvents.some((e) => e.type === 'fightRolled')) {
-          setPlayback({ events: fightEvents, shown: 1 });
-        }
-      }
-
-      // Quickchats float over the board for a few seconds. Muting is purely
-      // cosmetic — the game log keeps every line either way.
-      if (!mutedRef.current) {
-        for (const e of added) {
-          if (e.type !== 'quickChatSaid') continue;
-          const id = chatSeq++;
-          setChatBubbles((bs) => [...bs.slice(-(CHAT_BUBBLE_MAX - 1)), { id, player: e.player, phraseId: e.phraseId }]);
-          window.setTimeout(() => setChatBubbles((bs) => bs.filter((b) => b.id !== id)), CHAT_BUBBLE_MS);
-        }
-      }
+      const added = addedEvents(prev, next);
+      noticeFightEvents(added, next);
+      noticeChatEvents(added);
       stateRef.current = next;
       setState(next);
       return true;
     },
-    [pushToast],
+    [pushToast, noticeFightEvents, noticeChatEvents],
   );
-
-  // --- fight playback auto-advance ----------------------------------------
-  useEffect(() => {
-    if (!playback) return;
-    if (fastForward || playback.shown >= playback.events.length) {
-      // Linger briefly on the final step, then dismiss.
-      const t = window.setTimeout(() => setPlayback(null), fastForward ? 0 : 900);
-      return () => window.clearTimeout(t);
-    }
-    const current = playback.events[playback.shown - 1];
-    const delay = current?.type === 'fightRolled' ? 850 : 450;
-    const t = window.setTimeout(
-      () => setPlayback((p) => (p ? { ...p, shown: p.shown + 1 } : p)),
-      delay,
-    );
-    return () => window.clearTimeout(t);
-  }, [playback, fastForward]);
-
-  const skipPlayback = useCallback(() => setPlayback(null), []);
-
-  /** Mute hides the bubbles (and stops new ones); the log is unaffected. */
-  const toggleChatMuted = useCallback(() => {
-    setChatMuted((m) => {
-      if (!m) setChatBubbles([]);
-      return !m;
-    });
-  }, []);
 
   // --- seat bookkeeping -----------------------------------------------------
   const humanSeats = useMemo(
@@ -214,6 +165,7 @@ export function useGame(options: CreateGameOptions, seed: number) {
     pushToast,
     fastForward,
     setFastForward,
+    canFastForward: true,
     playback,
     skipPlayback,
     chatBubbles,
@@ -225,7 +177,6 @@ export function useGame(options: CreateGameOptions, seed: number) {
     revealedSeat,
     needsPass,
     confirmPass,
+    tag: `#${seed}`,
   };
 }
-
-export type GameSession = ReturnType<typeof useGame>;

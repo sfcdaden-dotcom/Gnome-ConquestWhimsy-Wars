@@ -34,6 +34,8 @@ export class Game {
    */
   async startTwoPlayer(seed: number, preset = 'few'): Promise<void> {
     await this.page.goto('/');
+    // The home screen is the entry point now; local play is one door of three.
+    await this.page.getByTestId('home-local').click();
     await this.page.getByLabel('Extra-garden preset').selectOption(preset);
     await this.page.getByTestId('player-count-2').click();
     // Seat 0 is human by default; make seat 1 human too, so no CPU timer runs

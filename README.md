@@ -4,7 +4,9 @@ A digital version of the Whimsy Wars tabletop game: harvest gardens, hoard
 Wishes, and gnome your enemies into the compost. 2 or 4 players (any mix of
 human hot-seat and CPU, with Easy/Normal/Hard difficulty per seat) on an N×N
 garden board — play a freshly rolled symmetrical map, pick a built-in board
-preset, or draw your own in the editor. Table talk runs on **quick chat**: a
+preset, or draw your own in the editor. Play **local** (hot-seat and CPU on one
+device) or **online** in a private room: host, share the six-character code,
+and fill any empty seats with CPU. Table talk runs on **quick chat**: a
 fixed phrase menu, never free text, budgeted per turn.
 
 - **Rules:** [RULES.md](RULES.md) · **Cards:** [CARDS.md](CARDS.md)
@@ -51,9 +53,11 @@ src/engine/   types, RNG, setup, garden presets; the reducer split by
               cards (data-driven), per-seat redaction (view), AI, tests
 src/net/      multiplayer: wire protocol, the room's rules, commit–reveal
 src/worker/   Cloudflare Worker entry + the room Durable Object
-src/ui/       App shell, setup screen (difficulty + preset picker), game
+src/ui/       App shell + screen router, home screen, rules viewer, setup
+              screen (difficulty + preset picker), online menu/lobby, game
               screen, board, panels, decision panel, quick chat, preset
-              editor, error boundary, meta text
+              editor, error boundary, meta text; the local (useGame) and
+              networked (useNetGame) sessions behind one GameSession shape
 e2e/          Playwright browser tests (play the real app through the DOM)
 RULES.md      tabletop rules (with [RULING] clarifications)
 CARDS.md      the 23 Whimsy cards + 5 Curses

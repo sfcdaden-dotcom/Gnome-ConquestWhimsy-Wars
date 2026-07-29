@@ -6,7 +6,8 @@ Whimsy Wars ships as **a static bundle plus an optional multiplayer Worker**.
   makes **zero network requests** after loading. Host the bundle anywhere.
 - **Multiplayer** (private rooms — see [MULTIPLAYER.md](MULTIPLAYER.md)) needs
   the Cloudflare Worker and its Durable Objects, so it is Cloudflare-specific.
-  A static-only deploy simply has no rooms; nothing else changes.
+  A static-only deploy still runs local play; the Online screen just reports
+  that room creation failed, rather than hanging on a dead button.
 
 `npm run build` produces both: `dist/client/` (the bundle) and
 `dist/gnomeconquest/` (the Worker).

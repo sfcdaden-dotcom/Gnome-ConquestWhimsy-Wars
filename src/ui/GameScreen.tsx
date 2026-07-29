@@ -10,7 +10,6 @@ import type {
   Action,
   CardId,
   CardTarget,
-  CreateGameOptions,
   GameState,
   PendingDecision,
   PlayerId,
@@ -26,7 +25,7 @@ import { ChatPanel, QuickChatFeed } from './QuickChat';
 import { GARDEN_META, cardName, decisionLabel, playerColor, pname } from './meta';
 import { unitNameLive } from './gnomeNames';
 import { actionableUnitsAt, nextInCycle, unitChipLabels } from './selection';
-import { useGame } from './useGame';
+import type { GameSession } from './useGame';
 
 // ---------------------------------------------------------------------------
 // Unit selection state
@@ -78,15 +77,16 @@ function boardOptionAt(options: readonly CardTarget[], state: GameState, pos: Po
 // ---------------------------------------------------------------------------
 
 export interface GameScreenProps {
-  options: CreateGameOptions;
-  seed: number;
-  onPlayAgain: () => void;
+  /** The running session — local (useGame) or a room over the network
+   *  (useNetGame). The screen renders either without knowing which. */
+  game: GameSession;
+  /** Absent ⇒ no "play again" button (an online room decides that itself). */
+  onPlayAgain?: () => void;
   onQuit: () => void;
 }
 
-export function GameScreen({ options, seed, onPlayAgain, onQuit }: GameScreenProps) {
-  const g = useGame(options, seed);
-  const { state, dispatch, playerToAct, actorIsCpu, needsPass, playback } = g;
+export function GameScreen({ game: g, onPlayAgain, onQuit }: GameScreenProps) {
+  const { state, dispatch, playerToAct, needsPass, playback } = g;
   const [sel, setSel] = useState<Sel>(NO_SEL);
   // After the game ends, "Review match" dismisses the end overlay so the board
   // and full game log stay on screen; "Results" brings the overlay back.
@@ -117,9 +117,17 @@ export function GameScreen({ options, seed, onPlayAgain, onQuit }: GameScreenPro
     [state],
   );
 
-  /** True when the on-screen human may interact with board/panels. */
+  /**
+   * True when the on-screen human may interact with board/panels. Gated on
+   * `humanSeats` — the seats THIS DEVICE controls — not on "the actor is not a
+   * CPU": online, a remote human's turn is exactly as untouchable as a CPU's.
+   */
   const interactive =
-    state.status !== 'finished' && playerToAct !== null && !actorIsCpu && !needsPass && !playback;
+    state.status !== 'finished' &&
+    playerToAct !== null &&
+    g.humanSeats.includes(playerToAct) &&
+    !needsPass &&
+    !playback;
 
   /** Whose hand is on screen: the revealed human seat. */
   const handSeat =
@@ -332,15 +340,17 @@ export function GameScreen({ options, seed, onPlayAgain, onQuit }: GameScreenPro
       <header className="topbar">
         <span className="brand">🧙 Whimsy Wars</span>
         <span className="banner" data-testid="banner">{bannerText(state, playerToAct)}</span>
-        <label className="ff-toggle" title="Skip CPU pacing and fight animations">
-          <input
-            type="checkbox"
-            checked={g.fastForward}
-            onChange={(e) => g.setFastForward(e.target.checked)}
-          />
-          ⏩ fast CPU
-        </label>
-        <span className="seed-tag" title="Game seed">#{seed}</span>
+        {g.canFastForward && (
+          <label className="ff-toggle" title="Skip CPU pacing and fight animations">
+            <input
+              type="checkbox"
+              checked={g.fastForward}
+              onChange={(e) => g.setFastForward(e.target.checked)}
+            />
+            ⏩ fast CPU
+          </label>
+        )}
+        <span className="seed-tag" title="Game id">{g.tag}</span>
         {state.status === 'finished' && reviewing && (
           <button
             type="button"
@@ -703,7 +713,7 @@ function EndOverlay({
   onReview,
 }: {
   state: GameState;
-  onPlayAgain: () => void;
+  onPlayAgain?: () => void;
   onQuit: () => void;
   onReview: () => void;
 }) {
@@ -722,11 +732,13 @@ function EndOverlay({
           )}
         </h2>
         <div className="btn-row center">
-          <button type="button" className="btn accent big" onClick={onPlayAgain}>
-            🔁 Play again (new seed)
-          </button>
+          {onPlayAgain && (
+            <button type="button" className="btn accent big" onClick={onPlayAgain}>
+              🔁 Play again (new seed)
+            </button>
+          )}
           <button type="button" className="btn big" onClick={onQuit}>
-            Change setup
+            {onPlayAgain ? 'Change setup' : 'Leave room'}
           </button>
         </div>
         <button type="button" className="btn ghost" data-testid="review-match" onClick={onReview}>

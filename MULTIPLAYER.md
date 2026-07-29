@@ -15,6 +15,9 @@ src/net/room.ts        ALL of the server's behaviour — no Cloudflare imports
 src/net/commitment.ts  commit–reveal for the deck secret
 src/worker/index.ts    Worker entry: /api/rooms/*, everything else → assets
 src/worker/room-do.ts  the Durable Object: sockets, storage, alarms, randomness
+src/ui/useNetGame.ts   the client socket, as a GameSession GameScreen can render
+src/ui/netClient.ts    URLs, reconnect tokens, backoff, framing (no React)
+src/ui/OnlineScreen.tsx  host-or-join menu, the lobby, and the networked game
 ```
 
 The split matters. `Room` takes everything platform-shaped through a
@@ -116,14 +119,45 @@ its attachment.
 ```bash
 npm run build && npx wrangler dev    # the real Worker + DO locally
 npm test                             # room rules, no network involved
+npm run test:e2e                     # includes two browsers in a live room
 ```
+
+`vite preview` runs the Cloudflare plugin's miniflare, so `e2e/online.spec.ts`
+drives a real Durable Object — host a room in one browser context, join from
+another, and watch one player's action land on the other's screen.
+
+## The client
+
+`GameScreen` renders a `GameSession` (see `useGame.ts`) and does not know
+whether it came from `useGame` (local) or `useNetGame` (a room). Three fields
+carry the difference:
+
+- **`humanSeats`** — the seats THIS DEVICE controls. Locally that is every
+  human seat (hot-seat); online it is only yours. `GameScreen` gates
+  interactivity on it, which is what makes a remote human's turn exactly as
+  untouchable as a CPU's.
+- **`dispatch`** — locally it applies the action and returns whether it was
+  legal. Online it *sends* and returns true: the room is authoritative, so the
+  truth arrives afterwards as a new state or an error toast. Nothing is
+  applied client-side, ever.
+- **`revealedSeat` / `needsPass`** — the pass-the-device interstitial. Online
+  they pin to your seat and `false`; there is no device to pass.
+
+Presentation effects (fight playback, chat bubbles, toasts) live in
+`sessionFx.ts` so both hooks share one implementation and cannot drift.
+
+**Reconnect** is automatic: the socket re-dials with backoff and presents the
+stored token, so a refresh, a dead tunnel or a hibernated room all put you back
+in your seat. The one close it does not retry is the server's "seat taken over"
+(code 4000) — another tab has the seat, and re-dialing would trade it back and
+forth forever.
+
+**Verification is automatic too.** When the room reveals its seal, the client
+checks it against the commitment it was given at the start and says so. Players
+should not have to run a hash by hand to know the deck was straight.
 
 ## Not built yet
 
-- **The client.** `useGame` is the seam: a `useNetGame` with the same return
-  shape leaves `GameScreen` untouched, `revealedSeat`/`needsPass` collapse to
-  "my seat", and quick chat finally speaks as *you* rather than whoever holds
-  the device.
 - **The shot clock** (P2). The engine has shipped the policy half since
   2026-07-29 (`getTimeoutAction` / `applyTimeout` / `isOnTheClock`); the room
   needs the timer, which is the alarm the CPU driver already uses, plus a

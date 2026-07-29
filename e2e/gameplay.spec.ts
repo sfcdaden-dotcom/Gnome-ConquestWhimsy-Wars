@@ -4,6 +4,7 @@
  * respond window → end turn.
  */
 
+import type { Page } from '@playwright/test';
 import { expect, test } from '@playwright/test';
 import { Game, stepToward } from './helpers';
 
@@ -397,8 +398,14 @@ async function readLayout(page: import('@playwright/test').Page, root: string) {
   });
 }
 
-test('the Random preset is the default and previews a symmetric map', async ({ page }) => {
+/** Home → local setup. The setup screen is no longer the landing page. */
+async function openSetup(page: Page): Promise<void> {
   await page.goto('/');
+  await page.getByTestId('home-local').click();
+}
+
+test('the Random preset is the default and previews a symmetric map', async ({ page }) => {
+  await openSetup(page);
   await expect(page.getByLabel('Extra-garden preset')).toHaveValue('random');
 
   const { gardens, homes } = await readLayout(page, '.preset-preview');
@@ -410,7 +417,7 @@ test('the Random preset is the default and previews a symmetric map', async ({ p
 });
 
 test('re-rolling the map changes the preview', async ({ page }) => {
-  await page.goto('/');
+  await openSetup(page);
   const label = page.getByText(/^Map #/);
   const before = await label.textContent();
   const first = await readLayout(page, '.preset-preview');
@@ -427,7 +434,7 @@ test('re-rolling the map changes the preview', async ({ page }) => {
 });
 
 test('plays exactly the map the setup screen previewed', async ({ page }) => {
-  await page.goto('/');
+  await openSetup(page);
   await page.getByTestId('reroll-layout').click();
   const previewed = await readLayout(page, '.preset-preview');
 
@@ -548,4 +555,37 @@ test('muting hides chat bubbles but keeps the transcript honest', async ({ page 
 
   await expect(page.getByTestId('quickchat-feed')).toBeHidden();
   await expect(page.getByTestId('chat-transcript')).toContainText('Hi!');
+});
+
+test('the home screen routes to local play, the rules, and the online menu', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.getByTestId('home-screen')).toBeVisible();
+
+  // Rules: the canonical spec, rendered in-app, and a way back.
+  await page.getByTestId('home-rules').click();
+  await expect(page.getByTestId('rules-screen')).toBeVisible();
+  await expect(page.getByRole('heading', { name: /Turn structure/i })).toBeVisible();
+  await page.getByTestId('rules-back').click();
+  await expect(page.getByTestId('home-screen')).toBeVisible();
+
+  // Online: host or join, without opening a socket until one is chosen.
+  await page.getByTestId('home-online').click();
+  await expect(page.getByTestId('online-menu')).toBeVisible();
+  await expect(page.getByTestId('online-host')).toBeVisible();
+  await page.getByTestId('online-join').click();
+  const code = page.getByTestId('online-join-code');
+  // Codes are normalized as typed: uppercase, and no junk characters.
+  await code.fill('ab2-cd');
+  await expect(code).toHaveValue('AB2CD');
+  await expect(page.getByTestId('online-join-go')).toBeDisabled();
+  await code.fill('AB2CD4');
+  await expect(page.getByTestId('online-join-go')).toBeEnabled();
+  await page.getByTestId('online-back').click();
+  await expect(page.getByTestId('home-screen')).toBeVisible();
+
+  // Local: the pre-existing setup screen, reachable and reversible.
+  await page.getByTestId('home-local').click();
+  await expect(page.getByTestId('start-game')).toBeVisible();
+  await page.getByTestId('setup-back').click();
+  await expect(page.getByTestId('home-screen')).toBeVisible();
 });

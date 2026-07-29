@@ -106,7 +106,14 @@ function LayoutPreview({
   );
 }
 
-export function SetupScreen({ onStart }: { onStart: (r: SetupResult) => void }) {
+export function SetupScreen({
+  onStart,
+  onBack,
+}: {
+  onStart: (r: SetupResult) => void;
+  /** Absent ⇒ no back link (the setup screen was the entry point). */
+  onBack?: () => void;
+}) {
   const [count, setCount] = useState<2 | 4>(2);
   const [seats, setSeats] = useState<SeatDraft[]>([
     { name: DEFAULT_NAMES[0], controller: 'human', difficulty: 'normal' },
@@ -389,6 +396,12 @@ export function SetupScreen({ onStart }: { onStart: (r: SetupResult) => void }) 
         <button type="button" className="btn accent big" data-testid="start-game" onClick={start}>
           🌱 Start the war
         </button>
+
+        {onBack && (
+          <button type="button" className="btn ghost" data-testid="setup-back" onClick={onBack}>
+            ← Back
+          </button>
+        )}
       </div>
     </div>
   );
