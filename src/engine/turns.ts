@@ -27,6 +27,7 @@ import {
   requireTurn,
 } from './helpers';
 import { finishGame } from './elimination';
+import { refillQuickChat } from './quickchat';
 
 // ---------------------------------------------------------------------------
 // Who acts
@@ -132,6 +133,7 @@ export function startTurn(draft: GameState, player: PlayerId, turnNumber: number
     snailLostFight: false,
   };
   draft.turnMustEnd = false;
+  refillQuickChat(draft); // everyone's quickchat allowance refills each turn
   pushEvent(draft, { type: 'turnStarted', player, turnNumber });
 
   // "Until your next turn" effects cast by this player expire now.

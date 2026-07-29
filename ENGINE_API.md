@@ -130,6 +130,29 @@ call closes a whole stalled turn including the moves Antsy Pants forces before
 `endTurn` becomes legal. It is pure, like `applyAction`, and identical on every
 host — a timed-out game replays deterministically.
 
+## Quick chat (out-of-band action)
+
+`{ type: 'quickChat', player, phraseId }` says one of the fixed phrases in
+`quickchat.ts`. There is no free-text field anywhere in the action — a phrase
+id that is not in `QUICK_CHAT_PHRASES` is simply an illegal action, so a host
+never has to moderate strings, and clients cannot smuggle text through chat.
+
+It is the one action that is **not a game move**:
+
+- it is never returned by `getLegalActionIntents` / `getLegalActions` (the AI
+  and the learned-policy option space stay exactly as they were), and
+  `extractSamples` replays it without emitting a training sample;
+- any seat may send one at any time — out of turn, while another player's
+  decision is open, even after `status === 'finished'` (the one exception to
+  `applyAction`'s game-over guard, so "gg" still lands);
+- it changes nothing but the event log (`quickChatSaid`) and the sender's
+  remaining allowance.
+
+Spam is bounded the same way everything else is: `QUICK_CHAT_PER_TURN` (4) per
+player, refilled for everyone at the start of every turn and once more when the
+game ends. `quickChatsLeft(state, player)` is the same number the UI disables
+its button on.
+
 ## Turn structure
 
 - `startTurn`: expire the player's own "until your next turn" effects

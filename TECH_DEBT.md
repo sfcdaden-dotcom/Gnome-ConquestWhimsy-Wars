@@ -134,6 +134,14 @@ blocks · **P3** opportunistic.
   one square. If revisited, make the split *reactive* to an actual blocker, not
   proactive, and prove it moves the win rate before re-adding branching.
 
+- **Quick chat is single-device only so far.** The engine half is
+  multiplayer-ready (a `quickChat` action relays and replays like any other),
+  but the UI speaks for exactly one seat — the revealed human — so in hot-seat
+  play you can only chat as whoever is holding the device, and CPU seats never
+  chat at all (deliberate: AI chatter would either need RNG, which would break
+  `chooseAiAction`'s determinism, or a hand-written trigger table). Decide both
+  when real multiplayer lands: per-connection sender identity, and whether the
+  CPU gets a personality.
 - **Board size > 7 UI.** Tokens/emoji now scale via container-query units ×
   `--n` (2026-07-16), so 9×9+ renders proportionally — but it has only been
   eyeballed at 7×7; do a visual pass on 9×9/11×11 before exposing board size

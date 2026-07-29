@@ -19,6 +19,13 @@ export interface Toast {
   kind: 'error' | 'info';
 }
 
+/** One quickchat on screen. Bubbles expire on their own timer. */
+export interface ChatBubble {
+  id: number;
+  player: PlayerId;
+  phraseId: string;
+}
+
 export interface FightPlayback {
   /** Fight-related events appended by the last action, replayed stepwise. */
   events: GameEvent[];
@@ -41,8 +48,12 @@ const FIGHT_EVENT_TYPES = new Set<GameEvent['type']>([
 
 const CPU_DELAY_MS = 400;
 const CPU_FAST_MS = 25;
+/** How long a quickchat bubble stays on the board, and how many stack up. */
+const CHAT_BUBBLE_MS = 6000;
+const CHAT_BUBBLE_MAX = 4;
 
 let toastSeq = 1;
+let chatSeq = 1;
 
 // ---------------------------------------------------------------------------
 // Hook
@@ -55,11 +66,15 @@ export function useGame(options: CreateGameOptions, seed: number) {
   const [playback, setPlayback] = useState<FightPlayback | null>(null);
   /** Which human seat's private info (hand) is currently on screen. */
   const [revealedSeat, setRevealedSeat] = useState<PlayerId | null>(null);
+  const [chatBubbles, setChatBubbles] = useState<ChatBubble[]>([]);
+  const [chatMuted, setChatMuted] = useState(false);
 
   const stateRef = useRef(state);
   stateRef.current = state;
   const fastRef = useRef(fastForward);
   fastRef.current = fastForward;
+  const mutedRef = useRef(chatMuted);
+  mutedRef.current = chatMuted;
 
   const pushToast = useCallback((text: string, kind: Toast['kind'] = 'error') => {
     const id = toastSeq++;
@@ -78,16 +93,29 @@ export function useGame(options: CreateGameOptions, seed: number) {
         pushToast(err instanceof Error ? err.message : String(err), 'error');
         return false;
       }
+      // `events` is a trimmed rolling window, so diff via the monotonic
+      // eventCount, not array lengths.
+      const addedCount = Math.min(next.eventCount - prev.eventCount, next.events.length);
+      const added = addedCount > 0 ? next.events.slice(next.events.length - addedCount) : [];
+
       // Fight step-through: replay the fight events this action produced,
       // unless fast-forwarding or the engine stopped inside the fight anyway
-      // (a live Respond window shows its own panel). `events` is a trimmed
-      // window, so diff via the monotonic eventCount, not array lengths.
+      // (a live Respond window shows its own panel).
       if (!fastRef.current && next.pendingDecision?.kind !== 'fightRespond') {
-        const addedCount = Math.min(next.eventCount - prev.eventCount, next.events.length);
-        const added = addedCount > 0 ? next.events.slice(next.events.length - addedCount) : [];
         const fightEvents = added.filter((e) => FIGHT_EVENT_TYPES.has(e.type));
         if (fightEvents.some((e) => e.type === 'fightRolled')) {
           setPlayback({ events: fightEvents, shown: 1 });
+        }
+      }
+
+      // Quickchats float over the board for a few seconds. Muting is purely
+      // cosmetic — the game log keeps every line either way.
+      if (!mutedRef.current) {
+        for (const e of added) {
+          if (e.type !== 'quickChatSaid') continue;
+          const id = chatSeq++;
+          setChatBubbles((bs) => [...bs.slice(-(CHAT_BUBBLE_MAX - 1)), { id, player: e.player, phraseId: e.phraseId }]);
+          window.setTimeout(() => setChatBubbles((bs) => bs.filter((b) => b.id !== id)), CHAT_BUBBLE_MS);
         }
       }
       stateRef.current = next;
@@ -115,6 +143,14 @@ export function useGame(options: CreateGameOptions, seed: number) {
   }, [playback, fastForward]);
 
   const skipPlayback = useCallback(() => setPlayback(null), []);
+
+  /** Mute hides the bubbles (and stops new ones); the log is unaffected. */
+  const toggleChatMuted = useCallback(() => {
+    setChatMuted((m) => {
+      if (!m) setChatBubbles([]);
+      return !m;
+    });
+  }, []);
 
   // --- seat bookkeeping -----------------------------------------------------
   const humanSeats = useMemo(
@@ -180,6 +216,9 @@ export function useGame(options: CreateGameOptions, seed: number) {
     setFastForward,
     playback,
     skipPlayback,
+    chatBubbles,
+    chatMuted,
+    toggleChatMuted,
     playerToAct,
     actorIsCpu,
     humanSeats,

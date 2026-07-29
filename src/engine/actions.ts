@@ -57,6 +57,7 @@ import {
   beginResponseTargeting,
 } from './targeting';
 import { doSacrificeGnome, doSnailify } from './elimination';
+import { doQuickChat } from './quickchat';
 import { doEndTurn, doRollOff, requireActionPhaseActor } from './turns';
 
 // ---------------------------------------------------------------------------
@@ -110,6 +111,8 @@ export function dispatch(draft: GameState, action: Action): void {
       return doPlayCard(draft, action.player, action.cardId, action.targets);
     case 'endTurn':
       return doEndTurn(draft, action.player);
+    case 'quickChat':
+      return doQuickChat(draft, action.player, action.phraseId);
     default: {
       const t: never = action;
       badArg(`Unknown action type: ${JSON.stringify(t)}`);

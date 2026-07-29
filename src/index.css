@@ -421,6 +421,7 @@ h2 {
 }
 
 .board-wrap {
+  position: relative; /* anchors the quick-chat feed over the board */
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1034,6 +1035,88 @@ h2 {
     transform: none;
     opacity: 1;
   }
+}
+
+/* ------------------------------------------------------------------ */
+/* Quick chat (fixed phrases only — there is no text input to style)    */
+.quickchat-panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: none;
+}
+.qc-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.qc-open {
+  width: 100%;
+  justify-content: center;
+}
+/* The menu floats above the button so it never resizes the column. */
+.qc-menu {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 70; /* above the sticky chrome the column scrolls under */
+  max-height: 60dvh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  padding: 8px;
+}
+.qc-groups {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.qc-phrases {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+}
+.qc-phrase {
+  justify-content: flex-start;
+  font-size: 0.82rem;
+  text-align: left;
+}
+.qc-note {
+  text-align: center;
+}
+
+/* Bubbles over the board. Pointer-events off: chat never eats a board click. */
+.qc-feed {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  pointer-events: none;
+  max-width: min(60%, 320px);
+}
+.qc-bubble {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-left-width: 5px;
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  padding: 5px 10px;
+  font-size: 0.82rem;
+  animation: toast-in 0.18s ease;
+}
+.log-quickChatSaid {
+  color: var(--accent);
 }
 
 /* Narrow screens: stack columns (game is designed for >=1280 but stays usable) */

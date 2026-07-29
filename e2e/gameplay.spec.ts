@@ -440,3 +440,58 @@ test('plays exactly the map the setup screen previewed', async ({ page }) => {
 
   expect(await readLayout(page, '[data-testid="game-screen"] .board')).toEqual(previewed);
 });
+
+test('quick chat sends fixed phrases only, and runs out for the turn', async ({ page }) => {
+  const g = new Game(page);
+  await g.startTwoPlayer(SEED);
+  await g.completeRollOff();
+  await g.resolveHarvest('wish');
+
+  const panel = page.getByTestId('quickchat');
+  await expect(panel).toBeVisible();
+  // The whole point of quick chat: there is nowhere to type.
+  expect(await panel.locator('input, textarea, [contenteditable="true"]').count()).toBe(0);
+  await expect(page.getByTestId('quickchat-left')).toHaveText('4/4');
+
+  await page.getByTestId('quickchat-open').click();
+  await page.getByTestId('quickchat-group-manners').click();
+  await page.getByTestId('quickchat-say-sorry').click();
+
+  // It shows up as a bubble over the board and as a line in the game log.
+  await expect(page.getByTestId('quickchat-bubble-sorry')).toBeVisible();
+  await expect(page.locator('.game-log .log-quickChatSaid').last()).toContainText('Sorry!');
+  await expect(page.getByTestId('quickchat-left')).toHaveText('3/4');
+  // The menu closes after a pick, so chat never blocks the board.
+  await expect(page.getByTestId('quickchat-menu')).toBeHidden();
+
+  // Spend the rest of the allowance: the button locks until the next turn.
+  for (const [group, phrase] of [
+    ['greetings', 'hi'],
+    ['compliments', 'wow'],
+    ['greetings', 'gg'],
+  ]) {
+    await page.getByTestId('quickchat-open').click();
+    await page.getByTestId(`quickchat-group-${group}`).click();
+    await page.getByTestId(`quickchat-say-${phrase}`).click();
+  }
+  await expect(page.getByTestId('quickchat-left')).toHaveText('0/4');
+  await expect(page.getByTestId('quickchat-open')).toBeDisabled();
+
+  // A new turn refills it (and the next seat can chat too).
+  await g.endTurn();
+  await expect(page.getByTestId('quickchat-left')).toHaveText('4/4');
+});
+
+test('muting hides chat bubbles but keeps the game log honest', async ({ page }) => {
+  const g = new Game(page);
+  await g.startTwoPlayer(SEED);
+  await g.completeRollOff();
+  await g.resolveHarvest('wish');
+
+  await page.getByTestId('quickchat-mute').click();
+  await page.getByTestId('quickchat-open').click();
+  await page.getByTestId('quickchat-say-hi').click();
+
+  await expect(page.getByTestId('quickchat-feed')).toBeHidden();
+  await expect(page.locator('.game-log .log-quickChatSaid').last()).toContainText('Hi!');
+});

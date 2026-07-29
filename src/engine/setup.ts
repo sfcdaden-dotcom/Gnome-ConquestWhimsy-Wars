@@ -220,6 +220,7 @@ export function createGame(options: CreateGameOptions, seed: number): GameState 
     gnomesLost: 0,
     homePos: homes[i],
     supply: makeSupply(config.tilesPerType),
+    quickChatsThisTurn: 0,
   }));
 
   const state: GameState = {

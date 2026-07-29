@@ -49,6 +49,16 @@ export {
 export { MAX_SETTLE_STEPS } from './settle';
 export { MAX_ENTRY_EFFECT_HOPS } from './gardens';
 
+// Quick chat: fixed phrases only, never free text (see quickchat.ts).
+export {
+  QUICK_CHAT_GROUPS,
+  QUICK_CHAT_PHRASES,
+  QUICK_CHAT_PER_TURN,
+  getQuickChatPhrase,
+  quickChatsLeft,
+} from './quickchat';
+export type { QuickChatGroup, QuickChatGroupId } from './quickchat';
+
 // Shot-clock enforcement (multiplayer hosts; the engine holds no wall clock).
 export { getTimeoutAction, applyTimeout, isOnTheClock, MAX_TIMEOUT_STEPS } from './timeout';
 

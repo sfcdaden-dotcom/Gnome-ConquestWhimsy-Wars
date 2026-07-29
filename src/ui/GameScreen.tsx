@@ -22,6 +22,7 @@ import { Board } from './Board';
 import type { HighlightKind } from './Board';
 import { DecisionPanel } from './DecisionPanel';
 import { FightPanel, FightPlaybackOverlay, GameLog, HandPanel, PlayerPanels } from './panels';
+import { QuickChatBar, QuickChatFeed } from './QuickChat';
 import { GARDEN_META, cardName, decisionLabel, playerColor, pname } from './meta';
 import { unitNameLive } from './gnomeNames';
 import { actionableUnitsAt, nextInCycle, unitChipLabels } from './selection';
@@ -369,6 +370,7 @@ export function GameScreen({ options, seed, onPlayAgain, onQuit }: GameScreenPro
             selectedKey={selectedKey}
             onCellClick={onCellClick}
           />
+          <QuickChatFeed state={state} bubbles={g.chatBubbles} />
           {/* Stable-height slot: the bar appearing/disappearing must not
               reflow the board. Targeting replaces the action bar. */}
           <div className="board-footer">
@@ -480,6 +482,17 @@ export function GameScreen({ options, seed, onPlayAgain, onQuit }: GameScreenPro
             disabled={needsPass || !!playback || state.status === 'finished'}
           />
           <GameLog state={state} />
+          {/* Last in the column so its menu opens upward over the log, and
+              because chat outlives the game itself: "gg" is the one action a
+              finished game still accepts. */}
+          <QuickChatBar
+            state={state}
+            seat={handSeat}
+            disabled={needsPass}
+            muted={g.chatMuted}
+            onToggleMute={g.toggleChatMuted}
+            onSay={(player, phraseId) => act({ type: 'quickChat', player, phraseId })}
+          />
         </aside>
       </div>
 
