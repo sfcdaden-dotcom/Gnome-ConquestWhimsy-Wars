@@ -22,6 +22,7 @@ export {
   presetGardens,
   sealHiddenState,
 } from './setup';
+export type { GameSeal } from './setup';
 
 // Garden preset registry (UI reads this to render the preset menu).
 export {

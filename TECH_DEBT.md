@@ -205,9 +205,32 @@ blocks · **P3** opportunistic.
      the deck and the dice follow from the secret alone.
 
      Consequence for replay (Milestone 8) and `MatchRecord` (selfplay.ts):
-     `config + seed + actions` no longer reconstructs a sealed game. The record
-     needs the secret too, which means a finished game's record is also the
-     natural place to *reveal* it.
+     `config + seed + actions` no longer reconstructs a sealed game. Resolved
+     the same day — `MatchRecord` grew an optional `seal` (schema **2**) and
+     `replayMatch` applies it, so a finished game replays exactly and the
+     record is where the secret gets revealed.
+  3. **Commit–reveal shipped 2026-07-29** (`src/net/commitment.ts`). Sealing
+     the deck means players must trust the host not to stack it; publishing
+     `commitment` = SHA-256(secret, nonce) at room creation and the secret at
+     game end removes that trust without leaking anything mid-game.
+     `verifySeal` + `replayMatch` together prove the deck was fixed in advance
+     *and* was the one dealt. The 128-bit nonce is load-bearing: a bare
+     `sha256(secret)` over a 32-bit secret is exhaustible in minutes, which
+     would turn the commitment itself into a mid-game deck leak.
+
+- **The deck is hidden from inspection, not cryptographically (Milestone 11).**
+  Mulberry32's state is 32 bits. Dice rolls are public events, so enough
+  observed rolls narrow `rngState` to a searchable set — 2^32 candidate states
+  is a cheap sweep — and recovering it hands over the rest of the deck.
+  Redaction, sealing and commit–reveal are all unaffected (each solves a
+  different problem, and commit–reveal's soundness rests on the nonce, not on
+  the RNG width), but none of them make the deck withstand a *determined*
+  opponent rather than a curious one. The fix, when it matters: stop deriving
+  the deck from the game RNG at all — have the host shuffle it from CSPRNG
+  bytes and store the resulting order, leaving `rngState` to the dice, where
+  prediction buys far less. Deferred deliberately: it changes what a replay
+  needs to carry (the deck order, not just a secret), so it wants doing
+  alongside the room's persistence format rather than before it.
 
   Also unresolved: the hand panel renders `HIDDEN_CARD_ID` as its literal
   string. Nothing shows another seat's hand today, so it is unreachable —

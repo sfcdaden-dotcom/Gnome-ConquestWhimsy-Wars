@@ -22,12 +22,15 @@
  */
 
 import type { Action, CreateGameOptions, GameConfig, GameState, PlayerController, PlayerId } from './types';
-import { createGame } from './setup';
+import type { GameSeal } from './setup';
+import { createGame, sealHiddenState } from './setup';
 import { applyAction, isGameOver } from './engine';
 import { chooseAiAction } from './ai';
 
-/** Bump when the MatchRecord shape changes; dataset loaders gate on this. */
-export const MATCH_RECORD_SCHEMA = 1;
+/** Bump when the MatchRecord shape changes; dataset loaders gate on this.
+ *  2: optional `seal` — a networked game's deck no longer follows from the seed
+ *  alone, so replaying one needs the secret (see GameSeal in setup.ts). */
+export const MATCH_RECORD_SCHEMA = 2;
 
 /** Default runaway guard. Real games finish far below this (see engine tests). */
 export const DEFAULT_MAX_ACTIONS = 10_000;
@@ -60,6 +63,18 @@ export interface MatchRecord {
    */
   config: GameConfig;
   seed: number;
+  /**
+   * Present for a game whose deck was sealed behind a host secret
+   * (`sealHiddenState`) — i.e. every networked game. Without it, `config +
+   * seed` rebuilds the right BOARD but the wrong deck, so the replay diverges
+   * at the first draw. Absent for local and self-play games, where the seed
+   * alone is the whole story.
+   *
+   * It carries the commit–reveal envelope, not just the secret, so a finished
+   * game is self-verifying: replay it, and check the seal the host published
+   * at the start against the secret it published at the end.
+   */
+  seal?: GameSeal;
   /** The entire ordered action list. Not capped; not trimmed. */
   actions: Action[];
   result: MatchResult;
@@ -128,6 +143,9 @@ export function simulateSelfPlay(
  */
 export function replayMatch(record: MatchRecord): GameState {
   let state = createGame(record.config, record.seed);
+  // A sealed game's deck was reshuffled under the host's secret at creation;
+  // rebuild that exact deck before replaying a single action.
+  if (record.seal) state = sealHiddenState(state, record.seal.secret);
   for (const action of record.actions) state = applyAction(state, action);
   return state;
 }

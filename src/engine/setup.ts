@@ -340,3 +340,28 @@ export function sealHiddenState(state: GameState, secret: number): GameState {
   draft.rngState = reshuffled.state;
   return draft;
 }
+
+/**
+ * The commit–reveal envelope for a sealed game. Plain data, so it rides along
+ * in a MatchRecord and over the wire like everything else; the crypto that
+ * produces and checks it lives in `src/net/commitment.ts`.
+ *
+ * The problem it solves: once the deck follows from a secret only the host
+ * knows, players have to take the host's word that it was random and never
+ * touched. Publishing `commitment` when the game STARTS and `secret` when it
+ * ENDS removes the need for that trust — anyone can then replay the whole game
+ * and check that the deck they saw is the deck the commitment bound the host
+ * to, while learning nothing while it still matters.
+ *
+ * `nonce` is not decoration. A bare 32-bit secret is exhaustible: an opponent
+ * who receives `sha256(secret)` at game start can hash all 2^32 candidates in
+ * minutes and read the deck. The nonce pads the pre-image out of reach.
+ */
+export interface GameSeal {
+  /** The `secret` handed to `sealHiddenState`. Published at game END. */
+  secret: number;
+  /** Random padding, published with the secret. See above — this is load-bearing. */
+  nonce: string;
+  /** SHA-256 of (secret, nonce), hex. Published when the game STARTS. */
+  commitment: string;
+}

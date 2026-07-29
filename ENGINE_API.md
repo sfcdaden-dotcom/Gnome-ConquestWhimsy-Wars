@@ -233,6 +233,40 @@ from the `secret`, which never leaves the host. Pure, and deterministic per
 Still a server's job: generating that secret from a CSPRNG, and not offering a
 seed field in the multiplayer setup UI at all. See TECH_DEBT.md.
 
+### Commit–reveal: proving the host didn't stack the deck
+
+Sealing the deck behind a host secret trades one problem for another — players
+can no longer read the deck, and now have to take the host's word that it was
+random. `src/net/commitment.ts` removes the need for that word:
+
+1. **Room creation** — the host draws a `GameSeal` (`createSeal()`) and
+   publishes only `commitment`, the SHA-256 of `(secret, nonce)`. It is now
+   bound: changing the deck breaks the hash.
+2. **During the game** — the commitment says nothing usable.
+3. **Game over** — the host publishes `secret` and `nonce`. `verifySeal` checks
+   them against the commitment from step 1, and `replayMatch` re-runs the whole
+   game from `config + seed + seal + actions` to show the deck that was played
+   is the deck the host was bound to. The seal proves the deck was fixed in
+   advance; the replay proves it was the one that got dealt.
+
+`MatchRecord` gained an optional `seal` for exactly this (schema **2**): a
+sealed game does *not* replay from `config + seed` alone — same board, wrong
+deck, divergence at the first draw.
+
+The nonce is load-bearing. `rngState` is 32 bits, so `sha256(secret)` on its
+own would be exhaustible in minutes: an opponent given the commitment at game
+start could recover the secret and read the deck. The 128-bit nonce puts the
+pre-image out of reach.
+
+**What this does not claim.** Mulberry32's state is 32 bits, so the deck is
+hidden from inspection, not hidden cryptographically: dice rolls are public
+events, and enough of them narrow `rngState` to a searchable set — recovering
+the deck for the rest of the game. Commit–reveal is unaffected (it is about
+host honesty, and the nonce is what makes it sound), but if the deck must
+withstand a determined opponent rather than a curious one, the fix is to stop
+deriving it from a 32-bit stream — shuffle it server-side from CSPRNG bytes and
+store the order. Logged in TECH_DEBT.md.
+
 ## Turn structure
 
 - `startTurn`: expire the player's own "until your next turn" effects
