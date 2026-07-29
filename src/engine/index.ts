@@ -20,7 +20,9 @@ export {
   homePositions,
   seatHomes,
   presetGardens,
+  sealHiddenState,
 } from './setup';
+export type { GameSeal } from './setup';
 
 // Garden preset registry (UI reads this to render the preset menu).
 export {
@@ -60,6 +62,10 @@ export {
   quickChatsLeft,
 } from './quickchat';
 export type { QuickChatGroup, QuickChatGroupId } from './quickchat';
+
+// Per-seat redaction (multiplayer: never broadcast raw GameState — see view.ts).
+export { viewFor, isPlayerView, nameSaltOf, HIDDEN_CARD_ID } from './view';
+export type { PlayerView } from './view';
 
 // Shot-clock enforcement (multiplayer hosts; the engine holds no wall clock).
 export { getTimeoutAction, applyTimeout, isOnTheClock, MAX_TIMEOUT_STEPS } from './timeout';

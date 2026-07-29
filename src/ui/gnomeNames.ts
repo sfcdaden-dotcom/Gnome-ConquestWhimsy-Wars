@@ -21,7 +21,7 @@
  */
 
 import type { GameState, PlayerId, UnitId, UnitKind } from '../engine';
-import { normalizeSeed } from '../engine';
+import { nameSaltOf, normalizeSeed } from '../engine';
 
 // ---------------------------------------------------------------------------
 // Pools
@@ -142,7 +142,7 @@ function seatName(state: GameState, player: PlayerId): string {
 export function unitNameFromEvent(state: GameState, ref: UnitEventRef): string {
   return ref.unitKind === 'snail'
     ? `${seatName(state, ref.player)}'s Immortal Snail`
-    : gnomeName(state.seed, ref.unitId);
+    : gnomeName(nameSaltOf(state), ref.unitId);
 }
 
 /**
@@ -156,6 +156,6 @@ export function unitNameFromEvent(state: GameState, ref: UnitEventRef): string {
  */
 export function unitNameLive(state: GameState, unitId: UnitId): string {
   const u = state.units[unitId];
-  if (!u) return gnomeName(state.seed, unitId);
+  if (!u) return gnomeName(nameSaltOf(state), unitId);
   return unitNameFromEvent(state, { unitId, player: u.owner, unitKind: u.kind });
 }

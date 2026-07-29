@@ -9,6 +9,7 @@ fixed phrase menu, never free text, budgeted per turn.
 
 - **Rules:** [RULES.md](RULES.md) · **Cards:** [CARDS.md](CARDS.md)
 - **Engine API & architecture:** [ENGINE_API.md](ENGINE_API.md)
+- **Multiplayer (rooms, identity, anti-cheat):** [MULTIPLAYER.md](MULTIPLAYER.md)
 - **Deploying / hosting:** [DEPLOYMENT.md](DEPLOYMENT.md)
 - **Roadmap:** [ROADMAP.md](ROADMAP.md) · **Known debt:** [TECH_DEBT.md](TECH_DEBT.md)
 
@@ -47,7 +48,9 @@ actions without any UI.
 src/engine/   types, RNG, setup, garden presets; the reducer split by
               responsibility (engine facade, actions, turns, settle,
               elimination, legalActions, targeting), gardens, fights,
-              cards (data-driven), AI, tests
+              cards (data-driven), per-seat redaction (view), AI, tests
+src/net/      multiplayer: wire protocol, the room's rules, commit–reveal
+src/worker/   Cloudflare Worker entry + the room Durable Object
 src/ui/       App shell, setup screen (difficulty + preset picker), game
               screen, board, panels, decision panel, quick chat, preset
               editor, error boundary, meta text

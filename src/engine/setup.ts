@@ -27,7 +27,7 @@ import type {
   Pos,
 } from './types';
 import { EngineError } from './types';
-import { normalizeSeed } from './rng';
+import { normalizeSeed, shuffled } from './rng';
 import { posKey } from './helpers';
 import { makeGarden } from './gardens';
 import { buildInitialDeck } from './cards';
@@ -279,4 +279,89 @@ export function createGame(options: CreateGameOptions, seed: number): GameState 
   buildInitialDeck(state);
 
   return state;
+}
+
+// ---------------------------------------------------------------------------
+// Sealing the deck (networked play)
+// ---------------------------------------------------------------------------
+
+/**
+ * Break the link between the seed and the hidden zones, for a game whose
+ * secrets have to survive a hostile client.
+ *
+ * `createGame` derives EVERYTHING from one seed — the garden layout, the deck
+ * order, and the whole dice stream. The layout is then drawn on the board for
+ * all to see, which makes the seed searchable: generate layouts for candidate
+ * seeds until one matches the board, and the deck falls out with it. Measured
+ * at ~0.4 ms per layout, a full 2^32 sweep is ~480 core-hours — one cheap,
+ * *reusable* precomputation, not a per-game cost. Keeping the seed secret does
+ * not fix this; the board is the leak.
+ *
+ * So a host calls this once, immediately after `createGame`, with a
+ * cryptographically random `secret` it never sends anyone:
+ *
+ * ```ts
+ * const secret = crypto.getRandomValues(new Uint32Array(1))[0];
+ * let state = sealHiddenState(createGame(options, mapSeed), secret);
+ * ```
+ *
+ * After it, the two split cleanly:
+ *  - `state.seed` is now only the MAP seed. It still reproduces the layout —
+ *    and nothing else. Safe for the host to publish (a room can name its map)
+ *    once the deck no longer follows from it.
+ *  - `secret` alone drives the deck order and every future die roll, and lives
+ *    only on the host.
+ *
+ * The `secret` must come from a CSPRNG (`crypto.getRandomValues`), never from
+ * a counter, a timestamp, or the room code — all of which are guessable, which
+ * is the entire problem this function exists to solve.
+ *
+ * Pure, like `applyAction`: the input is never mutated. Determinism is intact
+ * — the same (seed, secret) pair always yields the same game — so a sealed
+ * game still replays exactly, provided the record carries the secret too
+ * (`MatchRecord` currently carries only the seed; see selfplay.ts).
+ *
+ * Only legal on a freshly created game: reshuffling a deck that has been drawn
+ * from would contradict cards players have already seen.
+ */
+export function sealHiddenState(state: GameState, secret: number): GameState {
+  if (state.status !== 'rolloff' || state.eventCount !== 0 || state.turn !== null) {
+    throw new EngineError(
+      'BAD_ARGUMENT',
+      'sealHiddenState: only a freshly created game can be sealed (nothing drawn yet)',
+    );
+  }
+  const draft = structuredClone(state) as GameState;
+  // The secret replaces the seed-derived stream: dice, and every shuffle from
+  // here on (including mid-game discard reshuffles) now follow from it alone.
+  draft.rngState = normalizeSeed(secret);
+  const reshuffled = shuffled(draft.rngState, draft.deck);
+  draft.deck = reshuffled.value;
+  draft.rngState = reshuffled.state;
+  return draft;
+}
+
+/**
+ * The commit–reveal envelope for a sealed game. Plain data, so it rides along
+ * in a MatchRecord and over the wire like everything else; the crypto that
+ * produces and checks it lives in `src/net/commitment.ts`.
+ *
+ * The problem it solves: once the deck follows from a secret only the host
+ * knows, players have to take the host's word that it was random and never
+ * touched. Publishing `commitment` when the game STARTS and `secret` when it
+ * ENDS removes the need for that trust — anyone can then replay the whole game
+ * and check that the deck they saw is the deck the commitment bound the host
+ * to, while learning nothing while it still matters.
+ *
+ * `nonce` is not decoration. A bare 32-bit secret is exhaustible: an opponent
+ * who receives `sha256(secret)` at game start can hash all 2^32 candidates in
+ * minutes and read the deck. The nonce pads the pre-image out of reach.
+ */
+export interface GameSeal {
+  /** The `secret` handed to `sealHiddenState`. Published at game END. */
+  secret: number;
+  /** Random padding, published with the secret. See above — this is load-bearing. */
+  nonce: string;
+  /** SHA-256 of (secret, nonce), hex. Published when the game STARTS. */
+  commitment: string;
 }

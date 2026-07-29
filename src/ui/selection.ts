@@ -13,7 +13,7 @@
  */
 
 import type { Action, GameState, PlayerId, Pos, Unit } from '../engine';
-import { samePos, unitsAt } from '../engine';
+import { nameSaltOf, samePos, unitsAt } from '../engine';
 import { gnomeFirstName, unitNameLive } from './gnomeNames';
 
 /**
@@ -67,7 +67,7 @@ export interface UnitChipLabel {
  * a long one when the whole point is telling them apart.
  */
 export function unitChipLabels(state: GameState, units: readonly Unit[]): UnitChipLabel[] {
-  const shorts = units.map((u) => gnomeFirstName(state.seed, u.id));
+  const shorts = units.map((u) => gnomeFirstName(nameSaltOf(state), u.id));
   const ambiguous = shorts.some((s, i) => shorts.indexOf(s) !== i);
   return units.map((u, i) => {
     const full = unitNameLive(state, u.id);

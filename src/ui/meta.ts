@@ -4,7 +4,7 @@
  */
 
 import type { Action, CardTarget, FightSide, GameEvent, GameState, GardenType, Pos, QuickChatId } from '../engine';
-import { getCardDef, getCurseDef, getQuickChatPhrase } from '../engine';
+import { getCardDef, getCurseDef, getQuickChatPhrase, nameSaltOf } from '../engine';
 import type { UnitEventRef } from './gnomeNames';
 import { gnomeName, unitNameFromEvent, unitNameLive } from './gnomeNames';
 
@@ -141,7 +141,7 @@ function who(state: GameState, ref: UnitEventRef): string {
  * candidate. Empty when neither side risks a gnome.
  */
 function atRiskClause(state: GameState, candidates: readonly (string | null)[]): string {
-  const named = candidates.filter((id): id is string => id !== null).map((id) => gnomeName(state.seed, id));
+  const named = candidates.filter((id): id is string => id !== null).map((id) => gnomeName(nameSaltOf(state), id));
   return named.length === 0 ? '' : ` — at risk: ${named.join(' vs ')}.`;
 }
 
@@ -176,7 +176,7 @@ export function describeEvent(state: GameState, ev: GameEvent): string {
     case 'wishesSpent':
       return `${pname(state, ev.player)} spends ${ev.amount} Wish${ev.amount === 1 ? '' : 'es'} (${ev.reason}).`;
     case 'gnomeSpawned':
-      return `${gnomeName(state.seed, ev.unitId)} joins ${pname(state, ev.player)} at ${posStr(ev.pos)}.`;
+      return `${gnomeName(nameSaltOf(state), ev.unitId)} joins ${pname(state, ev.player)} at ${posStr(ev.pos)}.`;
     case 'unitMoved':
       return `${who(state, ev)} moves ${posStr(ev.from)} → ${posStr(ev.to)}.`;
     case 'unitSlid':
@@ -216,7 +216,7 @@ export function describeEvent(state: GameState, ev: GameEvent): string {
     case 'destructionPrevented':
       return `🛡️ ${who(state, ev)} is saved (Gnomebody Dies)!`;
     case 'gnomesMarried':
-      return `💍 ${gnomeName(state.seed, ev.unitA)} and ${gnomeName(state.seed, ev.unitB)} are married — till death do them join.`;
+      return `💍 ${gnomeName(nameSaltOf(state), ev.unitA)} and ${gnomeName(nameSaltOf(state), ev.unitB)} are married — till death do them join.`;
     case 'unitTeleported':
       return `${who(state, ev)} moves ${posStr(ev.from)} → ${posStr(ev.to)} (${cardName(ev.cardId)}).`;
     case 'spacesSwapped':

@@ -25,9 +25,10 @@
  */
 
 import type { Action, GameState, PlayerId } from './types';
-import { gnomesOnBoard, illegal } from './helpers';
+import { gnomesOnBoard, illegal, internal } from './helpers';
 import { dispatch } from './actions';
 import { settle } from './settle';
+import { isPlayerView } from './view';
 
 // Re-exported so `./engine` stays the single import site for the core API.
 export { getPlayerToAct } from './turns';
@@ -50,6 +51,12 @@ export function isGameOver(state: GameState): boolean {
  * message and leave the input state untouched.
  */
 export function applyAction(state: GameState, action: Action): GameState {
+  // A redacted view is not a game. Its rngState is zeroed and its hidden zones
+  // are placeholders, so applying actions to one would quietly diverge from
+  // the authoritative game instead of failing (see view.ts).
+  if (isPlayerView(state)) {
+    internal('Cannot apply actions to a redacted PlayerView — use the authoritative state');
+  }
   // Quick chat is the one action a finished game still accepts — "gg" belongs
   // after the last fight, and it can touch nothing but the event log anyway.
   if (state.status === 'finished' && action.type !== 'quickChat') {

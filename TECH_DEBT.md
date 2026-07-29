@@ -178,6 +178,64 @@ blocks · **P3** opportunistic.
   chain always terminates (see the `slide`/`tunnel`/`snailMove` case in
   `ai.ts`). That heuristic still stands; the cap is now the hard floor beneath
   it, so no policy — human or learned — can stall a game this way.
+- **The seed is still a secret worth protecting (Milestone 11, server side).**
+  Per-seat redaction landed 2026-07-29 (`view.ts`): `viewFor(state, seat)`
+  strips `rngState`, `seed`, the draw pile, foreign hands, the private half of
+  the pending decision, and the card identities in draw/steal events, keeping
+  every count structurally intact. That closes the *broadcast* leak. Two holes
+  remained; the second is now closed in the engine and the first is the
+  server's to close:
+  1. **Who picks the seed — still open, server side.** Today the client passes
+     it to `createGame`, and the setup screen even lets a player type one. A
+     client that knows the seed knows the deck order and every future die roll,
+     redaction or no redaction. The room server must generate the secret
+     (`crypto.getRandomValues`) and never send it, and the multiplayer setup UI
+     must not offer a seed field at all.
+  2. ~~**The `random` preset's layout is seed-derived and visible.**~~ **FIXED
+     2026-07-29** by `sealHiddenState` (`setup.ts`). The board itself narrowed
+     the seed: an attacker generates layouts for candidate seeds until one
+     matches what is on screen, and the deck falls out with it. Measured at
+     ~0.4 ms per layout, a full 2^32 sweep is ~480 core-hours — cheap, and a
+     *reusable* precomputation rather than a per-game cost, so keeping the seed
+     secret was never going to be enough on its own. A host now calls
+     `sealHiddenState(createGame(options, mapSeed), secret)` once at creation:
+     it replaces `rngState` with a CSPRNG secret and reshuffles the deck under
+     it, leaving the layout untouched. `seed` is thereafter only the MAP seed —
+     it reproduces the board and nothing else, and is safe to publish — while
+     the deck and the dice follow from the secret alone.
+
+     Consequence for replay (Milestone 8) and `MatchRecord` (selfplay.ts):
+     `config + seed + actions` no longer reconstructs a sealed game. Resolved
+     the same day — `MatchRecord` grew an optional `seal` (schema **2**) and
+     `replayMatch` applies it, so a finished game replays exactly and the
+     record is where the secret gets revealed.
+  3. **Commit–reveal shipped 2026-07-29** (`src/net/commitment.ts`). Sealing
+     the deck means players must trust the host not to stack it; publishing
+     `commitment` = SHA-256(secret, nonce) at room creation and the secret at
+     game end removes that trust without leaking anything mid-game.
+     `verifySeal` + `replayMatch` together prove the deck was fixed in advance
+     *and* was the one dealt. The 128-bit nonce is load-bearing: a bare
+     `sha256(secret)` over a 32-bit secret is exhaustible in minutes, which
+     would turn the commitment itself into a mid-game deck leak.
+
+- **The deck is hidden from inspection, not cryptographically (Milestone 11).**
+  Mulberry32's state is 32 bits. Dice rolls are public events, so enough
+  observed rolls narrow `rngState` to a searchable set — 2^32 candidate states
+  is a cheap sweep — and recovering it hands over the rest of the deck.
+  Redaction, sealing and commit–reveal are all unaffected (each solves a
+  different problem, and commit–reveal's soundness rests on the nonce, not on
+  the RNG width), but none of them make the deck withstand a *determined*
+  opponent rather than a curious one. The fix, when it matters: stop deriving
+  the deck from the game RNG at all — have the host shuffle it from CSPRNG
+  bytes and store the resulting order, leaving `rngState` to the dice, where
+  prediction buys far less. Deferred deliberately: it changes what a replay
+  needs to carry (the deck order, not just a secret), so it wants doing
+  alongside the room's persistence format rather than before it.
+
+  Also unresolved: the hand panel renders `HIDDEN_CARD_ID` as its literal
+  string. Nothing shows another seat's hand today, so it is unreachable —
+  give it a face-down card back when the multiplayer UI lands.
+
 - **Stall vectors that rules cannot close (host responsibility, Milestone 11).**
   Audited 2026-07-29 alongside the chain cap. Two remain, and both are the same
   shape: legal actions that change nothing.

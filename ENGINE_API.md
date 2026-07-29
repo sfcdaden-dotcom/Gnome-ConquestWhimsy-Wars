@@ -32,6 +32,7 @@ implementation detail and may move again.
 | `gardens.ts` | harvests, planting, entry effects |
 | `fights.ts` | fight resolution (Respond → Roll → Resolve) |
 | `cards.ts` | card framework, definitions, the card stack |
+| `view.ts` | per-seat redaction: `GameState` → `PlayerView` (multiplayer) |
 | `helpers.ts` | shared queries and draft mutators |
 | `setup.ts` / `gardenPresets.ts` / `randomLayout.ts` / `rng.ts` / `types.ts` | creation, layouts, procedural map generation, RNG, types |
 
@@ -160,6 +161,111 @@ nothing about the board, so a chatty CPU leaks no information), then takes its
 real action on the next call. The coin flip and the phrase are hashed from
 (seed, turn, seat), so the AI stays deterministic, and the engine's own
 `quickChatsThisTurn` counter is what stops it repeating within a turn.
+
+## Hidden information & per-seat views (multiplayer)
+
+`GameState` is a **full-information** object, and deliberately so: on one
+device the holder sees everything anyway, and the tests, the AI and the
+encoders all want the whole truth. Over a network that is the entire game
+given away. Raw state carries every hand, the deck order, and `rngState` —
+from which every future draw and every future die roll is computable.
+
+`view.ts` is the boundary:
+
+```ts
+viewFor(state, seat) → PlayerView   // what `seat` may see; seat = null ⇒ spectator
+isPlayerView(state) → boolean
+nameSaltOf(state) → number          // cosmetic salt: seed locally, nameSalt over the wire
+```
+
+The rule is the one `encode.ts` already pins for the learned CPU: **your own
+hand in full; every other hidden zone as counts only.** Counts are preserved
+*structurally* — a hidden card is present in the array as `HIDDEN_CARD_ID` —
+so `deck.length`, `hand.length` and "how many cards does Red hold" keep
+working while the identities are gone.
+
+| Redacted | Public, deliberately |
+|---|---|
+| `rngState`, `seed` | hand SIZES, deck/discard COUNTS |
+| `deck`, `cursePool` contents | the discard pile itself (face up) |
+| every other seat's `hand` | the card stack (a played card is announced) |
+| `fightRespond` / `cardResponse` `playableCards` of other seats — emptied, not just hidden, because the count is itself information | active curses, timed effects, the whole board |
+| another seat's in-progress `cardTargeting` (`cardId` **and** `prompt`, which names the card) — the card is still in hand until the last target is picked, and `cancelTargeting` puts it back | `cardPlayed` / `cardResolved` / `cardCancelled` / `cardFizzled` / `cardDiscarded` / `curseRevealed` events |
+| `cardDrawn.cardId` (except the drawer), `cardStolen.cardId` (except the two parties), `deckReshuffled.curseAdded` | everything else in the event log |
+
+Two consequences worth knowing:
+
+- **A `PlayerView` is structurally a `GameState`**, so rendering code takes it
+  unchanged — but it is *not* a legal engine input. `rngState` is zeroed and
+  the hidden zones are placeholders, so applying actions to one would silently
+  diverge from the authoritative game rather than fail. `applyAction` rejects
+  a view outright (`EngineError('INTERNAL')`).
+- **Gnome names can no longer read `seed`.** They are derived from
+  `(seed, unitId)`, and the seed with `config` regenerates the whole deck, so
+  a view carries `nameSalt` — a *truncated* (16-bit) hash instead. Truncation
+  is the point: `normalizeSeed` is a bijection on uint32, so the untruncated
+  hash would be an invertible copy of the seed. UI name code calls
+  `nameSaltOf(state)`, which is the seed for local play and the salt for a
+  view.
+
+### Sealing the deck
+
+Redaction stops the state from being *broadcast*, but `createGame` derives the
+layout, the deck and the dice from one seed — and the layout is then drawn on
+the board. That makes the seed searchable: generate layouts for candidate
+seeds until one matches, and the deck falls out with it (~0.4 ms per layout, so
+a full 2^32 sweep is ~480 core-hours — a reusable precomputation, not a
+per-game cost). Keeping the seed secret does not fix it; the board is the leak.
+
+```ts
+const secret = crypto.getRandomValues(new Uint32Array(1))[0];
+let state = sealHiddenState(createGame(options, mapSeed), secret);
+```
+
+`sealHiddenState` replaces `rngState` with the secret and reshuffles the deck
+under it, leaving the layout alone. Afterwards the two are cleanly split:
+`state.seed` is only the MAP seed (it reproduces the board and nothing else, so
+a host may publish it), while the deck order and every future die roll follow
+from the `secret`, which never leaves the host. Pure, and deterministic per
+`(seed, secret)` — but note that a sealed game no longer replays from
+`config + seed + actions` alone, so `MatchRecord` needs the secret too.
+
+Still a server's job: generating that secret from a CSPRNG, and not offering a
+seed field in the multiplayer setup UI at all. See TECH_DEBT.md.
+
+### Commit–reveal: proving the host didn't stack the deck
+
+Sealing the deck behind a host secret trades one problem for another — players
+can no longer read the deck, and now have to take the host's word that it was
+random. `src/net/commitment.ts` removes the need for that word:
+
+1. **Room creation** — the host draws a `GameSeal` (`createSeal()`) and
+   publishes only `commitment`, the SHA-256 of `(secret, nonce)`. It is now
+   bound: changing the deck breaks the hash.
+2. **During the game** — the commitment says nothing usable.
+3. **Game over** — the host publishes `secret` and `nonce`. `verifySeal` checks
+   them against the commitment from step 1, and `replayMatch` re-runs the whole
+   game from `config + seed + seal + actions` to show the deck that was played
+   is the deck the host was bound to. The seal proves the deck was fixed in
+   advance; the replay proves it was the one that got dealt.
+
+`MatchRecord` gained an optional `seal` for exactly this (schema **2**): a
+sealed game does *not* replay from `config + seed` alone — same board, wrong
+deck, divergence at the first draw.
+
+The nonce is load-bearing. `rngState` is 32 bits, so `sha256(secret)` on its
+own would be exhaustible in minutes: an opponent given the commitment at game
+start could recover the secret and read the deck. The 128-bit nonce puts the
+pre-image out of reach.
+
+**What this does not claim.** Mulberry32's state is 32 bits, so the deck is
+hidden from inspection, not hidden cryptographically: dice rolls are public
+events, and enough of them narrow `rngState` to a searchable set — recovering
+the deck for the rest of the game. Commit–reveal is unaffected (it is about
+host honesty, and the nonce is what makes it sound), but if the deck must
+withstand a determined opponent rather than a curious one, the fix is to stop
+deriving it from a 32-bit stream — shuffle it server-side from CSPRNG bytes and
+store the order. Logged in TECH_DEBT.md.
 
 ## Turn structure
 
