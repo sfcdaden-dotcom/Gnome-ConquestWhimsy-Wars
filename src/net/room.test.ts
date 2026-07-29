@@ -12,7 +12,7 @@
 
 import { describe, expect, it } from 'vitest';
 import type { GameSeal, MatchRecord } from '../engine';
-import { HIDDEN_CARD_ID, getPlayerToAct, replayMatch } from '../engine';
+import { HIDDEN_CARD_ID, chooseAiAction, getPlayerToAct, replayMatch } from '../engine';
 import { createSeal, verifySeal } from './commitment';
 import type { PersistedRoom, RoomConnection, RoomHost } from './room';
 import { Room, generateRoomCode } from './room';
@@ -431,5 +431,44 @@ describe('game over', () => {
     const replayed = replayMatch(record);
     expect(replayed.winner).toBe(room.gameState!.winner);
     expect(replayed.eventCount).toBe(room.gameState!.eventCount);
+  }, 60_000);
+});
+
+describe('quick chat after the final fight', () => {
+  it('still accepts "gg" once the game is over, and reveals only once', async () => {
+    const { room, c0 } = await lobby(['human', 'cpu']);
+    await room.handle('c0', { t: 'start' });
+    await runToEnd(room, 4000);
+    // Seat 0 is human, so drive the human turns too until somebody wins.
+    for (let i = 0; i < 4000 && room.phase === 'playing'; i++) {
+      const actor = getPlayerToAct(room.gameState!);
+      if (actor === 0) {
+        await room.handle('c0', { t: 'action', action: chooseAiAction(room.gameState!) });
+      } else {
+        await room.onAlarm();
+      }
+    }
+    expect(room.phase).toBe('finished');
+
+    const revealsBefore = c0.sent.filter((m) => m.t === 'revealed').length;
+    expect(revealsBefore).toBe(1);
+    const eventsBefore = room.gameState!.eventCount;
+
+    await room.handle('c0', { t: 'action', action: { type: 'quickChat', player: 0, phraseId: 'gg' } });
+
+    expect(c0.last('error')).toBeUndefined();
+    expect(room.gameState!.eventCount).toBeGreaterThan(eventsBefore);
+    // The seal is published once, on the transition — not again per chat line.
+    expect(c0.sent.filter((m) => m.t === 'revealed')).toHaveLength(1);
+  }, 60_000);
+
+  it('still refuses a real move once the game is over', async () => {
+    const { room, c0 } = await lobby(['cpu', 'cpu']);
+    await room.handle('c0', { t: 'start' });
+    await runToEnd(room);
+    expect(room.phase).toBe('finished');
+
+    await room.handle('c0', { t: 'action', action: { type: 'endTurn', player: 0 } });
+    expect(c0.last('error')?.code).toBe('WRONG_PHASE');
   }, 60_000);
 });
