@@ -21,8 +21,8 @@ import { gardenAt, getLegalActionIntents, getPendingDecisionOptions, posKey, sam
 import { Board } from './Board';
 import type { HighlightKind } from './Board';
 import { DecisionPanel } from './DecisionPanel';
-import { FightPanel, FightPlaybackOverlay, GameLog, HandPanel, PlayerPanels } from './panels';
-import { QuickChatBar, QuickChatFeed } from './QuickChat';
+import { FightPanel, FightPlaybackOverlay, HandPanel, PlayerPanels } from './panels';
+import { ChatPanel, QuickChatFeed } from './QuickChat';
 import { GARDEN_META, cardName, decisionLabel, playerColor, pname } from './meta';
 import { unitNameLive } from './gnomeNames';
 import { actionableUnitsAt, nextInCycle, unitChipLabels } from './selection';
@@ -481,11 +481,11 @@ export function GameScreen({ options, seed, onPlayAgain, onQuit }: GameScreenPro
             onPlay={(cardId) => handSeat !== null && startCardPlay(cardId, false, handSeat)}
             disabled={needsPass || !!playback || state.status === 'finished'}
           />
-          <GameLog state={state} />
-          {/* Last in the column so its menu opens upward over the log, and
-              because chat outlives the game itself: "gg" is the one action a
-              finished game still accepts. */}
-          <QuickChatBar
+          {/* Chat + game log share one window (tabs), and it is last in the
+              column so the phrase picker opens upward over the transcript.
+              Chat outlives the game itself: "gg" is the one action a finished
+              game still accepts. */}
+          <ChatPanel
             state={state}
             seat={handSeat}
             disabled={needsPass}

@@ -834,19 +834,7 @@ h2 {
   font-weight: 400;
 }
 
-/* Log */
-.game-log-panel {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-height: 0;
-}
-.game-log-panel.collapsed {
-  flex: 0 0 auto;
-}
-.log-title {
-  align-items: center;
-}
+/* Log (the "Game log" tab of the chat window; the panel chrome lives there) */
 .game-log {
   flex: 1;
   min-height: 120px;
@@ -1038,50 +1026,158 @@ h2 {
 }
 
 /* ------------------------------------------------------------------ */
-/* Quick chat (fixed phrases only — there is no text input to style)    */
-.quickchat-panel {
-  position: relative;
+/* Chat window: tabs (chat / game log) + the radial phrase picker.      */
+/* Fixed phrases only — there is no text input to style.                */
+.chat-panel {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  flex: none;
+  flex: 1;
+  min-height: 0;
 }
-.qc-controls {
+.chat-panel.collapsed {
+  flex: 0 0 auto;
+}
+.chat-head {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 6px;
+}
+.chat-tabs,
+.chat-head-right {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.chat-unread {
+  display: inline-block;
+  margin-left: 4px;
+  min-width: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 0.66rem;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+}
+.chat-transcript {
+  flex: 1;
+  min-height: 120px;
+  overflow-y: auto;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 8px 10px;
+  font-size: 0.82rem;
+}
+.chat-line {
+  padding: 2px 0;
+}
+
+/* The picker anchors here and floats upward, so opening it never resizes the
+   column or reflows the transcript. */
+.chat-composer {
+  position: relative;
+  flex: none;
 }
 .qc-open {
   width: 100%;
+  display: flex;
+  align-items: center;
   justify-content: center;
+  gap: 8px;
 }
-/* The menu floats above the button so it never resizes the column. */
-.qc-menu {
+.qc-left {
+  font-size: 0.72rem;
+  color: var(--muted);
+  font-weight: 400;
+}
+.qc-wheel,
+.qc-list {
   position: absolute;
-  bottom: calc(100% + 6px);
-  left: 0;
-  right: 0;
-  z-index: 70; /* above the sticky chrome the column scrolls under */
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 70; /* above the chrome the column scrolls under */
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+  padding: 10px;
+}
+/* Level 1: the category wheel. */
+.qc-ring {
+  position: relative;
+}
+.qc-petal {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  width: 64px;
+  height: 64px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--panel-2);
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+  line-height: 1.1;
+  transition: transform 0.12s ease, border-color 0.12s ease;
+}
+.qc-petal:hover,
+.qc-petal:focus-visible {
+  border-color: var(--accent);
+  transform: translate(-50%, -50%) scale(1.08);
+}
+.qc-petal-emoji {
+  font-size: 1.15rem;
+}
+.qc-petal-label {
+  font-size: 0.56rem;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.qc-hub {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.qc-hub-title {
+  font-size: 0.7rem;
+  color: var(--muted);
+}
+/* Level 2: the chosen category's phrases (a list — they are sentences). */
+.qc-list {
+  width: 260px;
+  max-width: min(88vw, 320px);
   max-height: 60dvh;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  box-shadow: var(--shadow);
-  padding: 8px;
+  gap: 4px;
 }
-.qc-groups {
+.qc-list-head {
   display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
+  align-items: center;
+  gap: 6px;
+  padding-bottom: 2px;
 }
-.qc-phrases {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 4px;
+.qc-list-title {
+  font-weight: 700;
+  font-size: 0.82rem;
 }
 .qc-phrase {
   justify-content: flex-start;

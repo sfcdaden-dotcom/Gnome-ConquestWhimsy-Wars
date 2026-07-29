@@ -3,7 +3,7 @@
  * (live respond panel + finished-fight step-through overlay).
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import type { CSSProperties } from 'react';
 import type { CardId, GameEvent, GameState, PlayerId } from '../engine';
 import {
@@ -74,41 +74,27 @@ export function PlayerPanels({ state }: { state: GameState }) {
 // Game log
 // ---------------------------------------------------------------------------
 
-export function GameLog({ state }: { state: GameState }) {
+/**
+ * The scrolling event list. It has no chrome of its own: the chat window owns
+ * the panel, the tabs and the collapse, and renders this as its "Game log" tab.
+ */
+export function GameLogView({ state }: { state: GameState }) {
   const ref = useRef<HTMLDivElement>(null);
-  const [collapsed, setCollapsed] = useState(false);
   const count = state.events.length;
   useEffect(() => {
-    if (collapsed) return;
     const el = ref.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [count, collapsed]);
+  }, [count]);
 
   const start = Math.max(0, count - 250);
   return (
-    <div className={`game-log-panel${collapsed ? ' collapsed' : ''}`}>
-      <div className="panel-title log-title">
-        <span>📜 Game log</span>
-        <button
-          type="button"
-          className="btn small"
-          aria-expanded={!collapsed}
-          data-testid="log-collapse"
-          onClick={() => setCollapsed((c) => !c)}
-        >
-          {collapsed ? 'Show ▸' : 'Hide ▾'}
-        </button>
-      </div>
-      {!collapsed && (
-        <div className="game-log" ref={ref} aria-label="Game log">
-          {state.events.slice(start).map((ev, i) => (
-            <div key={start + i} className={`log-line log-${ev.type}`}>
-              {describeEvent(state, ev)}
-            </div>
-          ))}
-          {count === 0 && <div className="log-line muted">The garden awaits…</div>}
+    <div className="game-log" ref={ref} aria-label="Game log" data-testid="game-log">
+      {state.events.slice(start).map((ev, i) => (
+        <div key={start + i} className={`log-line log-${ev.type}`}>
+          {describeEvent(state, ev)}
         </div>
-      )}
+      ))}
+      {count === 0 && <div className="log-line muted">The garden awaits…</div>}
     </div>
   );
 }
