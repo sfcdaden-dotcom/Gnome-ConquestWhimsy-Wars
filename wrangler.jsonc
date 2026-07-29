@@ -1,13 +1,34 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "gnomeconquest",
+  "main": "src/worker/index.ts",
   "compatibility_date": "2026-07-23",
   "observability": {
     "enabled": true
   },
   "assets": {
+    // The Worker now answers /api/* itself and falls through to the bundle for
+    // everything else, so it needs the binding rather than a plain static mount.
+    "binding": "ASSETS",
     "not_found_handling": "single-page-application"
   },
+  // One Durable Object per room. Cloudflare guarantees a single instance per
+  // id worldwide, which is what makes the room's state authoritative rather
+  // than merely agreed-upon.
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "ROOMS",
+        "class_name": "RoomDurableObject"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["RoomDurableObject"]
+    }
+  ],
   "compatibility_flags": [
     "nodejs_compat"
   ]

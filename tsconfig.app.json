@@ -23,5 +23,8 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src"]
+  "include": ["src"],
+  // Worker-only sources compile under tsconfig.worker.json (Cloudflare globals,
+  // not the DOM). src/net is shared and stays here too.
+  "exclude": ["src/worker"]
 }
