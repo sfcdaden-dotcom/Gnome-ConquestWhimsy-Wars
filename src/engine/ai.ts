@@ -40,6 +40,9 @@
  *    end the turn when nothing scores above passing.
  *  - Discard (over hand limit): pitch the lowest static-value card.
  *  - Snailify: always continue as the Immortal Snail.
+ *  - Idle chatter: when it could play a Whimsy Card this Action Phase and
+ *    doesn't, it sometimes mutters one rhetorical quick-chat line first (see
+ *    `idleChatter`) — flavor only; chat changes no game state.
  *
  * Roll-influencing / shield cards (Snake Eyes, 4 Leaf Clover, Gnomebody Dies)
  * are never spent proactively in the Action Phase — they are held for the
@@ -73,6 +76,8 @@ import type { Action, CardId, CardTargets, GameState, PendingDecision, Plantable
 import { EngineError } from './types';
 import { getLegalActionIntents, getPendingDecisionOptions, getPlayerToAct } from './engine';
 import { getCardDef } from './cards';
+import { QUICK_CHAT_MUSINGS } from './quickchat';
+import { normalizeSeed } from './rng';
 import { firstCompleteTargets } from './targeting';
 import {
   canSpawnGnome,
@@ -238,7 +243,44 @@ function chooseAiActionInner(state: GameState): Action {
       best = candidate;
     }
   }
-  return best ?? legal[0];
+  const action = best ?? legal[0];
+  return idleChatter(state, actor, legal, action) ?? action;
+}
+
+// ---------------------------------------------------------------------------
+// Idle chatter
+// ---------------------------------------------------------------------------
+
+/**
+ * A gnome sitting on a card it won't play has to do *something* with its mouth.
+ *
+ * When the CPU could play a Whimsy Card this Action Phase but picked another
+ * action instead, it sometimes says one rhetorical line first (the `musings`
+ * group — questions about hats and mushrooms, never anything about the board,
+ * so a chatty CPU leaks no information a human opponent could read). Quick chat
+ * changes nothing but the log, so this costs the turn nothing: the real action
+ * follows on the next call.
+ *
+ * Deterministic, like everything else here: the coin flip and the phrase come
+ * from a hash of (seed, turn, seat), so a seeded game still replays exactly.
+ * It fires at most once per turn per seat — the engine's own
+ * `quickChatsThisTurn` counter is the latch, so the AI cannot loop on it.
+ */
+function idleChatter(
+  state: GameState,
+  actor: PlayerId,
+  legal: readonly Action[],
+  chosen: Action,
+): Action | null {
+  if (chosen.type === 'playCard') return null; // it DID play a card
+  if (!legal.some((a) => a.type === 'playCard')) return null; // nothing to hold back
+  if (state.players[actor].quickChatsThisTurn > 0) return null; // already mused this turn
+  if (QUICK_CHAT_MUSINGS.length === 0) return null;
+
+  const h = normalizeSeed(state.seed + (state.turn?.number ?? 0) * 131 + actor * 7919);
+  if (h % 3 !== 0) return null; // ~1 turn in 3: chatter, not chatterbox
+  const phrase = QUICK_CHAT_MUSINGS[(h >>> 8) % QUICK_CHAT_MUSINGS.length];
+  return { type: 'quickChat', player: actor, phraseId: phrase.id };
 }
 
 // ---------------------------------------------------------------------------

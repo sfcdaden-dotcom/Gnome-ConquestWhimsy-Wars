@@ -153,6 +153,14 @@ player, refilled for everyone at the start of every turn and once more when the
 game ends. `quickChatsLeft(state, player)` is the same number the UI disables
 its button on.
 
+`chooseAiAction` uses it too: when the CPU could play a Whimsy Card this Action
+Phase and picks something else, it sometimes says one line from the `musings`
+group first (`QUICK_CHAT_MUSINGS` — rhetorical gnome questions that describe
+nothing about the board, so a chatty CPU leaks no information), then takes its
+real action on the next call. The coin flip and the phrase are hashed from
+(seed, turn, seat), so the AI stays deterministic, and the engine's own
+`quickChatsThisTurn` counter is what stops it repeating within a turn.
+
 ## Turn structure
 
 - `startTurn`: expire the player's own "until your next turn" effects

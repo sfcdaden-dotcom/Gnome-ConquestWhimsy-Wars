@@ -138,10 +138,13 @@ blocks · **P3** opportunistic.
   multiplayer-ready (a `quickChat` action relays and replays like any other),
   but the UI speaks for exactly one seat — the revealed human — so in hot-seat
   play you can only chat as whoever is holding the device, and CPU seats never
-  chat at all (deliberate: AI chatter would either need RNG, which would break
-  `chooseAiAction`'s determinism, or a hand-written trigger table). Decide both
-  when real multiplayer lands: per-connection sender identity, and whether the
-  CPU gets a personality.
+  chat at all — **partly resolved the same day**: the CPU now mutters a
+  rhetorical `musings` line when it sits on a playable Whimsy Card, off a
+  (seed, turn, seat) hash rather than RNG so `chooseAiAction` stays
+  deterministic. That is its whole personality; it never reacts to fights,
+  losses or wins. Decide when real multiplayer lands: per-connection sender
+  identity, and whether the CPU's chatter should react to events (which needs
+  a trigger table, and a rule that it still says nothing informative).
 - **Board size > 7 UI.** Tokens/emoji now scale via container-query units ×
   `--n` (2026-07-16), so 9×9+ renders proportionally — but it has only been
   eyeballed at 7×7; do a visual pass on 9×9/11×11 before exposing board size

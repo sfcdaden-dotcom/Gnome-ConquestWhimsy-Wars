@@ -53,6 +53,8 @@ export { MAX_ENTRY_EFFECT_HOPS } from './gardens';
 export {
   QUICK_CHAT_GROUPS,
   QUICK_CHAT_PHRASES,
+  QUICK_CHAT_MUSINGS,
+  QUICK_CHAT_MUSINGS_GROUP,
   QUICK_CHAT_PER_TURN,
   getQuickChatPhrase,
   quickChatsLeft,

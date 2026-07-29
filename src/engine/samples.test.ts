@@ -4,7 +4,10 @@
  * Load-bearing properties:
  *  - COVERAGE: every recorded action yields at least one sample (more when a
  *    one-shot targeted play decomposes into targeting steps), each pointing
- *    at a real entry of the legal option list at that state.
+ *    at a real entry of the legal option list at that state. Quick chat is the
+ *    exception and the reason `decisionActions` exists below: it is not a
+ *    decision point (never in the option set, no "say nothing" option), so it
+ *    is replayed and sampled zero times.
  *  - DECISION SPACE: samples live in the SAME option space the learned policy
  *    will act in (`getLegalActionIntents`), so targeted plays appear as an
  *    intent pick plus per-step `selectTarget` picks — never as one giant
@@ -37,6 +40,11 @@ const TWO_HARD: CreateGameOptions = {
  *  AI's spending priorities. */
 const TWO_HARD_CARD_RICH: CreateGameOptions = { ...TWO_HARD, startingWishes: 6, wishLimit: 6 };
 
+/** Recorded actions that are decision points (everything but quick chat). */
+function decisionActions(rec: MatchRecord): number {
+  return rec.actions.filter((a) => a.type !== 'quickChat').length;
+}
+
 /** First seed in 1..8 whose record contains a one-shot targeted card play —
  *  the case the extractor must decompose. Deterministic (fixed AI + seeds). */
 function recordWithTargetedPlay(): MatchRecord {
@@ -54,7 +62,7 @@ describe('extractSamples', () => {
     const rec = playSelfPlayGame(TWO_HARD, 1);
     const samples = extractSamples(rec);
     // At least one sample per recorded action (decomposition only adds more).
-    expect(samples.length).toBeGreaterThanOrEqual(rec.actions.length);
+    expect(samples.length).toBeGreaterThanOrEqual(decisionActions(rec));
 
     const winner = rec.result.winner!;
     for (const s of samples) {
@@ -83,7 +91,7 @@ describe('extractSamples', () => {
       if (s.actionType === 'selectTarget') expect(s.decisionKind).toBe('cardTargeting');
     }
     // Decomposition adds samples beyond one-per-action.
-    expect(samples.length).toBeGreaterThan(rec.actions.length);
+    expect(samples.length).toBeGreaterThan(decisionActions(rec));
   });
 
   it('skipForced drops single-option decision points (e.g. roll-off)', () => {
@@ -124,7 +132,7 @@ describe('extractSamples', () => {
       1,
     );
     const samples = extractSamples(rec);
-    expect(samples.length).toBeGreaterThanOrEqual(rec.actions.length);
+    expect(samples.length).toBeGreaterThanOrEqual(decisionActions(rec));
     const winner = rec.result.winner!;
     const rewardsBySeat = new Map<number, Set<number>>();
     for (const s of samples) {

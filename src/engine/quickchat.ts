@@ -88,6 +88,25 @@ export const QUICK_CHAT_GROUPS: readonly QuickChatGroup[] = [
     ],
   },
   {
+    // Rhetorical gnome chatter: says nothing about the board, answers nothing,
+    // gives nothing away. This is the pool the CPU mutters from when it sits on
+    // a playable card (see `idleChatter` in ai.ts) — and it is on every
+    // player's menu too, because the CPU should not get better lines than you.
+    id: 'musings',
+    label: 'Musings',
+    emoji: '🤔',
+    phrases: [
+      { id: 'why-the-hats', emoji: '🎩', text: 'Why do we even wear the hats?' },
+      { id: 'under-a-mushroom', emoji: '🍄', text: "Ever wonder what's under a mushroom?" },
+      { id: 'snail-dreams', emoji: '🐌', text: 'Do snails dream of faster gardens?' },
+      { id: 'really-looked', emoji: '🌼', text: 'Have you ever really looked at a dandelion?' },
+      { id: 'gnome-without-garden', emoji: '🧙', text: 'What is a gnome without a garden?' },
+      { id: 'unmade-wishes', emoji: '✨', text: 'Where do Wishes go when nobody makes them?' },
+      { id: 'where-tunnels-go', emoji: '🕳️', text: 'Where does that tunnel actually go?' },
+      { id: 'grass-greener', emoji: '🌱', text: 'Is the grass greener over there?' },
+    ],
+  },
+  {
     id: 'manners',
     label: 'Manners',
     emoji: '🙇',
@@ -104,6 +123,13 @@ export const QUICK_CHAT_GROUPS: readonly QuickChatGroup[] = [
 export const QUICK_CHAT_PHRASES: readonly QuickChatPhrase[] = QUICK_CHAT_GROUPS.flatMap((g) => g.phrases);
 
 const phraseById = new Map<QuickChatId, QuickChatPhrase>(QUICK_CHAT_PHRASES.map((p) => [p.id, p]));
+
+/** The group id the CPU's idle chatter draws from (see ai.ts `idleChatter`). */
+export const QUICK_CHAT_MUSINGS_GROUP = 'musings';
+
+/** Rhetorical musings only — the CPU never comments on the actual board. */
+export const QUICK_CHAT_MUSINGS: readonly QuickChatPhrase[] =
+  QUICK_CHAT_GROUPS.find((g) => g.id === QUICK_CHAT_MUSINGS_GROUP)?.phrases ?? [];
 
 /** The phrase for an id, or null when the id is not in the catalogue. */
 export function getQuickChatPhrase(id: QuickChatId): QuickChatPhrase | null {

@@ -6,13 +6,16 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import type { Action, GameState } from './index';
+import type { Action, CreateGameOptions, GameState } from './index';
 import {
   EngineError,
   QUICK_CHAT_GROUPS,
   QUICK_CHAT_PER_TURN,
+  QUICK_CHAT_MUSINGS,
   QUICK_CHAT_PHRASES,
   applyAction,
+  chooseAiAction,
+  createGame,
   getLegalActions,
   getLegalActionIntents,
   getQuickChatPhrase,
@@ -129,5 +132,81 @@ describe('quick chat action', () => {
     const after = applyAction(s, say(1, 'good-luck'));
     expect(after.pendingDecision).toEqual(s.pendingDecision);
     expect(after.status).toBe('rolloff');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// CPU idle chatter
+// ---------------------------------------------------------------------------
+
+describe('CPU idle chatter', () => {
+  /** A wish-rich economy so the AI actually holds playable cards to sit on. */
+  const CARD_RICH: CreateGameOptions = {
+    players: [
+      { name: 'North', controller: 'cpu', difficulty: 'hard' },
+      { name: 'South', controller: 'cpu', difficulty: 'hard' },
+    ],
+    startingWishes: 6,
+    wishLimit: 6,
+  };
+
+  /** Play a full AI game, keeping the state each chat action was chosen in. */
+  function playAndWatch(seed: number) {
+    let state = createGame(CARD_RICH, seed);
+    const chats: Array<{ state: GameState; action: Action }> = [];
+    for (let i = 0; i < 4000 && !isGameOver(state); i++) {
+      const action = chooseAiAction(state);
+      if (action.type === 'quickChat') chats.push({ state, action });
+      state = applyAction(state, action);
+    }
+    return { state, chats };
+  }
+
+  const games = [1, 2, 3, 4, 5, 6].map(playAndWatch);
+  const allChats = games.flatMap((g) => g.chats);
+
+  it('happens at all (the CPU does mutter over a held card)', () => {
+    expect(allChats.length).toBeGreaterThan(0);
+  });
+
+  it('only ever says rhetorical musings — never a line about the board', () => {
+    const musings = new Set(QUICK_CHAT_MUSINGS.map((p) => p.id));
+    for (const c of allChats) {
+      expect(c.action.type).toBe('quickChat');
+      if (c.action.type !== 'quickChat') continue;
+      expect(musings.has(c.action.phraseId)).toBe(true);
+    }
+  });
+
+  it('only mutters when it really could have played a card instead', () => {
+    for (const { state, action } of allChats) {
+      const actor = action.player;
+      expect(state.turn?.activePlayer).toBe(actor);
+      expect(state.turn?.phase).toBe('action');
+      expect(state.pendingDecision).toBeNull();
+      // The whole trigger: a Whimsy Card it can play right now, and doesn't.
+      expect(getLegalActionIntents(state, actor).some((a) => a.type === 'playCard')).toBe(true);
+    }
+  });
+
+  it('mutters at most once per turn per seat', () => {
+    for (const { state, action } of allChats) {
+      expect(state.players[action.player].quickChatsThisTurn).toBe(0);
+    }
+    // And a chatty seat still plays the game: chat is a small share of actions.
+    for (const g of games) {
+      expect(g.chats.length).toBeLessThan((g.state.eventCount ?? 0) / 4);
+    }
+  });
+
+  it('keeps the AI deterministic (same seed ⇒ same chatter)', () => {
+    const a = playAndWatch(3);
+    const b = playAndWatch(3);
+    expect(a.chats.map((c) => c.action)).toEqual(b.chats.map((c) => c.action));
+    expect(a.state.events).toEqual(b.state.events);
+  });
+
+  it('does not chat its way past the end of a game', () => {
+    for (const g of games) expect(isGameOver(g.state)).toBe(true);
   });
 });
