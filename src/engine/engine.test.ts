@@ -19,6 +19,7 @@ import {
   createGame,
   getLegalActions,
   isGameOver,
+  posKey,
 } from './index';
 import {
   activePlayer,
@@ -312,6 +313,63 @@ describe('fights', () => {
       }
     }
     expect(checked).toBeGreaterThan(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The Immortal Snail
+// ---------------------------------------------------------------------------
+
+describe('immortal snail', () => {
+  /** Turn a seat into a snail at `pos` and hand it the current turn. The snail
+   *  may share the space with enemy units — the reachable aftermath of it
+   *  surviving a lost fight there on an earlier turn. */
+  function withSnailTurn(state: GameState, seat: number, pos: { x: number; y: number }): GameState {
+    return mutate(state, (d) => {
+      const p = d.players[seat];
+      p.status = 'snail';
+      for (const u of Object.values(d.units)) {
+        if (u.owner === seat) delete d.units[u.id];
+      }
+      delete d.gardens[posKey(p.homePos)];
+      const id = `u${d.nextUnitId++}`;
+      d.units[id] = { id, owner: seat, kind: 'snail', pos: { ...pos }, movedOnTurn: null };
+      const t = d.turn;
+      if (!t) throw new Error('no active turn');
+      d.turn = { number: t.number + 1, activePlayer: seat, phase: 'action', snailLostFight: false };
+      d.pendingDecision = null;
+    });
+  }
+
+  it('does not eat a garden that enemy gnomes still stand on at the end of its turn', () => {
+    let s = toActionPhase(11, {}, 4);
+    const me = activePlayer(s);
+    const seat = (me + 1) % 4;
+    const pos = { x: 3, y: 3 };
+    s = withGarden(s, pos, 'dandelion', 0, me);
+    // The defender survived fighting the snail off, so both share the space.
+    s = withGnome(s, me, pos).state;
+    s = withSnailTurn(s, seat, pos);
+
+    s = applyAction(s, { type: 'endTurn', player: seat });
+    expect(s.gardens[posKey(pos)]).toBeDefined();
+    expect(s.events.some((e) => e.type === 'gardenDestroyed' && e.cause === 'snail')).toBe(false);
+  });
+
+  it('eats a garden it solely occupies at the end of its turn', () => {
+    let s = toActionPhase(11, {}, 4);
+    const me = activePlayer(s);
+    const seat = (me + 1) % 4;
+    const pos = { x: 3, y: 3 };
+    s = withGarden(s, pos, 'dandelion', 0, me);
+    s = withSnailTurn(s, seat, pos);
+
+    const supplyBefore = s.players[me].supply.dandelion;
+    s = applyAction(s, { type: 'endTurn', player: seat });
+    expect(s.gardens[posKey(pos)]).toBeUndefined();
+    expect(s.events.some((e) => e.type === 'gardenDestroyed' && e.cause === 'snail')).toBe(true);
+    // Destroyed gardens return to their planter's supply.
+    expect(s.players[me].supply.dandelion).toBe(supplyBefore + 1);
   });
 });
 

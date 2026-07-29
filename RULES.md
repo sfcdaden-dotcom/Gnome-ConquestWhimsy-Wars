@@ -130,6 +130,10 @@ Snail rules:
 - Any garden occupied by the Snail is **destroyed at the end of the Snail's turn**
   (returned to supply). This includes Home Gardens (which also means: a Snail
   occupying your Home Garden eliminates you, since the Snail is an enemy).
+- **[RULING]** The Snail only destroys a garden it **solely** occupies. Because
+  the Snail survives lost fights, it can end up sharing a space with the enemy
+  units that fought it off — a garden its defenders are still standing on is
+  NOT destroyed at the end of the Snail's turn.
 - If the Snail **loses** a fight it is not destroyed; its turn ends immediately and
   no gnomes/gardens are destroyed. If it **wins**, the losing gnome is destroyed
   as normal.

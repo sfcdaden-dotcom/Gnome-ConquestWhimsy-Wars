@@ -14,6 +14,7 @@ import {
   curseActive,
   destroyGarden,
   draftRollD6,
+  enemyUnitsAt,
   entryBlockedByWall,
   gardenAt,
   getPlayer,
@@ -178,10 +179,12 @@ export function endTurnInternal(draft: GameState): void {
   pushEvent(draft, { type: 'turnEnded', player: p.id });
 
   // Snail: destroy the garden it occupies — unless its turn ended by losing
-  // a fight (then nothing is destroyed).
+  // a fight (then nothing is destroyed), or enemy units still share the space
+  // (the snail survives losses without clearing it, so a garden its defenders
+  // are still standing on is not eaten).
   if (p.status === 'snail' && !t.snailLostFight) {
     const snail = playerUnits(draft, p.id).find((u) => u.kind === 'snail');
-    if (snail && gardenAt(draft, snail.pos)) {
+    if (snail && gardenAt(draft, snail.pos) && enemyUnitsAt(draft, snail.pos, p.id).length === 0) {
       destroyGarden(draft, snail.pos, 'snail');
     }
   }
