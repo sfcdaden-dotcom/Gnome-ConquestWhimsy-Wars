@@ -29,7 +29,7 @@ difficulty (Easy/Normal/Hard, per-seat dropdown in Setup), a genuine
 win-probability fight-commitment calculation for Hard (replacing the flat
 desperation-ramp heuristic for that tier), Hard playing the 6 previously-held
 situational cards, and wider AI garden variety (Maize + Tunnel, not just
-Dandelion/Mushroom/Flytrap). Verified by dedicated `ai.ts` policy tests plus
+Dandelion/Mushroom/Flytrap). Verified by dedicated `src/engine/ai/` policy tests plus
 Normal and Hard AI-vs-AI smoke suites (games still terminate for both).
 Remaining Milestone 4 work: difficulty-aware fight-*response* windows (Hard
 currently reuses Normal's Gnomebody-Dies/Clover/Snake-Eyes logic unchanged),

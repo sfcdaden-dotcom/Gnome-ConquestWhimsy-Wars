@@ -6,9 +6,13 @@ all sit on the same three functions:
 
 ```ts
 createGame(options, seed)  → GameState   // validated; throws EngineError('BAD_CONFIG')
-getLegalActions(state[, player]) → Action[]
+getLegalActionIntents(state[, player]) → Action[]   // the one you want
 applyAction(state, action) → GameState   // never mutates its input; throws EngineError
 ```
+
+(`getLegalActions` is the *other* enumeration — the exhaustive one. See
+"[The legal-action contract](#the-legal-action-contract-phased-targeting)"
+before reaching for it.)
 
 Support queries: `getPlayerToAct`, `isGameOver`, plus the read-only helpers
 re-exported from `helpers.ts` (`posKey`, `unitsAt`, `wishCap`, …) and the card
@@ -27,18 +31,37 @@ implementation detail and may move again.
 | `turns.ts` | roll-off, turn start/end, movement legality, `getPlayerToAct` |
 | `settle.ts` | the auto-advance loop and its convergence diagnostics |
 | `elimination.ts` | eliminations, snailify, win detection |
-| `legalActions.ts` | legal-action intents + complete-action analysis expansion |
+| `legalActions.ts` | legal-action **intents** — the cheap, primary enumeration |
+| `actionExpansion.ts` | exhaustive expansion of targeted card plays (**analysis path**) |
+| `actionId.ts` | canonical, order-independent identities: `actionKey`, `intentKey` |
+| `invariants.ts` | structural state validation (`checkInvariants` / `assertInvariants`) |
 | `targeting.ts` | phased card targeting: the `cardTargeting` transaction, step options, enumeration |
 | `gardens.ts` | harvests, planting, entry effects |
 | `fights.ts` | fight resolution (Respond → Roll → Resolve) |
 | `cards.ts` | card framework, definitions, the card stack |
 | `view.ts` | per-seat redaction: `GameState` → `PlayerView` (multiplayer) |
+| `ai/` | the heuristic CPU — see below |
 | `helpers.ts` | shared queries and draft mutators |
 | `setup.ts` / `gardenPresets.ts` / `randomLayout.ts` / `rng.ts` / `types.ts` | creation, layouts, procedural map generation, RNG, types |
 
+The CPU is a package rather than a file, one responsibility each, entered only
+through `ai/index.ts` (`chooseAiAction`):
+
+| File | Responsibility |
+|---|---|
+| `ai/index.ts` | routing, the Action-Phase pick, target completion, the difficulty doc |
+| `ai/scoring.ts` | `scoreDestination`, `scoreActionPhase`, the BFS distance field |
+| `ai/cardPlans.ts` | `planCardPlay` — one deterministic target picker per card |
+| `ai/decisions.ts` | one policy per `PendingDecision` kind, incl. both respond windows |
+| `ai/chatter.ts` | idle quick-chat (flavor only; changes no game state) |
+| `ai/util.ts` | small shared reads (own/enemy gnomes, home, difficulty, desperation ramp) |
+
 Dependencies run one way through the top layer — `engine → {actions, settle,
-legalActions} → {targeting, turns} → elimination → {gardens, cards, fights} →
-helpers` — so the split introduces no cycles. `targeting.ts` calls the low-level
+legalActions, actionExpansion} → {targeting, turns} → elimination → {gardens,
+cards, fights} → helpers` — so the split introduces no cycles. Inside the CPU,
+`index → {decisions, cardPlans, chatter} → scoring → util`. `actionId.ts` and
+`invariants.ts` are leaves: nothing in the engine imports them, because both are
+tools for callers rather than parts of the rules. `targeting.ts` calls the low-level
 commit helpers in `cards.ts` / `fights.ts` but is never imported back by them. The rules layer keeps its pre-existing mutual
 imports (`cards ↔ fights`, `cards → gardens → fights`): a card can queue a
 fight and a fight can play a card, which is inherent to the rules rather than
@@ -337,15 +360,46 @@ A play that already carries a full `targets` payload is committed in one shot
 (re-validated, then played) — this is the path the AI and direct callers use,
 so supplying targets up front still works exactly as before.
 
-**Analysis helper — `getLegalActions` / `enumerateCompleteCardActions`.** The
-same actions but with every targeted card expanded into complete, immediately
-executable actions (one per valid `CardTargets` payload). This is the
-**expensive** path — it walks each card's whole targeting flow — and is used
-only by tests and offline analysis, never by the UI or the normal AI loop.
-Because expansion is phased (each step yields only its own legal options,
-narrowed by earlier picks), it is proportional to a card's real branching
-(Plot Twist: 2·n·(n-1) adjacent pairs) rather than C(n², k), so there is **no
-global combination ceiling** — the old `MAX_TARGET_COMBINATIONS` is gone.
+**Analysis helper — `enumerateCompleteCardActions` (alias: `getLegalActions`),
+in its own module `actionExpansion.ts`.** The same actions but with every
+targeted card expanded into complete, immediately executable actions (one per
+valid `CardTargets` payload). This is the **expensive** path — it walks each
+card's whole targeting flow — and is used only by tests and offline analysis,
+never by the UI or the normal AI loop. Because expansion is phased (each step
+yields only its own legal options, narrowed by earlier picks), it is
+proportional to a card's real branching (Plot Twist: 2·n·(n-1) adjacent pairs)
+rather than C(n², k), so there is **no global combination ceiling** — the old
+`MAX_TARGET_COMBINATIONS` is gone.
+
+The two are deliberately in separate files so the expensive one cannot be
+reached by autocompleting past the cheap one:
+
+| | `getLegalActionIntents` | `enumerateCompleteCardActions` |
+|---|---|---|
+| Card plays | left untargeted (an *intent*) | one action per valid payload |
+| Answers | "what could this player do?" | "what are all the fully-built moves?" |
+| Callers | UI, CPU, shot clock, sample extractor | tests, fuzzers, offline analysis |
+| Measured (7×7, full targeted hand) | 0.39 ms → 49 actions | 13.9 ms → 1336 actions (~36×) |
+
+Both return only dispatchable actions; the difference is how much of the play is
+decided up front. The `getLegalActions` name is kept because it is what the
+original three-function API called this, but new code should name the one it
+means. (Figures from `src/engine/perf.test.ts`; see TECH_DEBT.md "Enumeration
+cost" for the full table and the two known duplications.)
+
+### Action identity
+
+Enumerated actions have no identity but their array index, which moves for
+reasons unrelated to the action. `actionKey(action)` (`actionId.ts`) is a
+deterministic, content-addressed string — stable across enumeration order,
+object key order and JSON round-trips — for UI keys, caches, diffs and network
+acks. `intentKey(action)` is the same with any target payload stripped, so every
+completion of a card play collapses onto the intent that started it.
+
+Order *inside* a payload stays significant: for an `ordered: true` step,
+`units: [a, b]` and `[b, a]` are different plays (Instigation's first gnome is
+the attacker). `canonicalTargets` gives the order-insensitive form for
+hand-built payloads whose steps are all unordered.
 
 Targeting is card-agnostic in the engine and UI: candidates come from each
 card's `targetFlow` steps (see below), and adding a card needs no change to the
@@ -455,6 +509,24 @@ All rejections are `EngineError { code }`: `ILLEGAL_ACTION` (not legal now),
 (engine invariant broken — always a bug; the settle loop, exhaustiveness
 guards and `internal()` calls use it).
 
+## State invariants
+
+`checkInvariants(state) → InvariantViolation[]` (`invariants.ts`) validates the
+structural properties that hold in **every** reachable state — units on the
+board, owners in range, supplies within their tile budget, `gnomesLost ≤
+gnomesSpawned`, one Home Garden per seat, no card stack left waiting on nobody,
+no winner before the game ends. It **reports rather than throws**, because a
+corrupted state usually breaks several at once and the pattern is the diagnosis;
+`assertInvariants(state, context?)` is the throwing wrapper (`INTERNAL`), and
+`invariantsHold` the boolean one.
+
+It is a diagnostic, not a rules check: passing does not mean a state is
+*reachable* by legal play, only that it is not visibly malformed. Cheap enough
+(one pass, no enumeration, no cloning) to run after every action in a test, on
+a state a multiplayer host received rather than computed, or in a `catch` where
+the question is *what* went wrong. The engine never calls it on the hot path —
+`applyAction` stays as cheap as it is, and callers decide.
+
 ## Testing
 
 `src/engine/engine.test.ts` (vitest, `npm test`): config validation,
@@ -462,3 +534,16 @@ determinism, serializability, fights, the card stack (incl. Nope-Gnome),
 timed-effect expiry, all curse behaviors, and seeded AI-vs-AI full games with
 structural invariant checks. Because `GameState` is plain data, tests may
 hand-craft scenarios by mutating a cloned state — keep that contract intact.
+
+Three suites are worth knowing about before changing engine internals:
+
+- `invariants.test.ts` — proves the validator both ways: full AI games stay
+  clean after *every* action, and each invariant is provoked with a hand-broken
+  state so a check that stops working is caught.
+- `aiFingerprint.test.ts` — pins the exact action sequence of seeded games at
+  each difficulty (an FNV-1a digest over canonical action keys, plus action
+  count and winner). Refactoring the CPU must leave every digest untouched; an
+  intentional heuristic change updates them in the same commit.
+- `perf.test.ts` — measurement only, no optimization. Prints enumeration,
+  targeting-feasibility and AI-throughput timings; its assertions are loose
+  order-of-magnitude ceilings meant to catch a blowup, not to be targets.

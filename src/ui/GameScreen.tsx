@@ -3,74 +3,34 @@
  * useGame. All legality flows from the engine — clicks are matched against
  * enumerated legal actions, and card targets are validated by each card's
  * own `validate` (the UI never recomputes rules).
+ *
+ * The routing rules themselves — what a board click means, what lights up, when
+ * a selection dies — are pure functions in `interaction.ts`, tested without
+ * React. This component assembles their input, dispatches what they return, and
+ * otherwise deals only in layout.
  */
 
 import { useEffect, useMemo, useState } from 'react';
-import type {
-  Action,
-  CardId,
-  CardTarget,
-  GameState,
-  PendingDecision,
-  PlayerId,
-  Pos,
-  UnitId,
-} from '../engine';
-import { gardenAt, getLegalActionIntents, getPendingDecisionOptions, posKey, samePos } from '../engine';
+import type { Action, CardId, CardTarget, GameState, PendingDecision, PlayerId, Pos } from '../engine';
+import { gardenAt, getLegalActionIntents, getPendingDecisionOptions, posKey } from '../engine';
 import { Board } from './Board';
-import type { HighlightKind } from './Board';
 import { DecisionPanel } from './DecisionPanel';
 import { FightPanel, FightPlaybackOverlay, HandPanel, PlayerPanels } from './panels';
 import { ChatPanel, QuickChatFeed } from './QuickChat';
 import { GARDEN_META, cardName, decisionLabel, playerColor, pname } from './meta';
 import { unitNameLive } from './gnomeNames';
-import { actionableUnitsAt, nextInCycle, unitChipLabels } from './selection';
+import { actionableUnitsAt, unitChipLabels } from './selection';
+import type { InteractionContext, Sel } from './interaction';
+import {
+  NO_SEL,
+  bannerText,
+  computeHighlights,
+  resolveCellClick,
+  selectionStillValid,
+  targetChipKey,
+  unitAffordances,
+} from './interaction';
 import type { GameSession } from './useGame';
-
-// ---------------------------------------------------------------------------
-// Unit selection state
-//
-// Card targeting is NOT tracked here: it lives entirely in the engine as a
-// `cardTargeting` pending decision, and the UI renders the current step's
-// options from `getPendingDecisionOptions`. The only local selection is which
-// of the acting player's own units is highlighted for moving / planting.
-// ---------------------------------------------------------------------------
-
-type Sel = { kind: 'none' } | { kind: 'unit'; unitId: UnitId };
-
-const NO_SEL: Sel = { kind: 'none' };
-
-/**
- * Is the selected unit still actionable? It must still exist and still have a
- * legal move or a legal plant/upgrade on its space (the same test the board
- * click uses), so a stale selection can never survive a state update.
- */
-function selectionStillValid(state: GameState, legal: readonly Action[], sel: Sel): boolean {
-  if (sel.kind === 'none') return true;
-  const u = state.units[sel.unitId];
-  if (!u) return false;
-  return legal.some(
-    (a) =>
-      (a.type === 'move' && a.unitId === u.id) ||
-      ((a.type === 'plant' || a.type === 'upgrade') && samePos(a.pos, u.pos)),
-  );
-}
-
-/**
- * The card-agnostic board option at `pos`, if any: a space option matching the
- * cell, or a unit option whose unit stands on it. The engine's options carry
- * the card's rules; the UI just matches by kind, never by card id.
- */
-function boardOptionAt(options: readonly CardTarget[], state: GameState, pos: Pos): CardTarget | null {
-  for (const o of options) {
-    if (o.kind === 'space' && samePos(o.pos, pos)) return o;
-    if (o.kind === 'unit') {
-      const u = state.units[o.unitId];
-      if (u && samePos(u.pos, pos)) return o;
-    }
-  }
-  return null;
-}
 
 // ---------------------------------------------------------------------------
 // GameScreen
@@ -146,6 +106,17 @@ export function GameScreen({ game: g, onPlayAgain, onQuit }: GameScreenProps) {
 
   const decision = state.pendingDecision;
 
+  /** Everything the pure routing rules in `interaction.ts` read. */
+  const ctx: InteractionContext = {
+    state,
+    legal,
+    decision,
+    targetingOptions,
+    playerToAct,
+    interactive,
+    sel,
+  };
+
   // --- dispatch helpers ------------------------------------------------------
 
   function act(action: Action) {
@@ -174,113 +145,21 @@ export function GameScreen({ game: g, onPlayAgain, onQuit }: GameScreenProps) {
 
   // --- board click routing -----------------------------------------------------
 
+  /** Thin adapter: the rules decide, this dispatches or moves the selection. */
   function onCellClick(pos: Pos) {
-    if (!interactive || playerToAct === null) return;
-
-    // 1) Card targeting: the engine offers this step's options; the UI matches
-    // the clicked cell against them by kind (unit on the cell, or the space
-    // itself). It never inspects the card's rules.
-    if (decision?.kind === 'cardTargeting') {
-      if (decision.player !== playerToAct) return;
-      const opt = boardOptionAt(targetingOptions, state, pos);
-      if (opt) act({ type: 'selectTarget', player: decision.player, target: opt });
-      return;
+    const result = resolveCellClick(ctx, pos);
+    if (result.kind === 'act') act(result.action);
+    else if (result.kind === 'select') {
+      setSel(result.unitId ? { kind: 'unit', unitId: result.unitId } : NO_SEL);
     }
-
-    // 2) Board-picking decisions.
-    if (decision) {
-      if (decision.player !== playerToAct) return;
-      if (decision.kind === 'slide' || decision.kind === 'tunnel') {
-        if (decision.options.some((o) => samePos(o, pos))) {
-          act({ type: decision.kind, player: decision.player, to: pos });
-        }
-        return;
-      }
-      if (decision.kind === 'snailMove') {
-        if (decision.options.some((o) => samePos(o, pos))) {
-          act({ type: 'snailMove', player: decision.player, to: pos });
-        }
-        return;
-      }
-      if (decision.kind === 'chooseHarvest') {
-        const opt = decision.options.find((o) => samePos(o.pos, pos));
-        if (opt) act({ type: 'chooseHarvest', player: decision.player, sourceKey: opt.key });
-        return;
-      }
-      if (decision.kind === 'sacrificeGnome') {
-        const unit = decision.options
-          .map((id) => state.units[id])
-          .find((u) => u && samePos(u.pos, pos));
-        if (unit) act({ type: 'sacrificeGnome', player: decision.player, unitId: unit.id });
-        return;
-      }
-      return; // other decisions don't use the board
-    }
-
-    // 3) Action Phase: move a selected unit.
-    if (sel.kind === 'unit') {
-      const mv = legal.find(
-        (a) => a.type === 'move' && a.unitId === sel.unitId && samePos(a.to, pos),
-      );
-      if (mv) {
-        act(mv);
-        return;
-      }
-    }
-
-    // 4) Select (or cycle through) own actionable units on the clicked space.
-    // The same ordered list backs the name chips in the action bar, so clicking
-    // and picking a chip can never disagree about what is selectable.
-    const actionable = actionableUnitsAt(state, playerToAct, pos, legal);
-    const next = nextInCycle(actionable, sel.kind === 'unit' ? sel.unitId : null);
-    setSel(next ? { kind: 'unit', unitId: next.id } : NO_SEL);
   }
 
   // --- highlights ---------------------------------------------------------------
 
-  const highlights = useMemo(() => {
-    const map = new Map<string, HighlightKind>();
-    if (!interactive) return map;
-
-    if (decision?.kind === 'cardTargeting') {
-      // Highlight this step's legal options (from the engine) and the picks
-      // already made in earlier steps.
-      for (const o of targetingOptions) {
-        if (o.kind === 'space') map.set(posKey(o.pos), 'target');
-        else if (o.kind === 'unit') {
-          const u = state.units[o.unitId];
-          if (u) map.set(posKey(u.pos), 'target');
-        }
-      }
-      for (const q of decision.selected.spaces ?? []) map.set(posKey(q), 'picked');
-      for (const uid of decision.selected.units ?? []) {
-        const u = state.units[uid];
-        if (u) map.set(posKey(u.pos), 'picked');
-      }
-      return map;
-    }
-
-    if (decision) {
-      if (decision.kind === 'slide' || decision.kind === 'tunnel' || decision.kind === 'snailMove') {
-        for (const o of decision.options) map.set(posKey(o), 'decision');
-      } else if (decision.kind === 'chooseHarvest') {
-        for (const o of decision.options) map.set(posKey(o.pos), 'decision');
-      } else if (decision.kind === 'sacrificeGnome') {
-        for (const id of decision.options) {
-          const u = state.units[id];
-          if (u) map.set(posKey(u.pos), 'decision');
-        }
-      }
-      return map;
-    }
-
-    if (sel.kind === 'unit') {
-      for (const a of legal) {
-        if (a.type === 'move' && a.unitId === sel.unitId) map.set(posKey(a.to), 'move');
-      }
-    }
-    return map;
-  }, [state, sel, decision, legal, interactive, targetingOptions]);
+  const highlights = useMemo(
+    () => computeHighlights({ state, legal, decision, targetingOptions, playerToAct, interactive, sel }),
+    [state, sel, decision, legal, interactive, targetingOptions, playerToAct],
+  );
 
   const selectedUnit = sel.kind === 'unit' ? (state.units[sel.unitId] ?? null) : null;
   const selectedKey = selectedUnit ? posKey(selectedUnit.pos) : null;
@@ -307,18 +186,10 @@ export function GameScreen({ game: g, onPlayAgain, onQuit }: GameScreenProps) {
   const showActionBar =
     interactive && !decision && state.turn?.phase === 'action' && state.turn.activePlayer === playerToAct;
   const canDraw = legal.some((a) => a.type === 'drawCard');
-  const plantActions = selectedUnit
-    ? legal.filter(
-        (a): a is Extract<Action, { type: 'plant' }> =>
-          a.type === 'plant' && samePos(a.pos, selectedUnit.pos),
-      )
-    : [];
-  const upgradeAction = selectedUnit
-    ? legal.find(
-        (a): a is Extract<Action, { type: 'upgrade' }> =>
-          a.type === 'upgrade' && samePos(a.pos, selectedUnit.pos),
-      )
-    : undefined;
+  const { plants: plantActions, upgrade: upgradeAction } = unitAffordances(
+    legal,
+    selectedUnit?.pos ?? null,
+  );
   const upgradeGardenType = upgradeAction ? gardenAt(state, upgradeAction.pos)?.type : undefined;
 
   return (
@@ -339,7 +210,9 @@ export function GameScreen({ game: g, onPlayAgain, onQuit }: GameScreenProps) {
     >
       <header className="topbar">
         <span className="brand">🧙 Whimsy Wars</span>
-        <span className="banner" data-testid="banner">{bannerText(state, playerToAct)}</span>
+        <span className="banner" data-testid="banner">
+          {bannerText(state, playerToAct, pname, decisionLabel)}
+        </span>
         {g.canFastForward && (
           <label className="ff-toggle" title="Skip CPU pacing and fight animations">
             <input
@@ -535,23 +408,6 @@ export function GameScreen({ game: g, onPlayAgain, onQuit }: GameScreenProps) {
 // Small pieces
 // ---------------------------------------------------------------------------
 
-function bannerText(state: GameState, playerToAct: PlayerId | null): string {
-  if (state.status === 'finished') {
-    return state.winner !== null ? `🏆 ${pname(state, state.winner)} wins!` : 'Game over — no winner.';
-  }
-  if (state.status === 'rolloff') {
-    return `🎲 Rolling for turn order — ${playerToAct !== null ? pname(state, playerToAct) : '…'} to roll`;
-  }
-  const t = state.turn;
-  if (!t) return '…';
-  let s = `Turn ${t.number} · ${pname(state, t.activePlayer)} · ${t.phase === 'harvest' ? '🌾 Harvest' : '⚡ Action'} Phase`;
-  const d = state.pendingDecision;
-  if (playerToAct !== null && (playerToAct !== t.activePlayer || d)) {
-    s += ` — ${pname(state, playerToAct)} must act${d ? ` (${decisionLabel(d.kind)})` : ''}`;
-  }
-  return s;
-}
-
 function SupplyPanel({ state }: { state: GameState }) {
   return (
     <div className="supply-panel">
@@ -664,21 +520,6 @@ function TargetChip({
       {GARDEN_META[target.gardenType].emoji} {GARDEN_META[target.gardenType].label}
     </button>
   );
-}
-
-function targetChipKey(t: CardTarget): string {
-  switch (t.kind) {
-    case 'unit':
-      return `u:${t.unitId}`;
-    case 'space':
-      return `s:${t.pos.x},${t.pos.y}`;
-    case 'player':
-      return `p:${t.playerId}`;
-    case 'card':
-      return `c:${t.cardId}`;
-    case 'gardenType':
-      return `g:${t.gardenType}`;
-  }
 }
 
 function PassOverlay({
