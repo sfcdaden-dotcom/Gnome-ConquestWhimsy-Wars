@@ -79,12 +79,47 @@ test('moves a gnome and plants a garden after moving', async ({ page }) => {
   // not) — this is the regression the plant-after-move fix covered.
   expect(await g.gardenAt(to)).toBeNull();
   await g.select(to);
-  const plantButton = page.locator('[data-testid^="plant-"]').first();
+  // Planting is one entry that expands into the garden list (counts included).
+  await page.getByTestId('open-plant-menu').click();
+  const plantButton = page.locator('[data-testid^="plant-"]:not([disabled])').first();
   await expect(plantButton).toBeVisible();
   const type = ((await plantButton.getAttribute('data-testid')) ?? '').replace('plant-', '');
+  await expect(plantButton).toContainText('×');
   await plantButton.click();
   await g.ready();
   expect(await g.gardenAt(to)).toBe(type);
+  // Picking a garden closes the submenu — the action list is back.
+  await expect(page.getByTestId('end-turn')).toBeVisible();
+});
+
+test('the plant submenu lists every garden with its supply and can be backed out of', async ({
+  page,
+}) => {
+  const g = new Game(page);
+  await g.startTwoPlayer(SEED);
+  await g.completeRollOff();
+  await g.resolveHarvest('gnome');
+
+  const me = await g.activePlayer();
+  const [gnome] = await g.unitsOf(me);
+  // Step off the Home Garden: planting needs an empty space.
+  await g.select(gnome.pos);
+  const to = (await g.moveTargets())[0];
+  await g.cell(to).click();
+  await g.ready();
+  await g.select(to);
+
+  await page.getByTestId('open-plant-menu').click();
+  // One row per plantable type, each showing the remaining count.
+  const rows = page.locator('[data-testid^="plant-"]');
+  await expect(rows).toHaveCount(6);
+  await expect(rows.first()).toContainText(/×\d/);
+  // The rest of the action list is hidden while the submenu is open.
+  await expect(page.getByTestId('end-turn')).toHaveCount(0);
+
+  await page.getByTestId('submenu-back').click();
+  await expect(page.getByTestId('end-turn')).toBeVisible();
+  await expect(page.getByTestId('open-plant-menu')).toBeVisible();
 });
 
 test('preserves a valid unit selection and drops it once it is spent', async ({ page }) => {

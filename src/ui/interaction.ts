@@ -22,7 +22,16 @@
  * pinned by tests instead of by reading the JSX.
  */
 
-import type { Action, CardTarget, GameState, PendingDecision, PlayerId, Pos, UnitId } from '../engine';
+import type {
+  Action,
+  CardTarget,
+  GameState,
+  PendingDecision,
+  PlantableGardenType,
+  PlayerId,
+  Pos,
+  UnitId,
+} from '../engine';
 import { posKey, samePos } from '../engine';
 import type { HighlightKind } from './Board';
 import { actionableUnitsAt, nextInCycle } from './selection';
@@ -256,6 +265,39 @@ export function unitAffordances(
       (a): a is Extract<Action, { type: 'upgrade' }> => a.type === 'upgrade' && samePos(a.pos, pos),
     ) ?? null;
   return { plants, upgrade };
+}
+
+/** One row of the "Plant Garden" submenu: a garden type, its supply, its action. */
+export interface PlantOption {
+  gardenType: PlantableGardenType;
+  /** Tiles of this type left in the acting player's supply. */
+  remaining: number;
+  /** The legal plant action, or null when it cannot be planted right now. */
+  action: Extract<Action, { type: 'plant' }> | null;
+}
+
+/**
+ * Every garden the acting player could ever plant, in supply order, each with
+ * its remaining tile count and the matching legal action (null ⇒ not
+ * plantable here and now, so the row renders disabled).
+ *
+ * Both halves come from the engine: the count is read straight off the
+ * player's supply record, and enablement is *only* ever the presence of an
+ * enumerated `plant` action — this never re-derives when planting is allowed.
+ */
+export function plantOptions(
+  state: GameState,
+  player: PlayerId | null,
+  plants: readonly Extract<Action, { type: 'plant' }>[],
+): PlantOption[] {
+  if (player === null) return [];
+  const supply = state.players[player]?.supply;
+  if (!supply) return [];
+  return (Object.keys(supply) as PlantableGardenType[]).map((gardenType) => ({
+    gardenType,
+    remaining: supply[gardenType],
+    action: plants.find((a) => a.gardenType === gardenType) ?? null,
+  }));
 }
 
 /** Stable key for a non-board target chip (player / discard card / garden type). */

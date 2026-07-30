@@ -27,9 +27,12 @@ import {
   computeHighlights,
   resolveCellClick,
   selectionStillValid,
+  plantOptions,
   targetChipKey,
   unitAffordances,
 } from './interaction';
+import type { ActionMenuItem } from './ActionMenu';
+import { ActionMenu } from './ActionMenu';
 import type { GameSession } from './useGame';
 
 // ---------------------------------------------------------------------------
@@ -48,6 +51,8 @@ export interface GameScreenProps {
 export function GameScreen({ game: g, onPlayAgain, onQuit }: GameScreenProps) {
   const { state, dispatch, playerToAct, needsPass, playback } = g;
   const [sel, setSel] = useState<Sel>(NO_SEL);
+  // Which action-bar submenu is expanded ("plant"), or null for the top list.
+  const [submenu, setSubmenu] = useState<string | null>(null);
   // After the game ends, "Review match" dismisses the end overlay so the board
   // and full game log stay on screen; "Results" brings the overlay back.
   const [reviewing, setReviewing] = useState(false);
@@ -192,6 +197,71 @@ export function GameScreen({ game: g, onPlayAgain, onQuit }: GameScreenProps) {
   );
   const upgradeGardenType = upgradeAction ? gardenAt(state, upgradeAction.pos)?.type : undefined;
 
+  /**
+   * The action list, with planting folded into one submenu. Every garden the
+   * seat owns tiles for is listed with its remaining count; a row is clickable
+   * only when the engine enumerated a `plant` action for it, so supply, wish
+   * cost and space legality all stay the engine's call.
+   */
+  const plantChoices = plantOptions(state, playerToAct, plantActions);
+  const menuItems: ActionMenuItem[] = [];
+  menuItems.push({
+    key: 'draw',
+    label: '🃏 Draw card (1 ✨)',
+    testId: 'draw-card',
+    disabled: !canDraw,
+    onSelect: () => act({ type: 'drawCard', player: playerToAct! }),
+  });
+  if (plantActions.length > 0) {
+    menuItems.push({
+      key: 'plant',
+      label: '🌱 Plant Garden',
+      testId: 'open-plant-menu',
+      heading: 'Plant a Garden',
+      items: plantChoices.map((o) => ({
+        key: o.gardenType,
+        label: `${GARDEN_META[o.gardenType].emoji} ${GARDEN_META[o.gardenType].label}`,
+        badge: `×${o.remaining}`,
+        testId: `plant-${o.gardenType}`,
+        title: GARDEN_META[o.gardenType].blurb,
+        disabled: !o.action,
+        onSelect: () => {
+          if (o.action) act(o.action);
+          setSubmenu(null);
+        },
+      })),
+    });
+  }
+  if (upgradeAction && upgradeGardenType && upgradeGardenType !== 'home') {
+    menuItems.push({
+      key: 'upgrade',
+      label: `⭐ Upgrade to ${GARDEN_META[upgradeGardenType].upgradeLabel} (2 ✨)`,
+      testId: 'upgrade-garden',
+      title: GARDEN_META[upgradeGardenType].upgradeBlurb,
+      onSelect: () => act(upgradeAction),
+    });
+  }
+  if (sel.kind === 'unit') {
+    menuItems.push({
+      key: 'deselect',
+      label: 'Deselect',
+      testId: 'deselect',
+      className: 'small',
+      onSelect: () => setSel(NO_SEL),
+    });
+  }
+  menuItems.push({
+    key: 'end-turn',
+    label: 'End turn ⏹',
+    testId: 'end-turn',
+    className: 'warn',
+    onSelect: () => act({ type: 'endTurn', player: playerToAct! }),
+  });
+
+  // A submenu whose trigger is gone (the gnome moved off, the tiles ran out,
+  // the turn ended) collapses back to the action list rather than lingering.
+  const openSubmenu = menuItems.some((i) => i.key === submenu) ? submenu : null;
+
   return (
     /* The data-* attributes mirror already-visible game state (status, phase,
        whose decision is open). They exist so browser tests can wait on a
@@ -242,7 +312,6 @@ export function GameScreen({ game: g, onPlayAgain, onQuit }: GameScreenProps) {
       <div className="main">
         <aside className="left-col">
           <PlayerPanels state={state} />
-          <SupplyPanel state={state} />
           {state.activeCurses.length > 0 && <CursePanel state={state} />}
         </aside>
 
@@ -267,12 +336,12 @@ export function GameScreen({ game: g, onPlayAgain, onQuit }: GameScreenProps) {
               />
             ) : showActionBar ? (
               <div className="action-bar" data-testid="action-bar">
-                {selectedUnit && (
+                {selectedUnit && !openSubmenu && (
                   <span className="selected-unit" data-testid="selected-unit-name">
                     🧙 {unitNameLive(state, selectedUnit.id)}
                   </span>
                 )}
-                {stackChips.length > 0 && (
+                {stackChips.length > 0 && !openSubmenu && (
                   <span className="stack-chips" data-testid="stack-chips">
                     {stackChips.map((c) => (
                       <button
@@ -289,44 +358,7 @@ export function GameScreen({ game: g, onPlayAgain, onQuit }: GameScreenProps) {
                     ))}
                   </span>
                 )}
-                <button
-                  type="button"
-                  className="btn"
-                  disabled={!canDraw}
-                  data-testid="draw-card"
-                  onClick={() => act({ type: 'drawCard', player: playerToAct! })}
-                >
-                  🃏 Draw card (1 ✨)
-                </button>
-                {plantActions.map((a) => (
-                  <button key={a.gardenType} type="button" className="btn" data-testid={`plant-${a.gardenType}`} onClick={() => act(a)}>
-                    {GARDEN_META[a.gardenType].emoji} Plant {GARDEN_META[a.gardenType].label}
-                  </button>
-                ))}
-                {upgradeAction && upgradeGardenType && upgradeGardenType !== 'home' && (
-                  <button
-                    type="button"
-                    className="btn"
-                    data-testid="upgrade-garden"
-                    title={GARDEN_META[upgradeGardenType].upgradeBlurb}
-                    onClick={() => act(upgradeAction)}
-                  >
-                    ⭐ Upgrade to {GARDEN_META[upgradeGardenType].upgradeLabel} (2 ✨)
-                  </button>
-                )}
-                {sel.kind === 'unit' && (
-                  <button type="button" className="btn small" data-testid="deselect" onClick={() => setSel(NO_SEL)}>
-                    Deselect
-                  </button>
-                )}
-                <button
-                  type="button"
-                  className="btn warn"
-                  data-testid="end-turn"
-                  onClick={() => act({ type: 'endTurn', player: playerToAct! })}
-                >
-                  End turn ⏹
-                </button>
+                <ActionMenu items={menuItems} openKey={openSubmenu} onOpenKeyChange={setSubmenu} />
               </div>
             ) : null}
           </div>
@@ -407,31 +439,6 @@ export function GameScreen({ game: g, onPlayAgain, onQuit }: GameScreenProps) {
 // ---------------------------------------------------------------------------
 // Small pieces
 // ---------------------------------------------------------------------------
-
-function SupplyPanel({ state }: { state: GameState }) {
-  return (
-    <div className="supply-panel">
-      <div className="panel-title">Garden tiles</div>
-      {state.players
-        .filter((p) => p.status === 'playing')
-        .map((p) => (
-          <div key={p.id} className="supply-row">
-            <span className="small supply-owner">{p.name}</span>
-            <span className="supply-grid">
-              {Object.entries(p.supply).map(([type, count]) => (
-                <span
-                  key={type}
-                  title={`${GARDEN_META[type as keyof typeof GARDEN_META].label} — ${p.name} has ${count} tile(s)`}
-                >
-                  {GARDEN_META[type as keyof typeof GARDEN_META].emoji} {count}
-                </span>
-              ))}
-            </span>
-          </div>
-        ))}
-    </div>
-  );
-}
 
 function CursePanel({ state }: { state: GameState }) {
   return (
