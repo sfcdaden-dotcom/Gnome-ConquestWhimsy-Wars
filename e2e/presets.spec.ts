@@ -49,6 +49,46 @@ test('the preset dropdown sits below the preview with the other preset controls'
   expect(previewFirst).toBe(true);
 });
 
+test('every preset previews, not just the procedural one', async ({ page }) => {
+  await openSetup(page);
+  const preview = page.locator('.preset-preview');
+  const gardens = () => preview.locator('.cell[class*=" g-"]');
+
+  // A fixed built-in preset draws its own layout…
+  await select(page).selectOption('few');
+  await expect(preview).toBeVisible();
+  await expect(gardens()).toHaveCount(4); // four tunnel corners
+  await expect(page.getByTestId('reroll-layout')).toHaveCount(0); // nothing to re-roll
+
+  // …including the empty one, which is homes only.
+  await select(page).selectOption('none');
+  await expect(preview).toBeVisible();
+  await expect(gardens()).toHaveCount(0);
+  await expect(preview.locator('.cell.editor-home')).toHaveCount(4);
+
+  await select(page).selectOption('many');
+  await expect(gardens()).toHaveCount(16);
+
+  // …and so does a layout drawn in the editor.
+  await openEditor(page);
+  await paint(page, 'Space 1,1');
+  await page.getByTestId('preset-play').click();
+  await expect(gardens()).toHaveCount(1);
+});
+
+test('two seats dim the homes they will not use, four light them all', async ({ page }) => {
+  await openSetup(page);
+  await select(page).selectOption('orchard');
+  const preview = page.locator('.preset-preview');
+
+  await page.getByTestId('player-count-2').click();
+  await expect(preview.locator('.cell.editor-home')).toHaveCount(4);
+  await expect(preview.locator('.cell.editor-home.unseated')).toHaveCount(2);
+
+  await page.getByTestId('player-count-4').click();
+  await expect(preview.locator('.cell.editor-home.unseated')).toHaveCount(0);
+});
+
 test('the old standalone labels and buttons are gone', async ({ page }) => {
   await openSetup(page);
 
@@ -104,7 +144,7 @@ test('plays a custom preset without saving: no download, no filename, and the ma
   // Back on setup, with the unsaved layout selected and no file written.
   await expect(page.getByTestId('preset-select')).toBeVisible();
   await expect(select(page)).toHaveValue(/^custom:/);
-  await expect(select(page).locator('option:checked')).toHaveText('Preset: Custom layout');
+  await expect(select(page).locator('option:checked')).toHaveText('Preset: Unnamed preset 1');
   expect(downloads).toEqual([]);
 
   // And it is the layout that actually gets played.
@@ -120,6 +160,31 @@ test('plays a custom preset without saving: no download, no filename, and the ma
   );
   expect(tunnels).toEqual(['1,1', '5,5']);
   expect(downloads).toEqual([]);
+});
+
+test('unnamed layouts are numbered, and Edit reopens the selected one', async ({ page }) => {
+  await openSetup(page);
+
+  await openEditor(page);
+  await paint(page, 'Space 1,1');
+  await page.getByTestId('preset-play').click();
+  await expect(select(page).locator('option:checked')).toHaveText('Preset: Unnamed preset 1');
+
+  // "Custom" always starts a new layout, so a second unnamed one gets its own
+  // number rather than replacing the first.
+  await openEditor(page);
+  await paint(page, 'Space 5,5');
+  await page.getByTestId('preset-play').click();
+  await expect(select(page).locator('option:checked')).toHaveText('Preset: Unnamed preset 2');
+  await expect(select(page).locator('option')).toContainText([/Unnamed preset 1/, /Unnamed preset 2/]);
+
+  // Edit reopens the SELECTED layout, keeping its number and its board.
+  await page.getByTestId('edit-preset').click();
+  await expect(page.getByLabel('Preset name')).toHaveValue('Unnamed preset 2');
+  await expect(page.getByRole('button', { name: 'Space 5,5, Tunnel' })).toBeVisible();
+  await page.getByTestId('preset-play').click();
+  await expect(select(page).locator('option:checked')).toHaveText('Preset: Unnamed preset 2');
+  await expect(select(page).locator('option', { hasText: 'Unnamed preset' })).toHaveCount(2);
 });
 
 test('saving still exports a file, and the export imports back in', async ({ page }) => {

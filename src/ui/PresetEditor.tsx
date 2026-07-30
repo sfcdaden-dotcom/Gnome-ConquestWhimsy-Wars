@@ -24,7 +24,6 @@ import {
   CUSTOM_EDITOR_BOARD_SIZE,
   PRESET_DESCRIPTION_MAX_LENGTH,
   PRESET_LABEL_MAX_LENGTH,
-  UNTITLED_CUSTOM_PRESET_LABEL,
   buildCustomPresetDef,
   downloadCustomPreset,
   makeCustomPresetId,
@@ -127,7 +126,8 @@ export function PresetEditor({ initial, onCancel, onApply }: PresetEditorProps) 
    * Validate the painted board and turn it into a preset, or report why not.
    * Both exits go through here, so playing and saving can never disagree about
    * what a legal layout is; only naming differs (a saved file needs a
-   * filename, an unsaved layout falls back to a generic name).
+   * filename, while an unsaved layout may come back nameless — setup numbers
+   * those, since only it knows what is already in the list).
    */
   function buildDef(requireName: boolean): GardenPresetDef | null {
     if (requireName && label.trim() === '') {
@@ -146,7 +146,7 @@ export function PresetEditor({ initial, onCancel, onApply }: PresetEditorProps) 
     setError(null);
     return buildCustomPresetDef(
       initial?.id ?? makeCustomPresetId(),
-      label.trim() || UNTITLED_CUSTOM_PRESET_LABEL,
+      label.trim(),
       description,
       n,
       result.layout.gardens,

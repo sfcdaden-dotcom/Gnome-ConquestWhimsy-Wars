@@ -33,8 +33,24 @@ const CUSTOM_PRESET_FILE_VERSION = 2;
 export const PRESET_LABEL_MAX_LENGTH = 40;
 export const PRESET_DESCRIPTION_MAX_LENGTH = 120;
 
-/** Name given to a layout played straight out of the editor without being saved. */
-export const UNTITLED_CUSTOM_PRESET_LABEL = 'Custom layout';
+/**
+ * Layouts played straight out of the editor need not be named, so they are
+ * numbered instead — "Unnamed preset 1", "Unnamed preset 2", … — which keeps
+ * two of them apart in the setup dropdown.
+ */
+export const UNNAMED_PRESET_PREFIX = 'Unnamed preset';
+
+const UNNAMED_PRESET_PATTERN = new RegExp(`^${UNNAMED_PRESET_PREFIX} (\\d+)$`);
+
+/** The next free "Unnamed preset N", counting past whatever is already listed. */
+export function nextUnnamedPresetLabel(existing: ReadonlyArray<{ label: string }>): string {
+  let highest = 0;
+  for (const { label } of existing) {
+    const n = Number(UNNAMED_PRESET_PATTERN.exec(label.trim())?.[1]);
+    if (Number.isFinite(n) && n > highest) highest = n;
+  }
+  return `${UNNAMED_PRESET_PREFIX} ${highest + 1}`;
+}
 
 interface CustomPresetFile {
   kind: typeof CUSTOM_PRESET_FILE_KIND;

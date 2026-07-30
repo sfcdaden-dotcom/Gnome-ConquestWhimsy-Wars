@@ -3,6 +3,7 @@ import {
   PRESET_DESCRIPTION_MAX_LENGTH,
   PRESET_LABEL_MAX_LENGTH,
   buildCustomPresetDef,
+  nextUnnamedPresetLabel,
   parseCustomPresetFile,
   reservedHomePositions,
   validateCustomPresetLayout,
@@ -217,6 +218,29 @@ describe('customPresets', () => {
       const res = validateCustomPresetLayout(7, homes(), [{ pos: { x: 1, y: 1 }, type: 'home' }]);
       expect(res).toMatchObject({ ok: false });
       if (!res.ok) expect(res.error).toMatch(/unknown garden type/);
+    });
+  });
+
+  describe('nextUnnamedPresetLabel', () => {
+    it('starts at 1 and counts up alongside named presets', () => {
+      expect(nextUnnamedPresetLabel([])).toBe('Unnamed preset 1');
+      expect(nextUnnamedPresetLabel([{ label: 'Twin Rivers' }])).toBe('Unnamed preset 1');
+      expect(nextUnnamedPresetLabel([{ label: 'Unnamed preset 1' }])).toBe('Unnamed preset 2');
+    });
+
+    it('counts past the highest number rather than the list length', () => {
+      // A preset can be removed mid-session; reusing its number would put two
+      // identical entries in the dropdown.
+      expect(nextUnnamedPresetLabel([{ label: 'Unnamed preset 3' }])).toBe('Unnamed preset 4');
+      expect(
+        nextUnnamedPresetLabel([{ label: 'Unnamed preset 2' }, { label: 'Unnamed preset 10' }, { label: 'Marsh' }]),
+      ).toBe('Unnamed preset 11');
+    });
+
+    it('ignores names that merely look like numbered ones', () => {
+      expect(nextUnnamedPresetLabel([{ label: 'Unnamed preset' }, { label: 'Unnamed preset two' }])).toBe(
+        'Unnamed preset 1',
+      );
     });
   });
 
