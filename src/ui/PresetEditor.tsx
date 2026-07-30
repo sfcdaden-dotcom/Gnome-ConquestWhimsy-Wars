@@ -9,6 +9,10 @@
  * not in the browser). Neither path re-imports anything — the setup screen
  * uses the in-memory preset it is handed.
  *
+ * The board can start blank or from any preset the setup screen hands over
+ * (built-in ones included — those come in as an unowned draft, so saving makes
+ * a new preset rather than pretending to overwrite the registry).
+ *
  * Home Gardens are also movable here: click one to pick it up, then click an
  * empty space to drop it. There are always exactly 4 (seat order
  * west/north/east/south by convention) — 2-player games use Home 1 & Home 3,
@@ -41,9 +45,23 @@ type Tool = PlantableGardenType | 'erase';
  */
 const PRESET_MAX_PER_TYPE = 8;
 
+/**
+ * A layout to open the editor on, already resolved to concrete spaces — any
+ * preset can produce one (see `SetupScreen.selectionAsDraft`), which is what
+ * lets ✏️ Edit start from a built-in as readily as from a session preset.
+ * `id` present ⇒ save over that preset; absent ⇒ this is a new one.
+ */
+export interface PresetDraft {
+  id?: string;
+  label: string;
+  description: string;
+  gardens: Array<{ pos: Pos; type: PlantableGardenType }>;
+  homes: Pos[];
+}
+
 export interface PresetEditorProps {
-  /** Pass the currently-selected custom preset to edit it in place; omit to start blank. */
-  initial?: GardenPresetDef;
+  /** Layout to start from; omit to start on a blank board. */
+  initial?: PresetDraft;
   onCancel: () => void;
   /** Hand the finished layout back to setup, which selects it and closes the editor. */
   onApply: (def: GardenPresetDef) => void;
@@ -52,7 +70,7 @@ export interface PresetEditorProps {
 function initialGardens(initial: PresetEditorProps['initial']): Map<string, PlantableGardenType> {
   const map = new Map<string, PlantableGardenType>();
   if (!initial) return map;
-  for (const g of initial.build(CUSTOM_EDITOR_BOARD_SIZE)) map.set(posKey(g.pos), g.type);
+  for (const g of initial.gardens) map.set(posKey(g.pos), g.type);
   return map;
 }
 
@@ -61,7 +79,7 @@ export function PresetEditor({ initial, onCancel, onApply }: PresetEditorProps) 
   const [label, setLabel] = useState(initial?.label ?? '');
   const [description, setDescription] = useState(initial?.description ?? '');
   const [gardens, setGardens] = useState<Map<string, PlantableGardenType>>(() => initialGardens(initial));
-  const [homes, setHomes] = useState<Pos[]>(() => initial?.homes ?? reservedHomePositions(n));
+  const [homes, setHomes] = useState<Pos[]>(() => initial?.homes.map((h) => ({ ...h })) ?? reservedHomePositions(n));
   const [pickedHome, setPickedHome] = useState<number | null>(null);
   const [tool, setTool] = useState<Tool>('tunnel');
   const [error, setError] = useState<string | null>(null);

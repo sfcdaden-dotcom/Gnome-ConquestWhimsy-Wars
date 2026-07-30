@@ -1,0 +1,19 @@
+{
+  "kind": "whimsy-wars-garden-preset",
+  "version": 2,
+  "label": "Midfield",
+  "description": "Homes pulled one step in off the edges, with a tunnel behind each — nowhere is truly the back rank.",
+  "boardSize": 7,
+  "homes": [
+    { "x": 1, "y": 3 },
+    { "x": 3, "y": 1 },
+    { "x": 5, "y": 3 },
+    { "x": 3, "y": 5 }
+  ],
+  "gardens": [
+    { "pos": { "x": 0, "y": 3 }, "type": "tunnel" },
+    { "pos": { "x": 3, "y": 0 }, "type": "tunnel" },
+    { "pos": { "x": 6, "y": 3 }, "type": "tunnel" },
+    { "pos": { "x": 3, "y": 6 }, "type": "tunnel" }
+  ]
+}

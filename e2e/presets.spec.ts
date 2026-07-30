@@ -187,6 +187,50 @@ test('unnamed layouts are numbered, and Edit reopens the selected one', async ({
   await expect(select(page).locator('option', { hasText: 'Unnamed preset' })).toHaveCount(2);
 });
 
+test('a built-in preset can be edited and exported, which is how it becomes a file', async ({ page }) => {
+  await openSetup(page);
+  await select(page).selectOption('few');
+
+  // Edit opens the built-in's own map, as a copy — the registry is fixed at
+  // build time, so the way to change a stock preset is to fork, export, and
+  // drop the .json into src/engine/presets/.
+  await page.getByTestId('edit-preset').click();
+  await expect(page.getByLabel('Preset name')).toHaveValue('Few (tunnels) (copy)');
+  await expect(page.getByRole('button', { name: 'Space 1,1, Tunnel' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Space 5,5, Tunnel' })).toBeVisible();
+
+  // Move a home off its edge midpoint: pick it up, drop it on a free space.
+  await page.getByRole('button', { name: 'Home 1' }).click();
+  await page.getByRole('button', { name: 'Space 1,3', exact: true }).click();
+
+  const [download] = await Promise.all([page.waitForEvent('download'), page.getByTestId('preset-save').click()]);
+  expect(download.suggestedFilename()).toBe('few-tunnels-copy.whimsy-preset.json');
+  const saved = JSON.parse(await readFile((await download.path())!, 'utf8'));
+  expect(saved.homes).toContainEqual({ x: 1, y: 3 });
+  expect(saved.gardens).toHaveLength(4);
+});
+
+test('a preset shipped as a file plays its own home positions', async ({ page }) => {
+  await openSetup(page);
+  // src/engine/presets/midfield.whimsy-preset.json — registered by filename.
+  await select(page).selectOption('midfield');
+
+  const preview = page.locator('.preset-preview');
+  await expect(preview.locator('.cell.editor-home')).toHaveCount(4);
+
+  await page.getByTestId('player-count-2').click();
+  await page.getByTestId('seat-0-human').click();
+  await page.getByTestId('seat-1-human').click();
+  await page.getByTestId('seed-input').fill(String(SEED));
+  await page.getByTestId('start-game').click();
+  await expect(page.getByTestId('game-screen')).toBeVisible();
+
+  const homes = await page.$$eval('[data-testid="game-screen"] .board .cell.g-home', (cells) =>
+    cells.map((c) => (c.getAttribute('data-testid') ?? '').replace('cell-', '')).sort(),
+  );
+  expect(homes).toEqual(['1,3', '5,3']);
+});
+
 test('saving still exports a file, and the export imports back in', async ({ page }) => {
   await openSetup(page);
   await openEditor(page);

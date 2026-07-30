@@ -47,7 +47,9 @@ actions without any UI.
 ## Project layout
 
 ```
-src/engine/   types, RNG, setup, garden presets; the reducer split by
+src/engine/   types, RNG, setup, garden presets (presets/*.json ship as
+              built-ins — draw one in the editor and drop it in); the
+              reducer split by
               responsibility (engine facade, actions, turns, settle,
               elimination, legalActions, targeting), gardens, fights,
               cards (data-driven), per-seat redaction (view), AI, tests

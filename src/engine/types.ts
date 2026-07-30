@@ -61,6 +61,20 @@ export type GardenType =
 
 export type PlantableGardenType = Exclude<GardenType, 'home'>;
 
+/**
+ * Every type a player can plant, or design a garden layout with (excludes
+ * 'home'). Lives here rather than in setup.ts so the preset file format can
+ * validate against it without importing the module that consumes presets.
+ */
+export const PLANTABLE_GARDEN_TYPES: readonly PlantableGardenType[] = [
+  'dandelion',
+  'mushroom',
+  'flytrap',
+  'maize',
+  'slippery',
+  'tunnel',
+];
+
 export type UnitKind = 'gnome' | 'snail';
 export type PlayerController = 'human' | 'cpu';
 /** CPU strength. Meaningless for 'human' seats, but stored uniformly. Default 'normal'. */

@@ -24,8 +24,11 @@ import {
 } from '../engine';
 import { GARDEN_META, playerColor, randomSeed, PLAYER_COLOR_NAMES } from './meta';
 import { PresetEditor } from './PresetEditor';
+import type { PresetDraft } from './PresetEditor';
 import {
   CUSTOM_EDITOR_BOARD_SIZE,
+  PRESET_LABEL_MAX_LENGTH,
+  buildCustomPresetDef,
   downloadCustomPreset,
   nextUnnamedPresetLabel,
   parseCustomPresetFile,
@@ -62,8 +65,13 @@ function isCustomPresetId(id: string): boolean {
  */
 const CUSTOM_PRESET_OPTION = '__custom__';
 
-/** What the editor is open on: a fresh layout, or one of the session's presets. */
-type EditorTarget = { mode: 'new' } | { mode: 'edit'; id: string };
+/**
+ * What the editor is open on: a blank board, or a layout to start from. A
+ * session preset is edited in place (`draft.id` kept); a built-in is forked
+ * into a new one, since the registry is fixed at build time — export the fork
+ * and drop it in `src/engine/presets/` to make it stock.
+ */
+type EditorTarget = { mode: 'new' } | { mode: 'edit'; draft: PresetDraft };
 
 /** A preset resolved to the board it draws: what the preview shows and what plays. */
 interface PreviewLayout extends RandomLayout {
@@ -161,9 +169,8 @@ export function SetupScreen({
 
   const allPresets = [...GARDEN_PRESETS, ...customPresets];
   const presetDef = allPresets.find((p) => p.id === preset) ?? allPresets.find((p) => p.id === DEFAULT_GARDEN_PRESET_ID)!;
-  /** The selected preset, when it is one the player drew (export/edit/remove apply to it). */
+  /** The selected preset, when it is one the player drew (remove applies only to those). */
   const selectedCustom = isCustomPresetId(preset) ? customPresets.find((p) => p.id === preset) : undefined;
-  const editorInitial = editorTarget?.mode === 'edit' ? customPresets.find((p) => p.id === editorTarget.id) : undefined;
 
   // What you see in the preview is what you play: the rolled layout is handed
   // to the engine verbatim rather than re-derived from the game seed.
@@ -184,9 +191,43 @@ export function SetupScreen({
     return {
       boardSize,
       gardens: presetDef.build(boardSize),
-      homes: presetDef.homes ?? homePositions(boardSize, 4),
+      // Same order of preference as `createGame`, so the thumbnail cannot
+      // disagree with the game it starts.
+      homes: presetDef.buildHomes?.(boardSize, layoutSeed) ?? presetDef.homes ?? homePositions(boardSize, 4),
     };
-  }, [presetDef, rolled]);
+  }, [presetDef, rolled, layoutSeed]);
+
+  /**
+   * The selected preset as a concrete layout the editor can open — the map
+   * currently on screen, whichever kind of preset produced it (a rolled one is
+   * snapshotted as previewed, not re-rolled). Built-in presets come back
+   * without an id: the registry is fixed at build time, so editing one forks
+   * it, and exporting the fork into `src/engine/presets/` is what makes the
+   * change stock.
+   */
+  function selectionAsDraft(): PresetDraft {
+    const own = isCustomPresetId(presetDef.id);
+    return {
+      ...(own ? { id: presetDef.id } : {}),
+      label: own ? presetDef.label : `${presetDef.label} (copy)`.slice(0, PRESET_LABEL_MAX_LENGTH),
+      description: presetDef.description,
+      gardens: previewLayout.gardens,
+      homes: previewLayout.homes,
+    };
+  }
+
+  /** The same snapshot as a preset, for 💾 Export (a rolled map exports as previewed). */
+  function selectionAsPreset(): GardenPresetDef {
+    const draft = selectionAsDraft();
+    return buildCustomPresetDef(
+      presetDef.id,
+      presetDef.label,
+      draft.description,
+      previewLayout.boardSize,
+      draft.gardens,
+      draft.homes,
+    );
+  }
 
   function updateSeat(i: number, patch: Partial<SeatDraft>) {
     setSeats((s) => s.map((seat, j) => (j === i ? { ...seat, ...patch } : seat)));
@@ -289,7 +330,11 @@ export function SetupScreen({
 
   if (editorTarget) {
     return (
-      <PresetEditor initial={editorInitial} onCancel={() => setEditorTarget(null)} onApply={addOrUpdateCustomPreset} />
+      <PresetEditor
+        initial={editorTarget.mode === 'edit' ? editorTarget.draft : undefined}
+        onCancel={() => setEditorTarget(null)}
+        onApply={addOrUpdateCustomPreset}
+      />
     );
   }
 
@@ -409,27 +454,29 @@ export function SetupScreen({
               <button type="button" className="btn small" onClick={() => importInputRef.current?.click()}>
                 📂 Import…
               </button>
+              {/* Edit/Export work on any preset — a built-in opens as a fork,
+                  and its exported .json is what `src/engine/presets/` takes. */}
+              <button
+                type="button"
+                className="btn small"
+                data-testid="edit-preset"
+                onClick={() => setEditorTarget({ mode: 'edit', draft: selectionAsDraft() })}
+                title={selectedCustom ? 'Edit this layout' : 'Open this layout in the editor as a new preset'}
+              >
+                ✏️ Edit
+              </button>
+              <button
+                type="button"
+                className="btn small"
+                data-testid="export-preset"
+                onClick={() => downloadCustomPreset(selectionAsPreset(), previewLayout.boardSize)}
+              >
+                💾 Export
+              </button>
               {selectedCustom && (
-                <>
-                  <button
-                    type="button"
-                    className="btn small"
-                    data-testid="edit-preset"
-                    onClick={() => setEditorTarget({ mode: 'edit', id: selectedCustom.id })}
-                  >
-                    ✏️ Edit
-                  </button>
-                  <button
-                    type="button"
-                    className="btn small"
-                    onClick={() => downloadCustomPreset(selectedCustom, CUSTOM_EDITOR_BOARD_SIZE)}
-                  >
-                    💾 Export
-                  </button>
-                  <button type="button" className="btn small warn" onClick={() => removeCustomPreset(selectedCustom.id)}>
-                    🗑️ Remove
-                  </button>
-                </>
+                <button type="button" className="btn small warn" onClick={() => removeCustomPreset(selectedCustom.id)}>
+                  🗑️ Remove
+                </button>
               )}
               <input
                 ref={importInputRef}

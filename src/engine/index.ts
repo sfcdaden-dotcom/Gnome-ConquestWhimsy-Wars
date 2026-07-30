@@ -12,11 +12,11 @@ export { createRng, normalizeSeed, rngNext, rngInt, rollDie, shuffled } from './
 export type { Rng } from './rng';
 
 // Game creation & layouts.
+// (PLANTABLE_GARDEN_TYPES now lives in types.ts, covered by the star export above.)
 export {
   createGame,
   DEFAULT_CONFIG,
   TILES_PER_TYPE,
-  PLANTABLE_GARDEN_TYPES,
   homePositions,
   seatHomes,
   presetGardens,
@@ -32,6 +32,22 @@ export {
   findGardenPreset,
 } from './gardenPresets';
 export type { GardenPresetDef } from './gardenPresets';
+
+// Preset file format (.json): the in-game editor writes it, the setup screen
+// imports it, and `engine/presets/*.json` ships it as built-in presets.
+export {
+  PRESET_FILE_KIND,
+  PRESET_FILE_VERSION,
+  PRESET_LABEL_MAX_LENGTH,
+  PRESET_DESCRIPTION_MAX_LENGTH,
+  reservedHomePositions,
+  presetDefFromLayout,
+  presetDefFromFile,
+  parsePresetFile,
+  toPresetFile,
+  validatePresetLayout,
+} from './presetFile';
+export type { GardenPresetFile, ValidatedPresetLayout, PresetLayoutValidation } from './presetFile';
 
 // Procedural map generation (the "Random" preset; the setup screen previews it).
 export { generateRandomLayout, orbitOf, rotate90, RANDOM_LAYOUT_MIN_BOARD_SIZE } from './randomLayout';
