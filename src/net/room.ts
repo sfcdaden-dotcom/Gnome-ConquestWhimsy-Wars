@@ -132,11 +132,21 @@ export function generateRoomCode(randomBytes: (n: number) => Uint8Array): string
   return out;
 }
 
+/**
+ * A fresh table.
+ *
+ * Every seat starts **human**, and this matters more than it looks: a room
+ * exists so that people can sit in it. Defaulting the other seats to CPU meant
+ * a friend who arrived with the code found the table already "full" of bots
+ * and was made a spectator, which is not what either of them asked for. The
+ * host can turn any seat into a CPU in one click; nobody can un-spectate
+ * themselves.
+ */
 function defaultSeats(count: 2 | 4): PersistedSeat[] {
   const names = ['Rose', 'Thistle', 'Marigold', 'Bramble'];
   return Array.from({ length: count }, (_, i) => ({
     name: names[i],
-    controller: i === 0 ? ('human' as const) : ('cpu' as const),
+    controller: 'human' as const,
     difficulty: 'normal' as AiDifficulty,
   }));
 }
@@ -158,6 +168,9 @@ interface ConnState {
   conn: RoomConnection;
   token: string;
   seat: number | null;
+  /** The last identity this connection was told, so `welcome` is re-sent only
+   *  when it actually changed (see `announceIdentities`). */
+  announced: { seat: number | null; isHost: boolean } | null;
 }
 
 export class Room {
@@ -219,8 +232,9 @@ export class Room {
    * A `token` the room already knows restores that seat — this is reconnect,
    * and it is the same path used when the Durable Object wakes from
    * hibernation and re-attaches its sockets. An unknown or absent token gets a
-   * fresh one and the next free human seat, or spectator status if the table
-   * is full.
+   * fresh one. Either way, anyone who ends up without a seat is offered the
+   * next free one, so a returning spectator is seated if the table has opened
+   * up while they were away.
    */
   async hello(conn: RoomConnection, message: Extract<ClientMessage, { t: 'hello' }>): Promise<void> {
     if (message.protocol !== PROTOCOL_VERSION) {
@@ -235,40 +249,41 @@ export class Room {
 
     const known = message.token !== undefined && message.token in this.data.tokens;
     const token = known ? (message.token as string) : this.mintToken();
-    let seat: number | null;
-
-    if (known) {
-      seat = this.data.tokens[token];
-      // A seat flipped to CPU while its player was away is not theirs to take
-      // back mid-game; they return as a spectator rather than fighting the AI
-      // for control.
-      if (seat !== null && this.data.seats[seat]?.controller !== 'human') seat = null;
-    } else {
-      seat = this.claimSeat();
-      this.data.tokens[token] = seat;
-      if (this.data.hostToken === null && seat !== null) this.data.hostToken = token;
-    }
-
-    if (message.name && seat !== null) this.data.seats[seat].name = message.name.slice(0, 24);
 
     // One token, one live connection. A second tab (or a reconnect the room
     // has not noticed dropping yet) takes the seat over rather than sitting
-    // beside itself — otherwise `seatIsOccupied` sees a ghost forever.
+    // beside itself — otherwise `seatIsOccupied` sees a ghost forever. This
+    // happens BEFORE the seat is worked out, so the ghost does not make the
+    // returning player's own seat look occupied to `claimSeat`.
     for (const [id, existing] of this.conns) {
       if (existing.token !== token || id === conn.id) continue;
       this.conns.delete(id);
       existing.conn.close(4000, 'seat taken over by a newer connection');
     }
 
-    this.conns.set(conn.id, { conn, token, seat });
+    let seat: number | null;
+    if (known) {
+      seat = this.data.tokens[token] ?? null;
+      // A seat flipped to CPU while its player was away is not theirs to take
+      // back mid-game; they return as a spectator rather than fighting the AI
+      // for control.
+      if (seat !== null && this.data.seats[seat]?.controller !== 'human') seat = null;
+    } else {
+      seat = null;
+    }
+    // A returning spectator is a player who never got a seat (or lost one to a
+    // CPU flip). If the table has opened up since, sit them down — there is no
+    // other moment at which their seat is ever reconsidered.
+    if (seat === null) seat = this.claimSeat();
+    this.data.tokens[token] = seat;
+
+    if (message.name && seat !== null) this.data.seats[seat].name = message.name.slice(0, 24);
+
+    this.conns.set(conn.id, { conn, token, seat, announced: null });
+    this.ensureHost();
     await this.save();
 
-    conn.send({
-      t: 'welcome',
-      you: { seat, token, isHost: token === this.data.hostToken },
-      room: this.snapshot(),
-    });
-    if (this.state) conn.send({ t: 'state', view: viewFor(this.state, seat) });
+    this.announceIdentities();
     this.broadcastRoom();
   }
 
@@ -286,11 +301,23 @@ export class Room {
     throw new Error('Room: could not mint a unique token — is randomBytes actually random?');
   }
 
-  /** First human seat nobody is connected to, or null when the table is full. */
+  /**
+   * The first human seat free to claim, or null when there is none.
+   *
+   * "Free" means no live connection is in it and — once the game is running —
+   * no token holds it either. A player who drops mid-game keeps their seat;
+   * that is the entire point of the token, and handing it to a stranger while
+   * they reconnect would be worse than making the stranger wait. In the lobby
+   * nothing is invested yet, so a seat whose holder closed their tab is
+   * claimable again; otherwise one person opening and closing a browser would
+   * lock a seat and the host could never start.
+   */
   private claimSeat(): number | null {
     for (let i = 0; i < this.data.seats.length; i++) {
       if (this.data.seats[i].controller !== 'human') continue;
       if (this.seatIsOccupied(i)) continue;
+      if (this.data.phase !== 'lobby' && this.seatIsHeld(i)) continue;
+      this.releaseSeat(i);
       return i;
     }
     return null;
@@ -299,6 +326,65 @@ export class Room {
   private seatIsOccupied(seat: number): boolean {
     for (const c of this.conns.values()) if (c.seat === seat) return true;
     return false;
+  }
+
+  /** Does any token still lay claim to this seat, connected or not? */
+  private seatIsHeld(seat: number): boolean {
+    for (const held of Object.values(this.data.tokens)) if (held === seat) return true;
+    return false;
+  }
+
+  /** Drop every token's claim on a seat; its holders return as spectators. */
+  private releaseSeat(seat: number): void {
+    for (const token of Object.keys(this.data.tokens)) {
+      if (this.data.tokens[token] === seat) this.data.tokens[token] = null;
+    }
+  }
+
+  /**
+   * Sit waiting spectators down in seats that have opened up.
+   *
+   * Without this, a seat is decided once — at `hello` — and never revisited,
+   * so somebody who arrived while the table was full (or before the host
+   * turned a CPU seat back into a human one) stayed a spectator for the life
+   * of the room no matter what the host did. Earlier arrivals get first
+   * refusal, since `conns` is in arrival order.
+   */
+  private seatSpectators(): void {
+    for (const c of this.conns.values()) {
+      if (c.seat !== null) continue;
+      const seat = this.claimSeat();
+      if (seat === null) return; // no seats left; the rest keep watching
+      c.seat = seat;
+      this.data.tokens[c.token] = seat;
+    }
+  }
+
+  /**
+   * Keep the lobby owned by somebody who is actually at the table.
+   *
+   * Only the host token can `configure` or `start`, so if its holder walked
+   * away before the deal the room would be frozen for everyone still in it.
+   * A host who is *here* keeps the room even with no seat — turning your own
+   * seat into a CPU to watch two bots play is a thing hosts do, and it must
+   * not cost them the start button. Mid-game the host may also be away: their
+   * seat is still theirs, and there is no lobby left to own.
+   */
+  private ensureHost(): void {
+    const current = this.data.hostToken;
+    if (current !== null) {
+      const live = [...this.conns.values()].some((c) => c.token === current);
+      if (live) return;
+      if (this.data.phase !== 'lobby' && (this.data.tokens[current] ?? null) !== null) return;
+    }
+    // Whoever is here, seated first — a spectator running the lobby is odd,
+    // but an unstartable room is worse.
+    let next: ConnState | null = null;
+    for (const c of this.conns.values()) {
+      if (next === null) next = c;
+      else if (c.seat !== null && (next.seat === null || c.seat < next.seat)) next = c;
+    }
+    this.data.hostToken = next?.token ?? null;
   }
 
   /**
@@ -310,9 +396,17 @@ export class Room {
     return this.conns.get(connId)?.token ?? null;
   }
 
-  /** A connection dropped. The seat stays theirs — the token is what holds it. */
-  disconnect(connId: string): void {
+  /**
+   * A connection dropped. Mid-game the seat stays theirs — the token is what
+   * holds it. In the lobby a seat nobody is sitting in is up for grabs again,
+   * so somebody who has been watching can take it and the game can start.
+   */
+  async disconnect(connId: string): Promise<void> {
     this.conns.delete(connId);
+    if (this.data.phase === 'lobby') this.seatSpectators();
+    this.ensureHost();
+    await this.save();
+    this.announceIdentities();
     this.broadcastRoom();
   }
 
@@ -371,15 +465,30 @@ export class Room {
     if (message.gardenPreset !== undefined) this.data.gardenPreset = message.gardenPreset;
     for (const seat of message.seats ?? []) this.applySeatConfig(seat);
 
-    // Nobody is left holding a seat the host just turned into a CPU.
+    // Nobody is left holding a seat the host just turned into a CPU (or a seat
+    // that a shrink to two players removed).
     for (const conn of this.conns.values()) {
       if (conn.seat !== null && this.data.seats[conn.seat]?.controller !== 'human') {
         conn.seat = null;
         this.data.tokens[conn.token] = null;
       }
     }
+    for (let i = 0; i < this.data.seats.length; i++) {
+      if (this.data.seats[i].controller !== 'human') this.releaseSeat(i);
+    }
+    for (const token of Object.keys(this.data.tokens)) {
+      const held = this.data.tokens[token];
+      if (held !== null && held >= this.data.seats.length) this.data.tokens[token] = null;
+    }
+
+    // ...and the seats this just opened go to whoever is waiting. Turning a
+    // CPU seat human is how a host makes room for a friend who is already
+    // here, so it has to actually seat them.
+    this.seatSpectators();
+    this.ensureHost();
 
     await this.save();
+    this.announceIdentities();
     this.broadcastRoom();
   }
 
@@ -569,6 +678,32 @@ export class Room {
   }
 
   // --- outbound ------------------------------------------------------------
+
+  /**
+   * Tell each connection who it is, when that has changed.
+   *
+   * `welcome` is the only message carrying a client's seat, and a seat is no
+   * longer settled once and for all: spectators get seated, seats get turned
+   * into CPUs, and the host badge moves when its holder leaves. Re-sending
+   * `welcome` — to that connection alone, since it contains that client's
+   * private token — is how the client learns. Unchanged identities are
+   * skipped so a lobby edit does not spray tokens around for no reason.
+   */
+  private announceIdentities(): void {
+    for (const c of this.conns.values()) {
+      const isHost = c.token === this.data.hostToken;
+      if (c.announced && c.announced.seat === c.seat && c.announced.isHost === isHost) continue;
+      c.announced = { seat: c.seat, isHost };
+      c.conn.send({
+        t: 'welcome',
+        you: { seat: c.seat, token: c.token, isHost },
+        room: this.snapshot(),
+      });
+      // A new seat means a differently redacted view — a promoted spectator
+      // must be handed the hand they can now see.
+      if (this.state) c.conn.send({ t: 'state', view: viewFor(this.state, c.seat) });
+    }
+  }
 
   /** Each connection gets the state redacted for ITS seat, never a shared one. */
   private broadcastState(): void {

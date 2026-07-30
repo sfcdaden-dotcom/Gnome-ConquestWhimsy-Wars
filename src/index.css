@@ -1442,6 +1442,12 @@ h2 {
   min-width: 6rem;
 }
 
+/* Who is actually in the seat — shown to the host too, beside the controls. */
+.lobby-seat .seat-status {
+  flex: none;
+  white-space: nowrap;
+}
+
 .lobby-config {
   display: flex;
   flex-direction: column;

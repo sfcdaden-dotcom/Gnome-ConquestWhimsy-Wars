@@ -93,8 +93,11 @@ export interface SeatConfig {
 
 export type ServerMessage =
   /**
-   * Identity, sent once per connection. `token` is this client's private
-   * reconnect credential — it is never included in anything broadcast.
+   * Identity: who this connection is. Sent on `hello`, and again whenever the
+   * room changes it — a spectator being seated, a seat turned into a CPU, the
+   * host badge moving. It is the only message carrying a seat, so a client
+   * should treat each one as replacing what it knew. `token` is this client's
+   * private reconnect credential — never included in anything broadcast.
    */
   | { t: 'welcome'; you: { seat: number | null; token: string; isHost: boolean }; room: RoomSnapshot }
   | { t: 'room'; room: RoomSnapshot }

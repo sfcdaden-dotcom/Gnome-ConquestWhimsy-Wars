@@ -58,21 +58,47 @@ broadcast. The state does not move.
 started**.
 
 **A start with an empty human seat** — the error names the seat, so the host can
-either wait or switch it to a CPU rather than guessing.
+either wait or switch it to a CPU rather than guessing. Since every seat starts
+human, this is what a solo host hits: fill the other seats with people or with
+bots, deliberately.
+
+## Seats
+
+**Every seat in a fresh room starts human.** A room exists so that people can
+sit in it; the host turns the seats nobody is coming for into CPUs. The
+opposite default — the host human, the rest bots — meant a friend arriving with
+the code found the table already full and became a spectator, which is the one
+thing they cannot undo themselves.
+
+Seats are therefore reconsidered, not decided once:
+
+- **A spectator is seated the moment a seat opens** — the host turns a CPU seat
+  human, opens the table from 2 to 4, or a lobby seat is abandoned. Earliest
+  arrival first. `welcome` is re-sent to that connection, which is how a client
+  learns its seat changed.
+- **A lobby seat whose player left is claimable again.** Nothing is invested
+  before the deal, and one person opening and closing a tab must not lock a
+  seat the host is waiting on.
+- **A seat dropped from mid-game is not.** There the token holds it against all
+  comers until its player reconnects (see below).
+- **The lobby follows whoever is still here.** If the host leaves before the
+  deal, the room hands the settings and the start button to another player
+  rather than freezing. A host who is present but seatless — having turned
+  their own seat into a CPU — keeps it.
 
 ## Identity and reconnect
 
 The room assigns a seat and issues a private `token`. The token is the seat:
 present it again after a refresh, a dropped tunnel or a hibernated room, and
-you get your seat and your hand back. It appears in exactly one message —
-your own `welcome` — and never in anything broadcast.
+you get your seat and your hand back. It appears only in your own `welcome`,
+never in anything broadcast.
 
-A dropped connection does **not** free its seat. One token holds one live
-connection: a second one takes over rather than sitting beside itself.
+A dropped connection does **not** free its seat mid-game. One token holds one
+live connection: a second one takes over rather than sitting beside itself.
 
 A seat the host flipped to CPU while its player was away is not theirs to take
 back mid-game; they return as a spectator instead of fighting the AI for
-control.
+control — and are seated again automatically if another seat opens.
 
 ## The secret
 
