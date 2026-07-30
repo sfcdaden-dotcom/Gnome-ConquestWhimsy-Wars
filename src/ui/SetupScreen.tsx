@@ -48,6 +48,14 @@ function isCustomPresetId(id: string): boolean {
 }
 
 /**
+ * Dropdown value for "Custom": an action, not a preset. Picking it opens the
+ * editor (on the selected custom preset, if there is one) and leaves the
+ * selection alone until the editor hands back a finished layout — so backing
+ * out keeps whatever was chosen before.
+ */
+const CUSTOM_PRESET_OPTION = '__custom__';
+
+/**
  * Read-only thumbnail of a rolled map. Homes the current seating won't use
  * (the north/south pair in a 2-player game) are dimmed rather than hidden, so
  * the layout's symmetry still reads at a glance.
@@ -147,6 +155,12 @@ export function SetupScreen({
     setSeats((s) => s.map((seat, j) => (j === i ? { ...seat, ...patch } : seat)));
   }
 
+  /**
+   * The editor's single exit: select the finished layout and close. Saving is
+   * the editor's own business (it writes the file before calling this), so
+   * playing without saving lands here unchanged — the preset lives in this
+   * component's state for the session and is never persisted.
+   */
   function addOrUpdateCustomPreset(def: GardenPresetDef) {
     setCustomPresets((list) => {
       const idx = list.findIndex((p) => p.id === def.id);
@@ -157,6 +171,15 @@ export function SetupScreen({
     });
     setPreset(def.id);
     setEditing(false);
+  }
+
+  /** Dropdown handler: every option but "Custom" resolves to a preset id. */
+  function choosePreset(value: string) {
+    if (value === CUSTOM_PRESET_OPTION) {
+      setEditing(true);
+      return;
+    }
+    setPreset(value);
   }
 
   function removeCustomPreset(id: string) {
@@ -222,7 +245,7 @@ export function SetupScreen({
 
   if (editing) {
     return (
-      <PresetEditor initial={editingExisting} onCancel={() => setEditing(false)} onSave={addOrUpdateCustomPreset} />
+      <PresetEditor initial={editingExisting} onCancel={() => setEditing(false)} onApply={addOrUpdateCustomPreset} />
     );
   }
 
@@ -296,78 +319,81 @@ export function SetupScreen({
           ))}
         </div>
 
-        <div className="setup-row">
-          <span className="setup-label">Extra gardens</span>
-          <select
-            className="preset-select"
-            value={preset}
-            onChange={(e) => setPreset(e.target.value)}
-            aria-label="Extra-garden preset"
-          >
-            <optgroup label="Built-in">
-              {GARDEN_PRESETS.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.label}
-                </option>
-              ))}
-            </optgroup>
-            {customPresets.length > 0 && (
-              <optgroup label="Custom (this session)">
-                {customPresets.map((p) => (
+        {/* Preview first, then every preset control together underneath it. */}
+        <div className="preset-section" data-testid="preset-section">
+          {rolled && <LayoutPreview layout={rolled} playerCount={count} centerStar={centerStar} />}
+          <div className="preset-controls">
+            <select
+              className="preset-select"
+              value={preset}
+              onChange={(e) => choosePreset(e.target.value)}
+              aria-label="Extra-garden preset"
+              data-testid="preset-select"
+            >
+              <optgroup label="Built-in">
+                {GARDEN_PRESETS.map((p) => (
                   <option key={p.id} value={p.id}>
-                    {p.label}
+                    Preset: {p.label}
                   </option>
                 ))}
               </optgroup>
-            )}
-          </select>
-        </div>
-        <p className="preset-description muted small">{presetDef.description}</p>
-        {rolled && (
-          <div className="layout-preview-row">
-            <LayoutPreview layout={rolled} playerCount={count} centerStar={centerStar} />
+              {customPresets.length > 0 && (
+                <optgroup label="This session">
+                  {customPresets.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      Preset: {p.label}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              <option value={CUSTOM_PRESET_OPTION}>Preset: Custom</option>
+            </select>
             <div className="btn-row">
-              <button
-                type="button"
-                className="btn small"
-                data-testid="reroll-layout"
-                onClick={() => setLayoutSeed(randomSeed())}
-              >
-                🎲 Re-roll the map
+              {rolled && (
+                <>
+                  <button
+                    type="button"
+                    className="btn small"
+                    data-testid="reroll-layout"
+                    onClick={() => setLayoutSeed(randomSeed())}
+                  >
+                    🎲 Re-roll the map
+                  </button>
+                  <span className="muted small">Map #{layoutSeed}</span>
+                </>
+              )}
+              <button type="button" className="btn small" onClick={() => importInputRef.current?.click()}>
+                📂 Import…
               </button>
-              <span className="muted small">Map #{layoutSeed}</span>
+              {editingExisting && (
+                <>
+                  <button
+                    type="button"
+                    className="btn small"
+                    onClick={() => downloadCustomPreset(editingExisting, CUSTOM_EDITOR_BOARD_SIZE)}
+                  >
+                    💾 Export
+                  </button>
+                  <button type="button" className="btn small warn" onClick={() => removeCustomPreset(editingExisting.id)}>
+                    🗑️ Remove
+                  </button>
+                </>
+              )}
+              <input
+                ref={importInputRef}
+                type="file"
+                accept="application/json,.json"
+                className="visually-hidden"
+                aria-label="Import a garden preset file"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) importPresetFile(file);
+                  e.target.value = '';
+                }}
+              />
             </div>
           </div>
-        )}
-        <div className="btn-row">
-          <button type="button" className="btn small" onClick={() => setEditing(true)}>
-            🎨 {editingExisting ? 'Edit this preset' : 'New preset'}
-          </button>
-          <button type="button" className="btn small" onClick={() => importInputRef.current?.click()}>
-            📂 Import preset…
-          </button>
-          {editingExisting && (
-            <>
-              <button type="button" className="btn small" onClick={() => downloadCustomPreset(editingExisting, CUSTOM_EDITOR_BOARD_SIZE)}>
-                💾 Export
-              </button>
-              <button type="button" className="btn small warn" onClick={() => removeCustomPreset(editingExisting.id)}>
-                🗑️ Remove
-              </button>
-            </>
-          )}
-          <input
-            ref={importInputRef}
-            type="file"
-            accept="application/json,.json"
-            className="visually-hidden"
-            aria-label="Import a garden preset file"
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) importPresetFile(file);
-              e.target.value = '';
-            }}
-          />
+          <p className="preset-description muted small">{presetDef.description}</p>
         </div>
 
         <div className="setup-row">
