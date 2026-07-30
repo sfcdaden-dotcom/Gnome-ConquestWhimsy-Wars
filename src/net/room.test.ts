@@ -171,6 +171,135 @@ describe('seats and identity', () => {
   });
 });
 
+describe('a room seats the people in it', () => {
+  it('seats an arriving player without the host configuring anything', async () => {
+    const host = makeHost();
+    const room = await Room.open(host, 'ABC123');
+    const c0 = new FakeConn('c0');
+    const c1 = new FakeConn('c1');
+    await room.hello(c0, { ...HELLO });
+    await room.hello(c1, { ...HELLO });
+
+    // A fresh room is people, not bots: the friend who has the code sits down.
+    expect(c0.last('welcome')?.you.seat).toBe(0);
+    expect(c1.last('welcome')?.you.seat).toBe(1);
+  });
+
+  it('seats a waiting spectator when the host turns a CPU seat human', async () => {
+    const { room } = await lobby(['human', 'cpu']);
+    const c1 = new FakeConn('c1');
+    await room.hello(c1, { ...HELLO });
+    expect(c1.last('welcome')?.you.seat).toBeNull();
+
+    await room.handle('c0', { t: 'configure', seats: [{ index: 1, controller: 'human' }] });
+
+    // The seat is not merely open — the person already waiting is IN it, and
+    // has been told so.
+    expect(c1.last('welcome')?.you.seat).toBe(1);
+    expect(c1.last('room')?.room.seats[1].connected).toBe(true);
+    expect(c1.last('room')?.room.spectators).toBe(0);
+  });
+
+  it('seats waiting spectators when the host opens the table to four', async () => {
+    const { room } = await lobby(['human', 'human']);
+    const c1 = new FakeConn('c1');
+    const c2 = new FakeConn('c2');
+    const c3 = new FakeConn('c3');
+    await room.hello(c1, { ...HELLO });
+    await room.hello(c2, { ...HELLO });
+    await room.hello(c3, { ...HELLO });
+    expect(c2.last('welcome')?.you.seat).toBeNull();
+
+    await room.handle('c0', { t: 'configure', playerCount: 4 });
+
+    expect(c2.last('welcome')?.you.seat).toBe(2);
+    expect(c3.last('welcome')?.you.seat).toBe(3);
+    await room.handle('c0', { t: 'start' });
+    expect(room.phase).toBe('playing');
+  });
+
+  it('unseats a player whose seat the host turned into a CPU', async () => {
+    const { room } = await lobby(['human', 'human']);
+    const c1 = new FakeConn('c1');
+    await room.hello(c1, { ...HELLO });
+    expect(c1.last('welcome')?.you.seat).toBe(1);
+
+    await room.handle('c0', { t: 'configure', seats: [{ index: 1, controller: 'cpu' }] });
+
+    expect(c1.last('welcome')?.you.seat).toBeNull();
+    expect(c1.last('room')?.room.spectators).toBe(1);
+  });
+
+  it('gives an abandoned lobby seat to whoever is waiting', async () => {
+    const { room } = await lobby(['human', 'human']);
+    const c1 = new FakeConn('c1');
+    const c2 = new FakeConn('c2');
+    await room.hello(c1, { ...HELLO });
+    await room.hello(c2, { ...HELLO });
+    expect(c2.last('welcome')?.you.seat).toBeNull();
+
+    // c1 closes the tab before the deal. Nothing is invested yet, so the seat
+    // is up for grabs rather than blocking the game forever.
+    await room.disconnect('c1');
+
+    expect(c2.last('welcome')?.you.seat).toBe(1);
+    await room.handle('c0', { t: 'start' });
+    expect(room.phase).toBe('playing');
+  });
+
+  it('does NOT give away a seat its player dropped from mid-game', async () => {
+    const { room } = await lobby(['human', 'human']);
+    const c1 = new FakeConn('c1');
+    await room.hello(c1, { ...HELLO });
+    await room.handle('c0', { t: 'start' });
+    await room.disconnect('c1');
+
+    const stranger = new FakeConn('x');
+    await room.hello(stranger, { ...HELLO });
+
+    // Seat 1 is still c1's: the token holds it, and they are reconnecting.
+    expect(stranger.last('welcome')?.you.seat).toBeNull();
+  });
+
+  it('hands the lobby to someone who is still here when the host leaves', async () => {
+    const { room } = await lobby(['human', 'human']);
+    const c1 = new FakeConn('c1');
+    await room.hello(c1, { ...HELLO });
+    expect(c1.last('welcome')?.you.isHost).toBe(false);
+
+    await room.disconnect('c0');
+
+    expect(c1.last('welcome')?.you.isHost).toBe(true);
+    await room.handle('c1', { t: 'configure', seats: [{ index: 0, controller: 'cpu' }] });
+    await room.handle('c1', { t: 'start' });
+    expect(room.phase).toBe('playing');
+  });
+
+  it('leaves a host who took a CPU seat in charge of the lobby', async () => {
+    const { room, c0 } = await lobby(['cpu', 'cpu']);
+    expect(c0.last('welcome')?.you.seat).toBeNull();
+    expect(c0.last('welcome')?.you.isHost).toBe(true);
+
+    await room.handle('c0', { t: 'start' });
+    expect(room.phase).toBe('playing');
+  });
+
+  it('hands a promoted spectator the view for their new seat', async () => {
+    const { room } = await lobby(['human', 'cpu']);
+    const c1 = new FakeConn('c1');
+    await room.hello(c1, { ...HELLO });
+    await room.handle('c0', { t: 'configure', seats: [{ index: 1, controller: 'human' }] });
+    await room.handle('c0', { t: 'start' });
+
+    const state = room.gameState!;
+    state.players[1].hand.push('rocket-gnome');
+    await room.handle('c0', { t: 'action', action: { type: 'rollOff', player: 0 } });
+
+    // Seated, so no longer the spectator's null view: seat 1 sees seat 1's hand.
+    expect(c1.last('state')!.view.players[1].hand).toContain('rocket-gnome');
+  });
+});
+
 describe('the lobby belongs to the host', () => {
   it('refuses configure and start from anyone else', async () => {
     const { room } = await lobby(['human', 'human']);

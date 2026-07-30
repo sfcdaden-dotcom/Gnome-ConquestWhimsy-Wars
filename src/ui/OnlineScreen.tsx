@@ -253,7 +253,15 @@ function Lobby({
                     {you?.seat === seat.index && <span className="muted small"> (you)</span>}
                   </span>
 
-                  {isHost && status === 'lobby' ? (
+                  <span className="muted small seat-status">
+                    {seat.controller === 'cpu'
+                      ? `CPU (${seat.difficulty})`
+                      : seat.connected
+                        ? 'ready'
+                        : 'open — waiting for a player'}
+                  </span>
+
+                  {isHost && status === 'lobby' && (
                     <>
                       <div className="btn-row">
                         <button
@@ -289,14 +297,6 @@ function Lobby({
                         </select>
                       )}
                     </>
-                  ) : (
-                    <span className="muted small">
-                      {seat.controller === 'cpu'
-                        ? `CPU (${seat.difficulty})`
-                        : seat.connected
-                          ? 'ready'
-                          : 'waiting to join…'}
-                    </span>
                   )}
                 </div>
               ))}
@@ -304,7 +304,12 @@ function Lobby({
 
             {you?.seat === null && (
               <p className="muted small" data-testid="lobby-spectator">
-                The table is full — you're watching. You'll see the board, but no hands.
+                {status === 'lobby'
+                  ? isHost
+                    ? "You have no seat — turn one of the CPU seats human to sit down."
+                    : "Every seat is taken or set to CPU, so you're watching for now. The host can " +
+                      'switch a seat to Human and you will be sat down in it automatically.'
+                  : "You're watching this game. You'll see the board, but no hands."}
               </p>
             )}
 
@@ -349,17 +354,25 @@ function Lobby({
             )}
 
             {isHost && status === 'lobby' ? (
-              <button
-                type="button"
-                className="btn accent big"
-                data-testid="lobby-start"
-                disabled={emptyHumanSeats.length > 0}
-                onClick={net.start}
-              >
-                {emptyHumanSeats.length > 0
-                  ? `Waiting for seat ${emptyHumanSeats.join(', ')}…`
-                  : '🎲 Start the game'}
-              </button>
+              <>
+                <button
+                  type="button"
+                  className="btn accent big"
+                  data-testid="lobby-start"
+                  disabled={emptyHumanSeats.length > 0}
+                  onClick={net.start}
+                >
+                  {emptyHumanSeats.length > 0
+                    ? `Waiting for seat ${emptyHumanSeats.join(', ')}…`
+                    : '🎲 Start the game'}
+                </button>
+                {emptyHumanSeats.length > 0 && (
+                  <p className="muted small" data-testid="lobby-empty-hint">
+                    Every seat starts open for a person. Share the code and they'll be seated as they
+                    arrive — or switch seat {emptyHumanSeats.join(', ')} to CPU to play without them.
+                  </p>
+                )}
+              </>
             ) : (
               status === 'lobby' && (
                 <p className="muted" data-testid="lobby-waiting">

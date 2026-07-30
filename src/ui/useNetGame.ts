@@ -105,6 +105,10 @@ export function useNetGame(code: string, name: string): NetGame {
         if (!msg) return;
         switch (msg.t) {
           case 'welcome':
+            // Not only the first frame: the room re-sends `welcome` whenever
+            // it changes who we are — seated out of the spectator list, moved
+            // out of a seat it turned into a CPU, handed the lobby. Always
+            // take the new identity.
             tokenStore.save(localStorage, code, msg.you.token);
             setYou({ seat: msg.you.seat, isHost: msg.you.isHost });
             setRoom(msg.room);

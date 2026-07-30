@@ -180,7 +180,7 @@ export class RoomDurableObject implements DurableObject {
 
   async webSocketClose(ws: WebSocket): Promise<void> {
     const at = ws.deserializeAttachment() as SocketAttachment | null;
-    if (at && this.room) this.room.disconnect(at.connId);
+    if (at && this.room) await this.room.disconnect(at.connId);
   }
 
   async webSocketError(ws: WebSocket): Promise<void> {
