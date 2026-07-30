@@ -3,8 +3,10 @@
  *
  *   applyAction(state, action) → new GameState   (pure; input never mutated;
  *                                                 illegal actions throw EngineError)
- *   getLegalActions(state[, player]) → Action[]  (complete, executable actions
- *                                                 for the player who must act)
+ *   getLegalActionIntents(state[, player]) → Action[]  (cheap, primary: card
+ *                                                 plays left untargeted)
+ *   getLegalActions(state[, player]) → Action[]  (analysis: the same actions
+ *                                                 with every card target expanded)
  *   getPlayerToAct(state) → PlayerId | null
  *
  * After applying the requested action, the engine "settles": it auto-advances
@@ -18,7 +20,8 @@
  *   turns.ts         roll-off, turn start/end, movement legality
  *   settle.ts        the auto-advance loop and its convergence diagnostics
  *   elimination.ts   eliminations, snailify, win detection
- *   legalActions.ts  legal-action enumeration and card-target expansion
+ *   legalActions.ts  legal-action INTENTS (the cheap, primary enumeration)
+ *   actionExpansion.ts  exhaustive expansion of targeted card plays (analysis)
  *   gardens.ts       harvests, planting, entry effects
  *   fights.ts        fight resolution
  *   cards.ts         the card framework and the card stack
@@ -32,7 +35,8 @@ import { isPlayerView } from './view';
 
 // Re-exported so `./engine` stays the single import site for the core API.
 export { getPlayerToAct } from './turns';
-export { getLegalActions, getLegalActionIntents, enumerateCompleteCardActions } from './legalActions';
+export { getLegalActionIntents } from './legalActions';
+export { getLegalActions, enumerateCompleteCardActions } from './actionExpansion';
 export { getPendingDecisionOptions } from './targeting';
 
 /**

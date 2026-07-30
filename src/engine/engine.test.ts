@@ -16,6 +16,7 @@ import {
   EngineError,
   MAX_ENTRY_EFFECT_HOPS,
   applyAction,
+  checkInvariants as checkStateInvariants,
   chooseAiAction,
   createGame,
   getLegalActions,
@@ -37,25 +38,16 @@ import {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Cheap structural invariants that must hold in ANY reachable state. */
+/**
+ * Cheap structural invariants that must hold in ANY reachable state.
+ *
+ * The checks themselves live in the engine now (`invariants.ts`, covered by
+ * `invariants.test.ts`) so hosts and error paths can run the same ones; this is
+ * just the vitest-facing wrapper that turns a violation list into a readable
+ * failure.
+ */
 function checkInvariants(s: GameState): void {
-  const n = s.config.boardSize;
-  for (const u of Object.values(s.units)) {
-    expect(u.pos.x).toBeGreaterThanOrEqual(0);
-    expect(u.pos.y).toBeGreaterThanOrEqual(0);
-    expect(u.pos.x).toBeLessThan(n);
-    expect(u.pos.y).toBeLessThan(n);
-  }
-  for (const p of s.players) {
-    for (const count of Object.values(p.supply)) {
-      expect(count).toBeGreaterThanOrEqual(0);
-      expect(count).toBeLessThanOrEqual(s.config.tilesPerType);
-    }
-    expect(p.wishes).toBeGreaterThanOrEqual(0);
-    expect(p.gnomesSpawned).toBeLessThanOrEqual(s.config.totalReinforcements);
-    expect(p.gnomesLost).toBeLessThanOrEqual(p.gnomesSpawned);
-  }
-  expect(s.cardStack.length === 0 || s.pendingDecision !== null || s.status === 'finished').toBe(true);
+  expect(checkStateInvariants(s)).toEqual([]);
 }
 
 // ---------------------------------------------------------------------------

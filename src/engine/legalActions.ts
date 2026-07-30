@@ -1,24 +1,22 @@
 /**
- * Legal-action enumeration.
+ * Legal-action enumeration — the INTENT API, the one the UI and the CPU use.
  *
- * PRIMARY API — `getLegalActionIntents(state[, player])`: every legal move for
- * the player who must act, with card plays left UNTARGETED. It is cheap (no
- * combinatorial work) and it is what the UI and the AI actually use. A targeted
- * `playCard` / `respondPlayCard` entry is an *intent*: dispatching it without a
- * `targets` payload starts phased targeting (a `cardTargeting` decision), and
- * the engine then offers one target step at a time (`getPendingDecisionOptions`
- * → `selectTarget`). So the "how do I finish this play" knowledge lives in the
- * engine's phased flow, not in the caller.
+ * `getLegalActionIntents(state[, player])`: every legal move for the player who
+ * must act, with card plays left UNTARGETED. It is cheap (no combinatorial
+ * work). A targeted `playCard` / `respondPlayCard` entry is an *intent*:
+ * dispatching it without a `targets` payload starts phased targeting (a
+ * `cardTargeting` decision), and the engine then offers one target step at a
+ * time (`getPendingDecisionOptions` → `selectTarget`). So the "how do I finish
+ * this play" knowledge lives in the engine's phased flow, not in the caller.
  *
- * ANALYSIS HELPER — `getLegalActions` / `enumerateCompleteCardActions`: the same
- * actions but with every targeted card expanded into one fully-built,
- * immediately-executable action per valid `CardTargets` payload. This is the
- * expensive path (it walks each card's whole targeting flow) and it is used
- * only by tests and offline analysis — never by the UI or the normal AI loop.
- * Because expansion is phased (each step yields only its own legal options,
- * narrowed by earlier picks), its cost is proportional to a card's real
- * branching rather than the product of every slot, and there is no global
- * combination ceiling.
+ * Everything returned here is dispatchable: for a targeted card that means its
+ * targeting FLOW has a completable path, not merely that the card's cheap
+ * `hasAnyPlay` hint passed (the two can disagree — see `legalActions.test.ts`).
+ *
+ * The exhaustive expansion — one fully-built action per valid `CardTargets`
+ * payload — deliberately lives in a SEPARATE module, `actionExpansion.ts`, so
+ * that the expensive path is never reached by autocompleting past the cheap
+ * one. See that file's header for the side-by-side comparison.
  *
  * Enumeration is generic: candidates come from each card's `targetFlow` steps
  * and the card's own `validate` is the only judge of complete payloads. Adding
@@ -26,8 +24,8 @@
  */
 
 import type { Action, GameState, PlayerId, Pos } from './types';
-import { getCardDef, deckHasCards, whyCannotPlayNow } from './cards';
-import { enumerateCardTargets, getPendingDecisionOptions } from './targeting';
+import { deckHasCards, whyCannotPlayNow } from './cards';
+import { getPendingDecisionOptions } from './targeting';
 import { internal, plantWishCost, playerUnits, posKey } from './helpers';
 import { canPlantAt, canUpgradeAt } from './gardens';
 import { UPGRADE_WISH_COST } from './actions';
@@ -36,43 +34,6 @@ import { antsyPantsViolators, getPlayerToAct, moveDestinations } from './turns';
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
-
-/**
- * Every legal, fully-executable action for `player` (default: the player who
- * must act), with targeted card plays expanded into one action per valid
- * `CardTargets` payload. Alias of `enumerateCompleteCardActions` — the
- * expensive analysis/testing path; UI and normal AI use
- * `getLegalActionIntents`.
- */
-export function getLegalActions(state: GameState, player?: PlayerId): Action[] {
-  return enumerateCompleteCardActions(state, player);
-}
-
-/**
- * The complete, executable expansion: `getLegalActionIntents` with every
- * targeted `playCard` / `respondPlayCard` intent replaced by one action per
- * valid target payload (dropping a targeted card that has no valid payload).
- */
-export function enumerateCompleteCardActions(state: GameState, player?: PlayerId): Action[] {
-  const out: Action[] = [];
-  for (const intent of getLegalActionIntents(state, player)) {
-    if (intent.type !== 'playCard' && intent.type !== 'respondPlayCard') {
-      out.push(intent);
-      continue;
-    }
-    if (!cardNeedsTargets(intent.cardId)) {
-      // Untargeted card — the intent is already complete.
-      out.push(intent);
-      continue;
-    }
-    // Targeted: expand. A card with no valid payload contributes nothing (it is
-    // dropped, matching the "everything returned is executable" contract).
-    for (const targets of enumerateCardTargets(state, intent.player, intent.cardId)) {
-      out.push({ ...intent, targets });
-    }
-  }
-  return out;
-}
 
 /**
  * Legal actions with card plays left UNTARGETED. Cheap: no combinatorial
@@ -237,13 +198,4 @@ export function getLegalActionIntents(state: GameState, player?: PlayerId): Acti
     out.push({ type: 'endTurn', player: actor });
   }
   return out;
-}
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function cardNeedsTargets(cardId: string): boolean {
-  const def = getCardDef(cardId);
-  return !!def && def.needsTargets;
 }

@@ -51,6 +51,13 @@ export {
 export { MAX_SETTLE_STEPS } from './settle';
 export { MAX_ENTRY_EFFECT_HOPS } from './gardens';
 
+// Canonical identities for actions and intents (order-independent keys).
+export { actionKey, intentKey, targetKey, targetsKey, canonicalTargets, sameAction, byActionKey } from './actionId';
+
+// Structural state validation (diagnostics: hosts, tests, error paths).
+export { checkInvariants, invariantsHold, assertInvariants } from './invariants';
+export type { InvariantViolation } from './invariants';
+
 // Quick chat: fixed phrases only, never free text (see quickchat.ts).
 export {
   QUICK_CHAT_GROUPS,
