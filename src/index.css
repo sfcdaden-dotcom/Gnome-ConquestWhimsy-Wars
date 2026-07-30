@@ -699,7 +699,6 @@ h2 {
   font-size: 0.85rem;
 }
 
-.supply-panel,
 .curse-panel,
 .decision-panel,
 .fight-panel,
@@ -709,26 +708,6 @@ h2 {
   border-radius: 12px;
   padding: 10px 12px;
   flex: none;
-}
-
-.supply-grid {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-  font-size: 0.9rem;
-}
-
-.supply-row {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  margin-top: 2px;
-}
-.supply-owner {
-  min-width: 3.5em;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .curse-panel {
@@ -883,6 +862,31 @@ h2 {
 .targeting-banner {
   border: 2px solid #c23636;
   font-size: 0.9rem;
+}
+
+/* The action list itself (flat, or one submenu expanded in place). It lays out
+   like the rest of the bar, so opening a submenu swaps the buttons without
+   changing the bar's shape. */
+.action-menu {
+  display: contents;
+}
+.submenu-heading {
+  font-size: 0.85rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+/* Supply counts / other per-item annotations, dimmed so the name reads first. */
+.menu-badge {
+  margin-left: 6px;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+.btn:disabled .menu-badge {
+  color: inherit;
+}
+.submenu-caret {
+  margin-left: 6px;
+  opacity: 0.7;
 }
 
 /* Selected gnome + the per-gnome chips for picking a stack apart by name.

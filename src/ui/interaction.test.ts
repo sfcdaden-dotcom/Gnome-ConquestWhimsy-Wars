@@ -13,7 +13,14 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import type { Action, CardTarget, GameState, PendingDecision, Pos } from '../engine';
+import type {
+  Action,
+  CardTarget,
+  GameState,
+  PendingDecision,
+  PlantableGardenType,
+  Pos,
+} from '../engine';
 import { applyAction, getLegalActionIntents, getPendingDecisionOptions, posKey } from '../engine';
 import { mutate, toActionPhase, withGnome, withHand } from '../engine/testkit';
 import type { InteractionContext, Sel } from './interaction';
@@ -22,6 +29,7 @@ import {
   bannerText,
   boardOptionAt,
   computeHighlights,
+  plantOptions,
   resolveCellClick,
   selectionStillValid,
   targetChipKey,
@@ -56,6 +64,12 @@ function withStack(ids: string[], pos: Pos = HOME): GameState {
 const move = (unitId: string, to: Pos = AWAY): Action => ({ type: 'move', player: 0, unitId, to });
 const plant = (pos: Pos = HOME): Action => ({ type: 'plant', player: 0, pos, gardenType: 'dandelion' });
 const upgrade = (pos: Pos = HOME): Action => ({ type: 'upgrade', player: 0, pos });
+const plantOf = (gardenType: PlantableGardenType, pos: Pos = HOME): Action => ({
+  type: 'plant',
+  player: 0,
+  pos,
+  gardenType,
+});
 
 // ---------------------------------------------------------------------------
 // selectionStillValid
@@ -345,6 +359,28 @@ describe('unitAffordances', () => {
 
   it('is empty with nothing selected', () => {
     expect(unitAffordances([plant(HOME)], null)).toEqual({ plants: [], upgrade: null });
+  });
+});
+
+describe('plantOptions', () => {
+  it('lists every garden in supply with its count, enabled only where legal', () => {
+    const s = mutate(toActionPhase(11), (d) => {
+      d.players[0].supply = { dandelion: 2, mushroom: 0, flytrap: 1, maize: 3, slippery: 1, tunnel: 0 };
+    });
+    const plants = unitAffordances([plant(HOME), plantOf('maize'), move('u1')], HOME).plants;
+    const opts = plantOptions(s, 0, plants);
+
+    // Every type in supply appears, exactly once, with the supply's own count.
+    expect(opts.map((o) => o.gardenType)).toEqual(Object.keys(s.players[0].supply));
+    expect(Object.fromEntries(opts.map((o) => [o.gardenType, o.remaining]))).toEqual(
+      s.players[0].supply,
+    );
+    // Enablement is the enumerated action, never a recomputed rule.
+    expect(opts.filter((o) => o.action).map((o) => o.gardenType)).toEqual(['dandelion', 'maize']);
+  });
+
+  it('is empty with nobody to act', () => {
+    expect(plantOptions(toActionPhase(11), null, [])).toEqual([]);
   });
 });
 
