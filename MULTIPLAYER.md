@@ -182,11 +182,56 @@ forth forever.
 checks it against the commitment it was given at the start and says so. Players
 should not have to run a hash by hand to know the deck was straight.
 
+## The shot clock
+
+A room cannot rely on everyone at the table continuing to play. Someone closes
+a laptop mid-turn; someone's train goes into a tunnel and never comes out;
+someone decides that a game they are losing is a game nobody should get to
+finish. The engine holds no wall clock and never times anything out by itself
+(`getTimeoutAction` / `applyTimeout` / `isOnTheClock` are the *policy* — the
+default answer for every state the engine can be waiting in), so deciding that
+a seat has stopped playing is the room's job.
+
+Two deadlines run at once, both on the seat that must act right now, and
+whichever lands first ends its turn:
+
+| | | Restarts on |
+|---|---|---|
+| **Per action** | `SHOT_CLOCK_MS` = 60s | every action that seat takes |
+| **Per stretch of control** | `CONTROL_BUDGET_MS` = 5 min | control passing to somebody else |
+
+The per-action clock is the one players feel, and it is deliberately generous:
+it is a budget per *action*, not per turn, so a turn with eight moves in it
+gets eight minutes if it wants them. Nobody is ever hurried for thinking; it
+only bites a seat that has stopped playing altogether.
+
+The control budget exists because the per-action clock cannot close the stall
+it was built for. Some actions are state-neutral by design — `playCard` →
+`cancelTargeting` leaves the card in hand and the game exactly as it was (see
+TECH_DEBT.md, "Stall vectors that rules cannot close") — so a seat that spins
+that loop once a minute would restart its clock forever. Nothing a seat does
+moves the control budget; only genuinely handing over does. Quick chat gets the
+same treatment for the same reason: it restarts neither, or "hmm 🤔" every
+fifty seconds would be an unlimited stall.
+
+When the clock runs out the room applies `getTimeoutAction` — the most passive
+legal option, never a card play — one action at a time until control leaves the
+seat, so a timed-out turn lands in the record like any other and the game still
+replays and verifies exactly. Everyone gets a `timedOut` frame naming the seat.
+
+Both timers share the DO's single alarm: whichever is due runs, and anything
+still pending is re-armed. The deadlines are persisted with the room, so a room
+that hibernates mid-turn wakes owing the time it owed rather than handing the
+stalling seat a fresh minute. Clients see the live clock on every `state` frame
+(`{ seat, deadline, now }`, where `now` is the *server's* wall clock, so a
+device whose clock is minutes off still counts down the right number of
+seconds) and render it as a countdown in the top bar.
+
 ## Not built yet
 
-- **The shot clock** (P2). The engine has shipped the policy half since
-  2026-07-29 (`getTimeoutAction` / `applyTimeout` / `isOnTheClock`); the room
-  needs the timer, which is the alarm the CPU driver already uses, plus a
-  grace/warning UX and a repeat-offender policy.
+- **A repeat-offender policy.** Timing out closes the turn and nothing more, so
+  a determined griefer can be timed out every turn for the length of a game and
+  the table just plays slowly around them. Auto-resign after N timeouts, or
+  handing the seat to the CPU, is the obvious answer and is not yet built.
 - **Rate limiting.** A client can currently send as fast as it likes; illegal
   actions are cheap to reject but not free.

@@ -23,7 +23,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { Action, PlayerView } from '../engine';
+import type { Action, PlayerId, PlayerView } from '../engine';
 import { getPlayerToAct } from '../engine';
 import type { GameSeal, MatchRecord } from '../engine';
 import { verifySeal } from '../net/commitment';
@@ -67,6 +67,7 @@ export function useNetGame(code: string, name: string): NetGame {
   const [view, setView] = useState<PlayerView | null>(null);
   const [revealed, setRevealed] = useState<{ seal: GameSeal; record: MatchRecord } | null>(null);
   const [takenOver, setTakenOver] = useState(false);
+  const [shotClock, setShotClock] = useState<{ seat: PlayerId; deadlineAt: number } | null>(null);
 
   const { toasts, pushToast } = useToasts();
   const { playback, noticeFightEvents, skipPlayback } = useFightPlayback(false);
@@ -75,6 +76,10 @@ export function useNetGame(code: string, name: string): NetGame {
   const wsRef = useRef<WebSocket | null>(null);
   const viewRef = useRef<PlayerView | null>(null);
   viewRef.current = view;
+  // The socket effect is built once, so anything its handlers need to read
+  // "as of now" — rather than as of the first dial — comes through a ref.
+  const roomRef = useRef<RoomSnapshot | null>(null);
+  roomRef.current = room;
 
   const send = useCallback((message: ClientMessage) => {
     const ws = wsRef.current;
@@ -124,6 +129,17 @@ export function useNetGame(code: string, name: string): NetGame {
             noticeChatEvents(addedEvents(prev, msg.view));
             viewRef.current = msg.view;
             setView(msg.view);
+            // The server stamps every clock with its OWN wall clock, so the
+            // remaining time is a difference of two server timestamps and a
+            // device whose clock is minutes off still counts down correctly.
+            setShotClock(
+              msg.clock ? { seat: msg.clock.seat, deadlineAt: Date.now() + (msg.clock.deadline - msg.clock.now) } : null,
+            );
+            return;
+          }
+          case 'timedOut': {
+            const who = roomRef.current?.seats[msg.seat]?.name ?? `Seat ${msg.seat + 1}`;
+            pushToast(`⏱ ${who} ran out of time — the room played the turn out.`, 'info');
             return;
           }
           case 'revealed':
@@ -214,9 +230,23 @@ export function useNetGame(code: string, name: string): NetGame {
       revealedSeat: mySeat,
       needsPass: false,
       confirmPass: () => {},
+      shotClock,
       tag: `room ${code}`,
     };
-  }, [view, dispatch, toasts, pushToast, playback, skipPlayback, chatBubbles, chatMuted, toggleChatMuted, mySeat, code]);
+  }, [
+    view,
+    dispatch,
+    toasts,
+    pushToast,
+    playback,
+    skipPlayback,
+    chatBubbles,
+    chatMuted,
+    toggleChatMuted,
+    mySeat,
+    shotClock,
+    code,
+  ]);
 
   const configure = useCallback(
     (config: Omit<Extract<ClientMessage, { t: 'configure' }>, 't'>) => send({ t: 'configure', ...config } as ClientMessage),

@@ -56,6 +56,14 @@ export interface GameSession {
   /** Pass-the-device interstitial required before the next human acts. */
   needsPass: boolean;
   confirmPass: () => void;
+  /**
+   * The shot clock, or null when nothing is being timed — which is always the
+   * case locally: a hot-seat game has nobody to grief but yourself. Online it
+   * carries the seat on the clock and when it runs out, already converted to
+   * THIS device's wall clock (see useNetGame), so rendering it is a plain
+   * `deadlineAt - Date.now()`.
+   */
+  shotClock: { seat: PlayerId; deadlineAt: number } | null;
   /** Short label for the top bar: the seed locally, the room code online. */
   tag: string;
 }
@@ -177,6 +185,7 @@ export function useGame(options: CreateGameOptions, seed: number): GameSession {
     revealedSeat,
     needsPass,
     confirmPass,
+    shotClock: null,
     tag: `#${seed}`,
   };
 }

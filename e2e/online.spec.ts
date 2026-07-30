@@ -53,7 +53,16 @@ test('two browsers meet in a room and play a networked turn', async ({ browser }
   // The guest cannot act for a seat that is not theirs — no button for them.
   await expect(guest.getByTestId('roll-off')).toHaveCount(0);
 
+  // ...and the shot clock says so, on both screens: the same seat is named,
+  // and only the seat that owns it is told it is theirs.
+  await expect(host.getByTestId('shot-clock')).toContainText('you');
+  await expect(guest.getByTestId('shot-clock')).toContainText('Ada');
+  await expect(guest.getByTestId('shot-clock')).toHaveAttribute('data-yours', 'false');
+
   await rollBtn.click();
+
+  // It follows the turn: the guest is on the clock now.
+  await expect(guest.getByTestId('shot-clock')).toContainText('you');
 
   // The guest's board advanced without the guest touching anything: the room
   // applied the host's action and broadcast the new state to both seats.

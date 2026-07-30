@@ -6,8 +6,9 @@ human hot-seat and CPU, with Easy/Normal/Hard difficulty per seat) on an N×N
 garden board — play a freshly rolled symmetrical map, pick a built-in board
 preset, or draw your own in the editor. Play **local** (hot-seat and CPU on one
 device) or **online** in a private room: host, share the six-character code,
-and fill any empty seats with CPU. Table talk runs on **quick chat**: a
-fixed phrase menu, never free text, budgeted per turn.
+and fill any empty seats with CPU. Online tables run a **shot clock** (a minute
+per action) so one closed laptop cannot freeze the game. Table talk runs on
+**quick chat**: a fixed phrase menu, never free text, budgeted per turn.
 
 - **Rules:** [RULES.md](RULES.md) · **Cards:** [CARDS.md](CARDS.md)
 - **Engine API & architecture:** [ENGINE_API.md](ENGINE_API.md)

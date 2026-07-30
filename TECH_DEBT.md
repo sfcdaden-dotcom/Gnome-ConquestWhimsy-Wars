@@ -66,11 +66,19 @@ handful of things anyone actually needs to do.
   The answer to both is a shot clock, so the engine ships the *policy* half of
   one: `getTimeoutAction` / `applyTimeout` / `isOnTheClock` (`timeout.ts`,
   covered by `timeout.test.ts`, including a full game where one seat never acts).
-  Still to build when multiplayer lands: the clock itself (server-side per-seat
-  timer, since the engine holds no wall clock), whatever grace/warning UX the
-  table wants, and a policy for repeat offenders (auto-resign after N
-  timeouts?). Everything else in the Action Phase is already bounded — one move
-  per unit per turn, and Wishes/cards gate the rest.
+  **Closed 2026-07-30** for online play: the room runs the clock (60s per
+  action, plus a 5-minute budget per uninterrupted stretch of control that
+  nothing the seat does restarts — that second deadline is what closes vector 2,
+  since restarting on every action is exactly what a state-neutral spin
+  achieves). See MULTIPLAYER.md, "The shot clock". Everything else in the Action
+  Phase is already bounded — one move per unit per turn, and Wishes/cards gate
+  the rest.
+
+  Still open: a **repeat-offender policy**. A timeout closes the turn and
+  nothing more, so a griefer can be timed out every turn for a whole game.
+  Auto-resign after N timeouts, or handing the seat to the CPU, is the obvious
+  answer. Local hot-seat games run no clock at all, deliberately: there is
+  nobody to grief but yourself.
 
 ### P3
 

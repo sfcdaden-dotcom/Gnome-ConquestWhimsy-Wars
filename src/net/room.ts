@@ -22,6 +22,10 @@
  *    the same `applyAction` path a human action takes. A CPU seat and a
  *    disconnected human seat are the same problem, and this is the machinery
  *    that answers both.
+ *  - **The clock.** The engine holds no wall clock and never times anything
+ *    out by itself, so the room is what decides a seat has stopped playing and
+ *    applies the engine's timeout policy on its behalf. CPU pacing and the
+ *    shot clock share one alarm, because a Durable Object has exactly one.
  *
  * PERSISTENCE. The room stores the *record* (config, seed, seal, actions), not
  * the state: replaying it rebuilds the state exactly, it stays small enough to
@@ -41,10 +45,12 @@ import type {
 } from '../engine';
 import {
   MATCH_RECORD_SCHEMA,
+  MAX_TIMEOUT_STEPS,
   applyAction,
   chooseAiAction,
   createGame,
   getPlayerToAct,
+  getTimeoutAction,
   isGameOver,
   sealHiddenState,
   viewFor,
@@ -57,8 +63,15 @@ import type {
   SeatConfig,
   SeatInfo,
   ServerMessage,
+  ShotClock,
 } from './protocol';
-import { PROTOCOL_VERSION, ROOM_CODE_ALPHABET, ROOM_CODE_LENGTH } from './protocol';
+import {
+  CONTROL_BUDGET_MS,
+  PROTOCOL_VERSION,
+  ROOM_CODE_ALPHABET,
+  ROOM_CODE_LENGTH,
+  SHOT_CLOCK_MS,
+} from './protocol';
 
 // ---------------------------------------------------------------------------
 // Host interface (everything platform-shaped)
@@ -86,6 +99,22 @@ export interface PersistedRoom {
   seal: GameSeal | null;
   config: GameConfig | null;
   actions: Action[];
+  /** The running shot clock, or null when no human seat is on it. */
+  clock: RoomClock | null;
+}
+
+/**
+ * The two deadlines a seat on the clock is running against, both absolute
+ * epoch ms. Persisted, so a room that hibernates mid-turn wakes up owing the
+ * same time it owed when it went to sleep rather than handing the stalling
+ * seat a fresh minute.
+ */
+export interface RoomClock {
+  seat: number;
+  /** Restarts on every action this seat takes. */
+  actionDeadline: number;
+  /** Set once when control reaches the seat; nothing the seat does moves it. */
+  controlDeadline: number;
 }
 
 export interface PersistedSeat {
@@ -178,6 +207,12 @@ export class Room {
   private data: PersistedRoom;
   private state: GameState | null = null;
   private readonly conns = new Map<string, ConnState>();
+  /**
+   * When the CPU seat currently to act should play. In memory only: it is a
+   * pacing nicety, and a room that wakes from hibernation with it lost should
+   * play the CPU's move immediately rather than sit on it.
+   */
+  private cpuWakeAt: number | null = null;
 
   private constructor(host: RoomHost, data: PersistedRoom) {
     this.host = host;
@@ -208,8 +243,11 @@ export class Room {
         seal: null,
         config: null,
         actions: [],
+        clock: null,
       },
     );
+    // A room stored before the shot clock existed has no `clock` field.
+    room.data.clock ??= null;
     if (stored && stored.config && stored.seed !== null) room.hydrate();
     return room;
   }
@@ -561,10 +599,11 @@ export class Room {
     this.data.actions = [];
     this.data.phase = 'playing';
 
+    this.retime(true);
     await this.save();
     this.broadcastRoom();
     this.broadcastState();
-    await this.driveCpu();
+    await this.arm();
   }
 
   /**
@@ -595,7 +634,7 @@ export class Room {
     await this.apply(action);
   }
 
-  /** The single path every action takes — human, CPU, and later the clock. */
+  /** The single path every action takes — human, CPU, and the shot clock. */
   private async apply(action: Action): Promise<void> {
     if (!this.state) return;
     let next: GameState;
@@ -610,6 +649,11 @@ export class Room {
     if (isGameOver(next)) this.data.phase = 'finished';
     const justFinished = !wasFinished && this.data.phase === 'finished';
 
+    // Quick chat is the one action that must NOT buy time: it is sendable out
+    // of turn and after the game ends, so letting it restart the clock would
+    // hand any seat an unlimited stall for the price of saying "hmm" every
+    // fifty seconds.
+    this.retime(action.type !== 'quickChat');
     await this.save();
     this.broadcastState();
 
@@ -621,31 +665,99 @@ export class Room {
       }
       return;
     }
-    await this.driveCpu();
+    await this.arm();
   }
 
-  // --- CPU seats -----------------------------------------------------------
+  // --- the timer (CPU pacing and the shot clock share one alarm) ------------
 
   /**
-   * Hand control to the CPU when the seat to act is one. Scheduled rather than
-   * run inline so the humans see the board move at a readable pace, and so a
-   * chain of CPU turns cannot hold a message handler open.
+   * Re-derive both timers for whoever must act now.
+   *
+   * A CPU seat gets a short pause so humans can follow the board; a human seat
+   * gets the shot clock. `restartAction` is false for actions that must not
+   * buy their sender time (see `apply`). The control budget survives a restart
+   * — it is set once, when control ARRIVES at the seat, and is what a
+   * state-neutral action loop cannot escape.
    */
-  private async driveCpu(): Promise<void> {
-    if (!this.state || this.data.phase !== 'playing') return;
-    const actor = getPlayerToAct(this.state);
-    if (actor === null) return;
-    if (this.data.seats[actor]?.controller !== 'cpu') return;
-    await this.host.scheduleAlarm(this.host.now() + (this.host.cpuDelayMs ?? DEFAULT_CPU_DELAY_MS));
+  private retime(restartAction: boolean): void {
+    this.cpuWakeAt = null;
+    const actor = this.state && this.data.phase === 'playing' ? getPlayerToAct(this.state) : null;
+    if (actor === null) {
+      this.data.clock = null;
+      return;
+    }
+    const now = this.host.now();
+    if (this.data.seats[actor]?.controller !== 'human') {
+      this.data.clock = null;
+      this.cpuWakeAt = now + (this.host.cpuDelayMs ?? DEFAULT_CPU_DELAY_MS);
+      return;
+    }
+    const held = this.data.clock?.seat === actor ? this.data.clock : null;
+    this.data.clock = {
+      seat: actor,
+      actionDeadline: restartAction || !held ? now + SHOT_CLOCK_MS : held.actionDeadline,
+      controlDeadline: held ? held.controlDeadline : now + CONTROL_BUDGET_MS,
+    };
   }
 
-  /** The scheduled wake-up: play one CPU action, then re-arm if still theirs. */
+  /** When the seat on the clock runs out: whichever deadline lands first. */
+  private expiryAt(): number | null {
+    const c = this.data.clock;
+    return c === null ? null : Math.min(c.actionDeadline, c.controlDeadline);
+  }
+
+  /** Ask the host to wake us for the next thing that is due, if anything is. */
+  private async arm(): Promise<void> {
+    const at = this.cpuWakeAt ?? this.expiryAt();
+    if (at !== null) await this.host.scheduleAlarm(at);
+  }
+
+  /**
+   * The scheduled wake-up. One alarm serves both timers, because a Durable
+   * Object has exactly one: whichever is due gets run, and anything still
+   * pending is re-armed.
+   */
   async onAlarm(): Promise<void> {
     if (!this.state || this.data.phase !== 'playing') return;
     const actor = getPlayerToAct(this.state);
     if (actor === null) return;
-    if (this.data.seats[actor]?.controller !== 'cpu') return;
-    await this.apply(chooseAiAction(this.state));
+    const now = this.host.now();
+
+    if (this.data.seats[actor]?.controller !== 'human') {
+      // A room woken from hibernation has forgotten `cpuWakeAt`; that means
+      // "due now", not "wait another beat".
+      if (this.cpuWakeAt !== null && now < this.cpuWakeAt) return await this.arm();
+      return await this.apply(chooseAiAction(this.state));
+    }
+
+    if (this.data.clock === null || this.data.clock.seat !== actor) {
+      // The clock and the game disagree — only possible after a wake that lost
+      // it. Start it now rather than leaving the seat untimed.
+      this.retime(true);
+      return await this.arm();
+    }
+    const due = this.expiryAt();
+    if (due === null) return;
+    if (now < due) return await this.arm(); // woken for the other timer
+    await this.expire(actor);
+  }
+
+  /**
+   * A seat ran out of time: play the engine's default answer on its behalf
+   * until control leaves it. `getTimeoutAction` is the whole policy (the most
+   * passive legal option, never a card play — see engine/timeout.ts); the room
+   * applies it one action at a time rather than calling `applyTimeout`, so
+   * every action still lands in the record and the game replays exactly.
+   */
+  private async expire(seat: number): Promise<void> {
+    for (const c of this.conns.values()) c.conn.send({ t: 'timedOut', seat });
+    for (let step = 0; step < MAX_TIMEOUT_STEPS; step++) {
+      if (!this.state || this.data.phase !== 'playing') return;
+      if (getPlayerToAct(this.state) !== seat) return; // control moved on
+      const action = getTimeoutAction(this.state);
+      if (action === null) return;
+      await this.apply(action);
+    }
   }
 
   // --- game over -----------------------------------------------------------
@@ -701,16 +813,29 @@ export class Room {
       });
       // A new seat means a differently redacted view — a promoted spectator
       // must be handed the hand they can now see.
-      if (this.state) c.conn.send({ t: 'state', view: viewFor(this.state, c.seat) });
+      if (this.state) c.conn.send({ t: 'state', view: viewFor(this.state, c.seat), clock: this.shotClock() });
     }
   }
 
   /** Each connection gets the state redacted for ITS seat, never a shared one. */
   private broadcastState(): void {
     if (!this.state) return;
+    const clock = this.shotClock();
     for (const c of this.conns.values()) {
-      c.conn.send({ t: 'state', view: viewFor(this.state, c.seat) });
+      c.conn.send({ t: 'state', view: viewFor(this.state, c.seat), clock });
     }
+  }
+
+  /**
+   * The clock as clients render it: one deadline (the earlier of the two the
+   * room tracks — the distinction is the room's business) stamped with the
+   * server's own `now`, so a client with a skewed wall clock still counts down
+   * the right number of seconds.
+   */
+  private shotClock(): ShotClock | null {
+    const at = this.expiryAt();
+    if (at === null || this.data.clock === null) return null;
+    return { seat: this.data.clock.seat, deadline: at, now: this.host.now() };
   }
 
   private broadcastRoom(): void {

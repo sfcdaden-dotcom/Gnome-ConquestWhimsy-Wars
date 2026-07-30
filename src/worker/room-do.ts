@@ -187,7 +187,7 @@ export class RoomDurableObject implements DurableObject {
     await this.webSocketClose(ws);
   }
 
-  /** CPU turns (and, in P2, the shot clock) wake the room here. */
+  /** Both timers — CPU pacing and the shot clock — wake the room here. */
   async alarm(): Promise<void> {
     const room = await this.roomFor('');
     await room.onAlarm();
