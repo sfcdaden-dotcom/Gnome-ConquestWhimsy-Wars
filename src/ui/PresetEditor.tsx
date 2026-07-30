@@ -1,9 +1,13 @@
 /**
  * In-game garden-preset editor: paint a layout on a fixed 7×7 grid, name it,
- * and save it. "Save" both downloads a standalone .json file (the project's
- * "no localStorage" posture means presets live on disk, not in the browser)
- * and hands the finished preset back so the setup screen can use it right
- * away without re-importing.
+ * and either play it or keep it.
+ *
+ * The two exits share one validated result and differ only in whether a file
+ * is written: "Play without saving" hands the finished preset straight back to
+ * setup, while "Save & export" additionally downloads a standalone .json file
+ * (the project's "no localStorage" posture means kept presets live on disk,
+ * not in the browser). Neither path re-imports anything — the setup screen
+ * uses the in-memory preset it is handed.
  *
  * Home Gardens are also movable here: click one to pick it up, then click an
  * empty space to drop it. There are always exactly 4 (seat order
@@ -24,6 +28,7 @@ import {
   downloadCustomPreset,
   makeCustomPresetId,
   reservedHomePositions,
+  validateCustomPresetLayout,
 } from './customPresets';
 
 type Tool = PlantableGardenType | 'erase';
@@ -40,7 +45,8 @@ export interface PresetEditorProps {
   /** Pass the currently-selected custom preset to edit it in place; omit to start blank. */
   initial?: GardenPresetDef;
   onCancel: () => void;
-  onSave: (def: GardenPresetDef) => void;
+  /** Hand the finished layout back to setup, which selects it and closes the editor. */
+  onApply: (def: GardenPresetDef) => void;
 }
 
 function initialGardens(initial: PresetEditorProps['initial']): Map<string, PlantableGardenType> {
@@ -50,7 +56,7 @@ function initialGardens(initial: PresetEditorProps['initial']): Map<string, Plan
   return map;
 }
 
-export function PresetEditor({ initial, onCancel, onSave }: PresetEditorProps) {
+export function PresetEditor({ initial, onCancel, onApply }: PresetEditorProps) {
   const n = CUSTOM_EDITOR_BOARD_SIZE;
   const [label, setLabel] = useState(initial?.label ?? '');
   const [description, setDescription] = useState(initial?.description ?? '');
@@ -116,18 +122,50 @@ export function PresetEditor({ initial, onCancel, onSave }: PresetEditorProps) {
     });
   }
 
-  function save() {
-    if (label.trim() === '') {
+  /**
+   * Validate the painted board and turn it into a preset, or report why not.
+   * Both exits go through here, so playing and saving can never disagree about
+   * what a legal layout is; only naming differs (a saved file needs a
+   * filename, while an unsaved layout may come back nameless — setup numbers
+   * those, since only it knows what is already in the list).
+   */
+  function buildDef(requireName: boolean): GardenPresetDef | null {
+    if (requireName && label.trim() === '') {
       setError('Give the preset a name first.');
-      return;
+      return null;
     }
     const gardenList: Array<{ pos: Pos; type: PlantableGardenType }> = [...gardens.entries()].map(([key, type]) => {
       const [x, y] = key.split(',').map(Number);
       return { pos: { x, y }, type };
     });
-    const def = buildCustomPresetDef(initial?.id ?? makeCustomPresetId(), label.trim(), description, n, gardenList, homes);
+    const result = validateCustomPresetLayout(n, homes, gardenList);
+    if (!result.ok) {
+      setError(result.error);
+      return null;
+    }
+    setError(null);
+    return buildCustomPresetDef(
+      initial?.id ?? makeCustomPresetId(),
+      label.trim(),
+      description,
+      n,
+      result.layout.gardens,
+      result.layout.homes,
+    );
+  }
+
+  /** Steps 1–3: validate, convert, apply. No file is written. */
+  function playWithoutSaving() {
+    const def = buildDef(false);
+    if (def) onApply(def);
+  }
+
+  /** Steps 1–4: the same, plus a .json download to keep. */
+  function saveAndExport() {
+    const def = buildDef(true);
+    if (!def) return;
     downloadCustomPreset(def, n);
-    onSave(def);
+    onApply(def);
   }
 
   return (
@@ -135,7 +173,7 @@ export function PresetEditor({ initial, onCancel, onSave }: PresetEditorProps) {
       <div className="setup-card">
         <h1 className="game-title">🎨 Garden Preset Editor</h1>
         <p className="tagline">
-          Paint a layout on the board, then save it as a .json file you can load back in any time.
+          Paint a layout on the board, then play it straight away — or save it as a .json file to load back in any time.
         </p>
 
         <div className="setup-row">
@@ -246,13 +284,19 @@ export function PresetEditor({ initial, onCancel, onSave }: PresetEditorProps) {
 
         {error && <div className="setup-error">{error}</div>}
 
-        <div className="btn-row">
-          <button type="button" className="btn" onClick={onCancel}>
+        <div className="btn-row editor-actions">
+          <button type="button" className="btn ghost" data-testid="preset-cancel" onClick={onCancel}>
             Cancel
           </button>
-          <button type="button" className="btn accent" onClick={save}>
-            💾 Save preset
-          </button>
+          {/* The two ways to use the layout stay together when the row wraps. */}
+          <div className="btn-row editor-exits">
+            <button type="button" className="btn" data-testid="preset-save" onClick={saveAndExport}>
+              💾 Save &amp; Export
+            </button>
+            <button type="button" className="btn accent" data-testid="preset-play" onClick={playWithoutSaving}>
+              ▶️ Play Without Saving
+            </button>
+          </div>
         </div>
       </div>
     </div>

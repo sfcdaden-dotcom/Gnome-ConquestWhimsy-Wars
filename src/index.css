@@ -238,17 +238,28 @@ h2 {
   flex: 1;
 }
 .preset-description {
-  margin: -8px 0 0 132px;
+  margin: 0;
 }
 
-/* Rolled-map thumbnail on the setup screen. Reuses .board/.cell so garden
-   colours stay in one place; only the scale and interactivity differ. */
-.layout-preview-row {
+/* The whole preset block: preview on top, then every preset control (the
+   `Preset: …` dropdown, re-roll, import/export) in one compact row under it. */
+.preset-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  text-align: center;
+}
+.preset-controls {
   display: flex;
   align-items: center;
-  gap: 14px;
+  justify-content: center;
+  gap: 8px;
   flex-wrap: wrap;
-  margin-left: 132px;
+  width: 100%;
+}
+.preset-controls .preset-select {
+  flex: 0 1 220px;
 }
 .preset-preview {
   width: min(100%, 208px);
@@ -304,6 +315,17 @@ h2 {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+}
+/* Editor exits: backing out (ghost) sits apart from the two ways to use the
+   layout, and playing — not saving a file — is the primary action. */
+.editor-actions {
+  align-items: center;
+  gap: 10px;
+}
+.editor-exits {
+  margin-top: 0;
+  margin-left: auto;
+  justify-content: flex-end;
 }
 .editor-board .cell {
   cursor: pointer;

@@ -3,8 +3,10 @@ import {
   PRESET_DESCRIPTION_MAX_LENGTH,
   PRESET_LABEL_MAX_LENGTH,
   buildCustomPresetDef,
+  nextUnnamedPresetLabel,
   parseCustomPresetFile,
   reservedHomePositions,
+  validateCustomPresetLayout,
 } from './customPresets';
 
 describe('customPresets', () => {
@@ -163,6 +165,83 @@ describe('customPresets', () => {
     const parsed = parseCustomPresetFile(json);
     expect(parsed.label).toHaveLength(PRESET_LABEL_MAX_LENGTH);
     expect(parsed.description).toHaveLength(PRESET_DESCRIPTION_MAX_LENGTH);
+  });
+
+  // The editor's "Play without saving" and "Save & export" both run the
+  // layout through this, as does every imported file — one rule set, three
+  // entry points.
+  describe('validateCustomPresetLayout', () => {
+    const homes = () => reservedHomePositions(7);
+
+    it('accepts a legal layout and hands back copied positions', () => {
+      const gardens = [{ pos: { x: 1, y: 1 }, type: 'tunnel' }];
+      const res = validateCustomPresetLayout(7, homes(), gardens);
+      expect(res.ok).toBe(true);
+      if (!res.ok) return;
+      expect(res.layout.homes).toEqual(homes());
+      expect(res.layout.gardens).toEqual(gardens);
+      expect(res.layout.gardens[0]).not.toBe(gardens[0]);
+    });
+
+    it('accepts an empty board (homes only)', () => {
+      expect(validateCustomPresetLayout(7, homes(), []).ok).toBe(true);
+    });
+
+    it('rejects the wrong number of homes', () => {
+      const res = validateCustomPresetLayout(7, homes().slice(0, 3), []);
+      expect(res).toMatchObject({ ok: false });
+      if (!res.ok) expect(res.error).toMatch(/exactly 4/);
+    });
+
+    it('rejects an out-of-bounds garden', () => {
+      const res = validateCustomPresetLayout(7, homes(), [{ pos: { x: 9, y: 0 }, type: 'tunnel' }]);
+      expect(res).toMatchObject({ ok: false });
+      if (!res.ok) expect(res.error).toMatch(/outside the board/);
+    });
+
+    it('rejects a garden on a home space', () => {
+      const res = validateCustomPresetLayout(7, homes(), [{ pos: homes()[0], type: 'tunnel' }]);
+      expect(res).toMatchObject({ ok: false });
+      if (!res.ok) expect(res.error).toMatch(/Home Garden space/);
+    });
+
+    it('rejects two gardens on one space', () => {
+      const res = validateCustomPresetLayout(7, homes(), [
+        { pos: { x: 1, y: 1 }, type: 'tunnel' },
+        { pos: { x: 1, y: 1 }, type: 'maize' },
+      ]);
+      expect(res).toMatchObject({ ok: false });
+      if (!res.ok) expect(res.error).toMatch(/more than one garden/);
+    });
+
+    it('rejects an unknown garden type', () => {
+      const res = validateCustomPresetLayout(7, homes(), [{ pos: { x: 1, y: 1 }, type: 'home' }]);
+      expect(res).toMatchObject({ ok: false });
+      if (!res.ok) expect(res.error).toMatch(/unknown garden type/);
+    });
+  });
+
+  describe('nextUnnamedPresetLabel', () => {
+    it('starts at 1 and counts up alongside named presets', () => {
+      expect(nextUnnamedPresetLabel([])).toBe('Unnamed preset 1');
+      expect(nextUnnamedPresetLabel([{ label: 'Twin Rivers' }])).toBe('Unnamed preset 1');
+      expect(nextUnnamedPresetLabel([{ label: 'Unnamed preset 1' }])).toBe('Unnamed preset 2');
+    });
+
+    it('counts past the highest number rather than the list length', () => {
+      // A preset can be removed mid-session; reusing its number would put two
+      // identical entries in the dropdown.
+      expect(nextUnnamedPresetLabel([{ label: 'Unnamed preset 3' }])).toBe('Unnamed preset 4');
+      expect(
+        nextUnnamedPresetLabel([{ label: 'Unnamed preset 2' }, { label: 'Unnamed preset 10' }, { label: 'Marsh' }]),
+      ).toBe('Unnamed preset 11');
+    });
+
+    it('ignores names that merely look like numbered ones', () => {
+      expect(nextUnnamedPresetLabel([{ label: 'Unnamed preset' }, { label: 'Unnamed preset two' }])).toBe(
+        'Unnamed preset 1',
+      );
+    });
   });
 
   it('rejects a future file version', () => {
