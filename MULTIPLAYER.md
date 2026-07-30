@@ -227,11 +227,34 @@ stalling seat a fresh minute. Clients see the live clock on every `state` frame
 device whose clock is minutes off still counts down the right number of
 seconds) and render it as a countdown in the top bar.
 
+### When somebody does not come back
+
+Playing every one of somebody's turns for them, one timeout at a time, is a bad
+game for everyone else: the table spends a minute per turn watching a clock run
+down to reach the move a CPU would have made instantly. So after
+`TAKEOVER_AFTER_TIMEOUTS` = 3 **consecutive** timeouts the room stops waiting.
+The seat becomes a CPU seat (`TAKEOVER_DIFFICULTY` = easy) for the rest of the
+game, and everyone gets a `seatTakenOver` frame.
+
+Three, rather than one, because a single timeout is usually a phone call or a
+tunnel and the conversion is not reversible mid-game. The count is cleared by
+*playing* — one legal action and the seat is theirs again, no matter how close
+it came. Chat does not clear it, and neither does an action the engine or the
+room rejects; otherwise sending nonsense would be a way to hold a seat you had
+stopped playing from.
+
+**The player is not thrown out of the room.** They lose the seat and come back
+as a spectator, watching the game out. That fell out of a rule the room already
+had: `hello` refuses to hand back a seat that has become a CPU mid-game, so a
+returning player and the AI never fight over one seat.
+
+Seats taken over this way are flagged `takenOver` in the room snapshot, which is
+how a client tells them apart from CPU seats the host set up in the lobby. It is
+also the only way a client *can* tell: `state.players[].controller` is fixed
+when the game is created, and editing it afterwards would stop the match record
+replaying. So the takeover travels beside the state, never inside it.
+
 ## Not built yet
 
-- **A repeat-offender policy.** Timing out closes the turn and nothing more, so
-  a determined griefer can be timed out every turn for the length of a game and
-  the table just plays slowly around them. Auto-resign after N timeouts, or
-  handing the seat to the CPU, is the obvious answer and is not yet built.
 - **Rate limiting.** A client can currently send as fast as it likes; illegal
   actions are cheap to reject but not free.

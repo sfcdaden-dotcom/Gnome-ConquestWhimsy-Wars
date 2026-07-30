@@ -74,11 +74,12 @@ handful of things anyone actually needs to do.
   Phase is already bounded — one move per unit per turn, and Wishes/cards gate
   the rest.
 
-  Still open: a **repeat-offender policy**. A timeout closes the turn and
-  nothing more, so a griefer can be timed out every turn for a whole game.
-  Auto-resign after N timeouts, or handing the seat to the CPU, is the obvious
-  answer. Local hot-seat games run no clock at all, deliberately: there is
-  nobody to grief but yourself.
+  The **repeat-offender policy** landed the same day: three consecutive
+  timeouts and the room gives the seat to a CPU for the rest of the game, so a
+  griefer cannot make the table spend a minute a turn on them indefinitely.
+  Playing one legal action clears the count; chat and rejected actions do not.
+  The player keeps their place in the room as a spectator. Local hot-seat games
+  run no clock at all, deliberately: there is nobody to grief but yourself.
 
 ### P3
 

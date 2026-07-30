@@ -16,7 +16,13 @@ import { HIDDEN_CARD_ID, chooseAiAction, getPlayerToAct, replayMatch } from '../
 import { createSeal, verifySeal } from './commitment';
 import type { PersistedRoom, RoomConnection, RoomHost } from './room';
 import { Room, generateRoomCode } from './room';
-import { CONTROL_BUDGET_MS, ROOM_CODE_ALPHABET, SHOT_CLOCK_MS } from './protocol';
+import {
+  CONTROL_BUDGET_MS,
+  ROOM_CODE_ALPHABET,
+  SHOT_CLOCK_MS,
+  TAKEOVER_AFTER_TIMEOUTS,
+  TAKEOVER_DIFFICULTY,
+} from './protocol';
 import type { ServerMessage } from './protocol';
 
 // ---------------------------------------------------------------------------
@@ -625,6 +631,128 @@ describe('the shot clock', () => {
     host.clock = clock.actionDeadline;
     await woken.onAlarm();
     expect(woken.gameState!.eventCount).toBeGreaterThan(room.gameState!.eventCount);
+  });
+
+  /**
+   * Let one seat run its clock out `times` times over, while every other seat
+   * plays on sensibly — one person going quiet at a table that is otherwise
+   * still playing, which is the case the takeover is for.
+   */
+  async function timeOutSeat(
+    room: Room,
+    host: ReturnType<typeof makeHost>,
+    seat: number,
+    times: number,
+  ): Promise<void> {
+    for (let i = 0; i < times && room.phase === 'playing'; i++) {
+      for (let step = 0; step < 400; step++) {
+        const actor = getPlayerToAct(room.gameState!);
+        if (actor === null || actor === seat || room.phase !== 'playing') break;
+        if (host.stored!.seats[actor].controller === 'cpu') await room.onAlarm();
+        else await room.handle(`c${actor}`, { t: 'action', action: chooseAiAction(room.gameState!) });
+      }
+      const clock = host.stored!.clock;
+      if (room.phase !== 'playing' || clock === null || clock.seat !== seat) return;
+      host.clock = clock.actionDeadline;
+      await room.onAlarm();
+    }
+  }
+
+  it('gives a seat to a CPU once it has timed out once too often', async () => {
+    const { host, room, conns } = await duel();
+    const quitter = getPlayerToAct(room.gameState!)!;
+
+    await timeOutSeat(room, host, quitter, TAKEOVER_AFTER_TIMEOUTS - 1);
+    // Not yet: one bad minute is a phone call, not a departure.
+    expect(host.stored!.seats[quitter].controller).toBe('human');
+
+    await timeOutSeat(room, host, quitter, 1);
+
+    expect(host.stored!.seats[quitter].controller).toBe('cpu');
+    expect(host.stored!.seats[quitter].takenOver).toBe(true);
+    expect(conns[quitter].last('seatTakenOver')?.seat).toBe(quitter);
+    expect(conns[quitter].last('room')?.room.seats[quitter].takenOver).toBe(true);
+  });
+
+  it('leaves the player in the room, watching, rather than throwing them out', async () => {
+    const { host, room, conns } = await duel();
+    const quitter = getPlayerToAct(room.gameState!)!;
+    const token = conns[quitter].last('welcome')!.you.token;
+
+    await timeOutSeat(room, host, quitter, TAKEOVER_AFTER_TIMEOUTS);
+    expect(host.stored!.seats[quitter].controller).toBe('cpu');
+
+    // Told immediately that the seat is no longer theirs...
+    expect(conns[quitter].last('welcome')?.you.seat).toBeNull();
+    expect(conns[quitter].closed).toBeNull();
+    // ...and a reconnect with the very token that held the seat gets a view of
+    // the game, not the seat back: nobody fights the AI for control.
+    const back = new FakeConn('back');
+    await room.hello(back, { ...HELLO, token });
+    expect(back.last('welcome')?.you.seat).toBeNull();
+    expect(back.last('state')).toBeDefined();
+  });
+
+  it('plays the taken-over seat at CPU speed instead of a minute a turn', async () => {
+    const { host, room } = await duel();
+    const quitter = getPlayerToAct(room.gameState!)!;
+    await timeOutSeat(room, host, quitter, TAKEOVER_AFTER_TIMEOUTS);
+    expect(host.stored!.seats[quitter].controller).toBe('cpu');
+
+    // The seat is played by an alarm now, not by a deadline: no shot clock
+    // runs while it is the one to act.
+    const before = room.gameState!.eventCount;
+    for (let i = 0; i < 20 && getPlayerToAct(room.gameState!) !== quitter; i++) {
+      const actor = getPlayerToAct(room.gameState!)!;
+      await room.handle(`c${actor}`, { t: 'action', action: chooseAiAction(room.gameState!) });
+    }
+    expect(getPlayerToAct(room.gameState!)).toBe(quitter);
+    expect(host.stored!.clock).toBeNull();
+    await room.onAlarm();
+
+    expect(room.gameState!.eventCount).toBeGreaterThan(before);
+    expect(host.stored!.seats[quitter].difficulty).toBe(TAKEOVER_DIFFICULTY);
+  });
+
+  /** Let everyone else play until `seat` is the one to act again. */
+  async function untilTurnOf(room: Room, seat: number): Promise<void> {
+    for (let i = 0; i < 400 && room.phase === 'playing'; i++) {
+      const actor = getPlayerToAct(room.gameState!);
+      if (actor === null || actor === seat) return;
+      await room.handle(`c${actor}`, { t: 'action', action: chooseAiAction(room.gameState!) });
+    }
+  }
+
+  it('forgets the timeouts of somebody who comes back and plays', async () => {
+    const { host, room } = await duel();
+    const seat = getPlayerToAct(room.gameState!)!;
+
+    await timeOutSeat(room, host, seat, TAKEOVER_AFTER_TIMEOUTS - 1);
+    // Back at the table: the count is cleared by playing, not by being present.
+    expect(host.stored!.seats[seat].timeouts).toBe(TAKEOVER_AFTER_TIMEOUTS - 1);
+    await untilTurnOf(room, seat);
+    await room.handle(`c${seat}`, { t: 'action', action: chooseAiAction(room.gameState!) });
+    expect(host.stored!.seats[seat].timeouts).toBe(0);
+
+    await timeOutSeat(room, host, seat, TAKEOVER_AFTER_TIMEOUTS - 1);
+    expect(host.stored!.seats[seat].controller).toBe('human');
+  });
+
+  it('does not let a rejected action buy back a seat', async () => {
+    const { host, room, conns } = await duel();
+    const seat = getPlayerToAct(room.gameState!)!;
+    await timeOutSeat(room, host, seat, TAKEOVER_AFTER_TIMEOUTS - 1);
+    const before = host.stored!.seats[seat].timeouts;
+    expect(before).toBeGreaterThan(0);
+
+    // Nonsense from the seat, and chat, are not playing. (The roll-off is long
+    // over, so it is an action the engine refuses outright.)
+    await untilTurnOf(room, seat);
+    await room.handle(`c${seat}`, { t: 'action', action: { type: 'rollOff', player: seat } });
+    expect(conns[seat].last('error')?.code).toBe('ILLEGAL_ACTION');
+    await room.handle(`c${seat}`, { t: 'action', action: { type: 'quickChat', player: seat, phraseId: 'hi' } });
+
+    expect(host.stored!.seats[seat].timeouts).toBe(before);
   });
 
   it('finishes a game against a seat that never acts, and the record still replays', async () => {

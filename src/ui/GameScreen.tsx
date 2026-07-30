@@ -318,7 +318,7 @@ export function GameScreen({ game: g, onPlayAgain, onQuit }: GameScreenProps) {
 
       <div className="main">
         <aside className="left-col">
-          <PlayerPanels state={state} />
+          <PlayerPanels state={state} takenOverSeats={g.takenOverSeats} />
           {state.activeCurses.length > 0 && <CursePanel state={state} />}
         </aside>
 

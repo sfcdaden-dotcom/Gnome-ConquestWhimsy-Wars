@@ -58,6 +58,20 @@ export const SHOT_CLOCK_MS = 60_000;
 export const CONTROL_BUDGET_MS = 300_000;
 
 /**
+ * Consecutive timeouts before the room stops waiting for a seat and gives it
+ * to a CPU for the rest of the game.
+ *
+ * More than one, because a single timeout is usually a phone call or a tunnel
+ * and the conversion is not reversible mid-game. Few enough that the table is
+ * not made to play three-quarters of a game around an empty chair. Any action
+ * from the seat resets the count — coming back and playing is all it takes.
+ */
+export const TAKEOVER_AFTER_TIMEOUTS = 3;
+
+/** The difficulty a taken-over seat is played at. */
+export const TAKEOVER_DIFFICULTY: AiDifficulty = 'easy';
+
+/**
  * The live clock as a client sees it. `now` is the SERVER's wall clock at the
  * moment the frame was built: a client that renders `deadline - now` as a
  * duration is immune to the two clocks disagreeing, which they routinely do by
@@ -78,6 +92,12 @@ export interface SeatInfo {
   difficulty: AiDifficulty;
   /** Human seats only: is somebody connected to it right now? */
   connected: boolean;
+  /**
+   * The room took this seat over mid-game because its player stopped playing —
+   * as opposed to a CPU seat the host set up in the lobby. Its original player
+   * may still be in the room, watching.
+   */
+  takenOver: boolean;
 }
 
 /** The room as everyone in it sees it. Public by construction. */
@@ -148,6 +168,12 @@ export type ServerMessage =
   | { t: 'state'; view: PlayerView; clock: ShotClock | null }
   /** A seat ran out of time and the room played its turn out for it. */
   | { t: 'timedOut'; seat: number }
+  /**
+   * A seat timed out once too often and now belongs to a CPU for the rest of
+   * the game. Its player is not thrown out of the room — they keep watching,
+   * and `welcome` will have moved them to `seat: null`.
+   */
+  | { t: 'seatTakenOver'; seat: number }
   /**
    * Game over: the host reveals the secret it committed to at the start, with
    * the full record. Replay it and check it against `room.commitment` — see

@@ -71,6 +71,8 @@ import {
   ROOM_CODE_ALPHABET,
   ROOM_CODE_LENGTH,
   SHOT_CLOCK_MS,
+  TAKEOVER_AFTER_TIMEOUTS,
+  TAKEOVER_DIFFICULTY,
 } from './protocol';
 
 // ---------------------------------------------------------------------------
@@ -121,6 +123,10 @@ export interface PersistedSeat {
   name: string;
   controller: 'human' | 'cpu';
   difficulty: AiDifficulty;
+  /** The room took this seat over for inactivity (not a lobby CPU seat). */
+  takenOver?: boolean;
+  /** Consecutive shot-clock timeouts. Any action by the seat resets it. */
+  timeouts?: number;
 }
 
 export interface RoomStore {
@@ -372,6 +378,23 @@ export class Room {
     return false;
   }
 
+  /**
+   * Turn every seat a human no longer owns loose: the connection sitting in it
+   * becomes a spectator and no token keeps a claim on it. Used both when the
+   * host edits the lobby and when the clock takes a seat over mid-game.
+   */
+  private vacateNonHumanSeats(): void {
+    for (const conn of this.conns.values()) {
+      if (conn.seat !== null && this.data.seats[conn.seat]?.controller !== 'human') {
+        conn.seat = null;
+        this.data.tokens[conn.token] = null;
+      }
+    }
+    for (let i = 0; i < this.data.seats.length; i++) {
+      if (this.data.seats[i].controller !== 'human') this.releaseSeat(i);
+    }
+  }
+
   /** Drop every token's claim on a seat; its holders return as spectators. */
   private releaseSeat(seat: number): void {
     for (const token of Object.keys(this.data.tokens)) {
@@ -505,15 +528,7 @@ export class Room {
 
     // Nobody is left holding a seat the host just turned into a CPU (or a seat
     // that a shrink to two players removed).
-    for (const conn of this.conns.values()) {
-      if (conn.seat !== null && this.data.seats[conn.seat]?.controller !== 'human') {
-        conn.seat = null;
-        this.data.tokens[conn.token] = null;
-      }
-    }
-    for (let i = 0; i < this.data.seats.length; i++) {
-      if (this.data.seats[i].controller !== 'human') this.releaseSeat(i);
-    }
+    this.vacateNonHumanSeats();
     for (const token of Object.keys(this.data.tokens)) {
       const held = this.data.tokens[token];
       if (held !== null && held >= this.data.seats.length) this.data.tokens[token] = null;
@@ -631,7 +646,17 @@ export class Room {
     if (action.player !== c.seat) {
       throw new RoomError('NOT_YOUR_SEAT', `You are seat ${c.seat + 1} and cannot act for another seat`);
     }
+    const seat = this.data.seats[c.seat];
+    const timeouts = seat?.timeouts ?? 0;
     await this.apply(action);
+    // Coming back and PLAYING clears the record — but only a real, legal move
+    // does it. Not chat (it buys no time on the clock either) and not a
+    // rejected action, or spamming nonsense would be a way to keep a seat.
+    // Saving again is worth it because it essentially never happens twice.
+    if (timeouts > 0 && seat && action.type !== 'quickChat') {
+      seat.timeouts = 0;
+      await this.save();
+    }
   }
 
   /** The single path every action takes — human, CPU, and the shot clock. */
@@ -751,13 +776,54 @@ export class Room {
    */
   private async expire(seat: number): Promise<void> {
     for (const c of this.conns.values()) c.conn.send({ t: 'timedOut', seat });
+    const info = this.data.seats[seat];
+    if (info) info.timeouts = (info.timeouts ?? 0) + 1;
+
     for (let step = 0; step < MAX_TIMEOUT_STEPS; step++) {
-      if (!this.state || this.data.phase !== 'playing') return;
-      if (getPlayerToAct(this.state) !== seat) return; // control moved on
+      if (!this.state || this.data.phase !== 'playing') break;
+      if (getPlayerToAct(this.state) !== seat) break; // control moved on
       const action = getTimeoutAction(this.state);
-      if (action === null) return;
+      if (action === null) break;
       await this.apply(action);
     }
+
+    if (this.data.phase === 'playing' && (info?.timeouts ?? 0) >= TAKEOVER_AFTER_TIMEOUTS) {
+      await this.takeOverSeat(seat);
+    }
+  }
+
+  /**
+   * Stop waiting for a seat and give it to a CPU for the rest of the game.
+   *
+   * Playing every one of somebody's turns for them one timeout at a time is a
+   * bad game for everyone else: the table spends a minute per turn watching a
+   * clock run down to reach the same move a CPU would have made instantly. So
+   * after enough consecutive timeouts the seat becomes a CPU seat and the
+   * game goes back to running at the speed of the people who are still here.
+   *
+   * The player is NOT thrown out of the room. They lose the seat — `hello`
+   * already refuses to hand back a seat that has become a CPU mid-game, which
+   * is what stops a returning player and the AI fighting over one seat — and
+   * they come back as a spectator, watching the rest of the game out.
+   */
+  private async takeOverSeat(seat: number): Promise<void> {
+    const info = this.data.seats[seat];
+    if (!info || info.controller !== 'human') return;
+    info.controller = 'cpu';
+    info.difficulty = TAKEOVER_DIFFICULTY;
+    info.takenOver = true;
+    info.timeouts = 0;
+
+    this.vacateNonHumanSeats();
+    this.ensureHost();
+    for (const c of this.conns.values()) c.conn.send({ t: 'seatTakenOver', seat });
+    // The seat may be the one to act right now — a timeout that ends the game
+    // aside, control passes on, but a Respond window can come straight back.
+    this.retime(true);
+    await this.save();
+    this.announceIdentities();
+    this.broadcastRoom();
+    await this.arm();
   }
 
   // --- game over -----------------------------------------------------------
@@ -850,6 +916,7 @@ export class Room {
       controller: s.controller,
       difficulty: s.difficulty,
       connected: s.controller === 'human' && this.seatIsOccupied(i),
+      takenOver: s.takenOver === true,
     }));
     let spectators = 0;
     for (const c of this.conns.values()) if (c.seat === null) spectators++;

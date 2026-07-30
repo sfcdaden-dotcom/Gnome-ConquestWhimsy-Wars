@@ -94,6 +94,8 @@ export function useNetGame(code: string, name: string): NetGame {
     let redial: number | undefined;
     let ping: number | undefined;
 
+    const seatName = (seat: number) => roomRef.current?.seats[seat]?.name ?? `Seat ${seat + 1}`;
+
     function dial() {
       if (disposed) return;
       ws = new WebSocket(roomSocketUrl(code, window.location));
@@ -138,8 +140,11 @@ export function useNetGame(code: string, name: string): NetGame {
             return;
           }
           case 'timedOut': {
-            const who = roomRef.current?.seats[msg.seat]?.name ?? `Seat ${msg.seat + 1}`;
-            pushToast(`⏱ ${who} ran out of time — the room played the turn out.`, 'info');
+            pushToast(`⏱ ${seatName(msg.seat)} ran out of time — the room played the turn out.`, 'info');
+            return;
+          }
+          case 'seatTakenOver': {
+            pushToast(`🤖 ${seatName(msg.seat)} stopped playing — a CPU has taken the seat.`, 'info');
             return;
           }
           case 'revealed':
@@ -206,6 +211,13 @@ export function useNetGame(code: string, name: string): NetGame {
 
   const mySeat = you?.seat ?? null;
 
+  // The room's word, not the state's: `state.players[].controller` is fixed
+  // when the game is created (see GameSession.takenOverSeats).
+  const takenOverSeats = useMemo(
+    () => (room?.seats ?? []).filter((s) => s.takenOver).map((s) => s.index),
+    [room?.seats],
+  );
+
   const game = useMemo<GameSession | null>(() => {
     if (!view) return null;
     const playerToAct = view.status === 'finished' ? null : getPlayerToAct(view);
@@ -231,6 +243,7 @@ export function useNetGame(code: string, name: string): NetGame {
       needsPass: false,
       confirmPass: () => {},
       shotClock,
+      takenOverSeats,
       tag: `room ${code}`,
     };
   }, [
@@ -245,6 +258,7 @@ export function useNetGame(code: string, name: string): NetGame {
     toggleChatMuted,
     mySeat,
     shotClock,
+    takenOverSeats,
     code,
   ]);
 
