@@ -8,9 +8,10 @@
  *   4 players: seat 0 west (0,3), seat 1 north (3,0), seat 2 east (6,3),
  *              seat 3 south (3,6)
  * Two things override this formula: `customHomes` (e.g. a preset built in the
- * in-game editor that moved the homes), and a procedural preset's own
- * `buildHomes` (the "Random" preset rolls a symmetric home orbit from the
- * seed). Both still hand 2-player games an exactly-opposite pair.
+ * in-game editor that moved the homes), and a preset's own homes — `homes` on
+ * a file-backed preset, or `buildHomes` on a procedural one (the "Random"
+ * preset rolls a symmetric home orbit from the seed). All still hand 2-player
+ * games an exactly-opposite pair, via `seatHomes`.
  *
  * Additional-garden layouts ("presets") are registered in gardenPresets.ts —
  * see that file for the list and for how to add a new one.
@@ -26,7 +27,7 @@ import type {
   PlayerState,
   Pos,
 } from './types';
-import { EngineError } from './types';
+import { EngineError, PLANTABLE_GARDEN_TYPES } from './types';
 import { normalizeSeed, shuffled } from './rng';
 import { posKey } from './helpers';
 import { makeGarden } from './gardens';
@@ -52,15 +53,7 @@ export const DEFAULT_CONFIG = {
 /** Per-player supply: 4 tiles of each plantable type (see config.tilesPerType). */
 export const TILES_PER_TYPE = 4;
 
-/** Every type a player can plant/design a garden layout with (excludes 'home'). */
-export const PLANTABLE_GARDEN_TYPES: readonly PlantableGardenType[] = [
-  'dandelion',
-  'mushroom',
-  'flytrap',
-  'maize',
-  'slippery',
-  'tunnel',
-];
+export { PLANTABLE_GARDEN_TYPES } from './types';
 
 /** A fresh per-player tile supply. */
 export function makeSupply(tilesPerType: number): Record<PlantableGardenType, number> {
@@ -200,10 +193,12 @@ function resolveConfig(options: CreateGameOptions): GameConfig {
 export function createGame(options: CreateGameOptions, seed: number): GameState {
   const config = resolveConfig(options);
   const playerCount = config.players.length;
-  // A procedural preset rolls its own home orbit from the seed; `customHomes`
-  // (the in-game editor, or a layout the setup screen already previewed) wins
-  // over both that and the default edge-midpoint formula.
-  const presetHomes = findGardenPreset(config.gardenPreset)?.buildHomes?.(config.boardSize, seed);
+  // Home placement, most specific first: `customHomes` (the in-game editor, or
+  // a layout the setup screen already previewed) beats the preset's own homes
+  // — rolled from the seed by a procedural preset, or fixed on a file-backed
+  // one — which in turn beats the default edge-midpoint formula.
+  const presetDef = findGardenPreset(config.gardenPreset);
+  const presetHomes = presetDef?.buildHomes?.(config.boardSize, seed) ?? presetDef?.homes;
   const homes =
     config.customHomes ??
     (presetHomes ? seatHomes(presetHomes, playerCount) : homePositions(config.boardSize, playerCount));

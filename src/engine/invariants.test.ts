@@ -17,6 +17,7 @@ import {
   EngineError,
   applyAction,
   assertInvariants,
+  GARDEN_PRESETS,
   checkInvariants,
   chooseAiAction,
   createGame,
@@ -31,11 +32,13 @@ function codes(state: GameState): string[] {
 }
 
 describe('well-formed states pass', () => {
-  it('a freshly created game (2p and 4p, every preset shape)', () => {
+  // Every REGISTERED preset, not a hand-listed few: this is what catches a
+  // bad layout dropped into engine/presets/ (see that folder's README).
+  it('a freshly created game (2p and 4p, every registered preset)', () => {
     for (const count of [2, 4] as const) {
-      for (const preset of ['none', 'few', 'many', 'random']) {
-        const s = newGame(3, { gardenPreset: preset }, count);
-        expect(checkInvariants(s), `${count}p ${preset}`).toEqual([]);
+      for (const { id } of GARDEN_PRESETS) {
+        const s = newGame(3, { gardenPreset: id }, count);
+        expect(checkInvariants(s), `${count}p ${id}`).toEqual([]);
       }
     }
   });

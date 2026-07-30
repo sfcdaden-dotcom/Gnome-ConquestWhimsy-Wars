@@ -1,9 +1,19 @@
 /**
  * Garden preset registry: named layouts of additional (non-home) gardens.
  *
- * To add a new preset, append one entry to `GARDEN_PRESETS` below — nothing
- * else needs to change. `setup.ts` looks presets up by id (no hardcoded
- * switch), and `SetupScreen.tsx` renders the menu straight from this array.
+ * There are two ways in, and they end up in the same list:
+ *
+ *  1. DRAW ONE. Open the in-game editor (setup → "Preset: Custom", or ✏️ Edit
+ *     beside any preset), paint the layout, "Save & export", then drop the
+ *     downloaded .json into `presets/`. It is registered on the next build,
+ *     under an id taken from the filename — no code to write. This is the
+ *     path for fixed layouts, including ones that move the Home Gardens.
+ *  2. WRITE ONE. Append an entry to `BUILT_IN_PRESETS` below. Worth it when
+ *     the layout must scale with board size N or roll from the seed, which a
+ *     file (plain positions, one board size) cannot express.
+ *
+ * Either way `setup.ts` looks presets up by id (no hardcoded switch) and
+ * `SetupScreen.tsx` renders the menu straight from `GARDEN_PRESETS`.
  *
  * Most entries are fixed layouts whose positions scale with board size N,
  * center c = (N - 1) / 2 (shown for the default 7×7, so c = 3). The first
@@ -17,6 +27,7 @@
 
 import type { PlantableGardenType, Pos } from './types';
 import { RANDOM_LAYOUT_MIN_BOARD_SIZE, generateRandomLayout } from './randomLayout';
+import { presetDefFromFile } from './presetFile';
 
 export interface GardenPresetDef {
   /** Stable identifier — this is the value stored on `GameConfig.gardenPreset`. */
@@ -36,9 +47,10 @@ export interface GardenPresetDef {
   /**
    * Optional override of where the 4 Home Gardens sit (seat order
    * west/north/east/south by convention; 2-player games use indices 0 and
-   * 2). Only player-built custom presets set this — built-in presets leave
-   * it undefined and use the standard edge-midpoint formula
-   * (`homePositions`) for whatever player count is chosen.
+   * 2). Set by every file-backed preset and by player-built ones; leave it
+   * undefined to use the standard edge-midpoint formula (`homePositions`)
+   * for whatever player count is chosen. Positions are authored for
+   * `minBoardSize`, and stay in bounds on any larger board.
    */
   homes?: Pos[];
   /** True when `build`/`buildHomes` vary with the seed (see randomLayout.ts). */
@@ -50,7 +62,8 @@ export interface GardenPresetDef {
   buildHomes?: (boardSize: number, seed: number) => Pos[];
 }
 
-export const GARDEN_PRESETS: readonly GardenPresetDef[] = [
+/** Hand-written presets: the ones that scale with board size or roll from the seed. */
+const BUILT_IN_PRESETS: readonly GardenPresetDef[] = [
   {
     id: 'random',
     label: 'Random (symmetrical)',
@@ -109,6 +122,54 @@ export const GARDEN_PRESETS: readonly GardenPresetDef[] = [
     ],
   },
 ];
+
+/**
+ * Every .json under `presets/`, eagerly bundled. The glob is a build-time
+ * directory listing, so adding a file is the whole job of adding a preset —
+ * there is no index to keep in step.
+ */
+const PRESET_FILES: Record<string, unknown> = import.meta.glob('./presets/*.json', {
+  eager: true,
+  import: 'default',
+});
+
+/**
+ * Preset id from a file path: the basename, minus `.json` and minus the
+ * `.whimsy-preset` the editor's download tacks on. So
+ * `presets/midfield.whimsy-preset.json` registers as `midfield`.
+ *
+ * The id is what `GameConfig.gardenPreset` stores and what multiplayer sends
+ * over the wire, so RENAMING A FILE RENAMES ITS PRESET: old saves and replays
+ * that reference the id stop resolving.
+ */
+function presetIdFromPath(path: string): string {
+  const base = path.slice(path.lastIndexOf('/') + 1);
+  return base.replace(/\.json$/i, '').replace(/\.whimsy-preset$/i, '');
+}
+
+/**
+ * Parse the dropped-in files. Anything malformed throws here, at module load,
+ * naming the file — a bad preset is a broken build, not a preset silently
+ * missing from the menu at runtime.
+ */
+function fileBackedPresets(): GardenPresetDef[] {
+  const taken = new Set(BUILT_IN_PRESETS.map((p) => p.id));
+  return Object.keys(PRESET_FILES)
+    .sort()
+    .map((path) => {
+      const id = presetIdFromPath(path);
+      if (taken.has(id)) throw new Error(`Garden preset "${path}": the id "${id}" is already taken.`);
+      taken.add(id);
+      try {
+        return presetDefFromFile(PRESET_FILES[path], id);
+      } catch (e) {
+        throw new Error(`Garden preset "${path}": ${e instanceof Error ? e.message : String(e)}`);
+      }
+    });
+}
+
+/** The menu: hand-written presets first, then the file-backed ones in filename order. */
+export const GARDEN_PRESETS: readonly GardenPresetDef[] = [...BUILT_IN_PRESETS, ...fileBackedPresets()];
 
 export const DEFAULT_GARDEN_PRESET_ID = 'random';
 

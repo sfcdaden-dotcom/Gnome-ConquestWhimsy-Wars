@@ -84,6 +84,39 @@ an artifact of the file layout.
    player's Action Phase or (b) waiting on exactly one typed
    `state.pendingDecision` from one player. Nothing else ever blocks.
 
+## Garden presets & home placement
+
+A preset (`GardenPresetDef`, registered in `gardenPresets.ts`) is a named layout
+of the additional, non-home gardens — plus, optionally, where the Home Gardens
+sit. `GameConfig.gardenPreset` stores only the **id**, so a game record replays
+from config + seed with no layout copied into it, and multiplayer sends the id
+rather than the map.
+
+Two ways to add one:
+
+| | How | Use when |
+|---|---|---|
+| **File** | Draw it in the in-game editor, export the `.json`, drop it into `src/engine/presets/` | Any fixed layout, including one that moves the homes. No code. The id is the filename; see that folder's README |
+| **Code** | Append an entry to `BUILT_IN_PRESETS` in `gardenPresets.ts` | The layout must scale with board size N (`build(n)`) or roll from the seed (`seeded` + `buildHomes`) |
+
+`presetFile.ts` owns the file format and is the single validator for it —
+`src/engine/presets/*.json` at build time, the editor's two exits, and the setup
+screen's Import all go through `validatePresetLayout`.
+
+**Home Gardens** are resolved by `createGame` most-specific-first:
+
+1. `config.customHomes` — an explicit per-seat list (the editor, or a layout the
+   setup screen already previewed). One entry per seat, validated in bounds and
+   distinct.
+2. The preset's own — `buildHomes(boardSize, seed)` on a procedural preset,
+   else the static `homes` on a file-backed one. Always 4 positions in seat
+   order west/north/east/south; `seatHomes` hands a 2-player game indices 0 and
+   2, the exactly-opposite pair.
+3. `homePositions(boardSize, playerCount)` — the default edge midpoints.
+
+A file's positions are authored for its `minBoardSize` and stay in bounds on any
+larger board, so a 7×7 preset remains legal (if lopsided) on a 9×9.
+
 ## The settle loop
 
 After dispatching an action, `applyAction` "settles" — it auto-advances
