@@ -4,9 +4,14 @@
  * Home is the entry point: local play, online play, or the rules. The local
  * path is unchanged (setup → game, "play again" remounts with a fresh seed);
  * the online path hands off to OnlineScreen, which owns its own room socket.
+ *
+ * The one address the app answers to is a room: `?room=CODE` opens straight
+ * into online play, which is what makes an invite link work and what lets a
+ * player reload the page without losing the table (see netClient.ts).
  */
 
 import { useState } from 'react';
+import { roomCodeFromSearch } from './ui/netClient';
 import type { CreateGameOptions } from './engine';
 import { GameScreen } from './ui/GameScreen';
 import { HomeScreen } from './ui/HomeScreen';
@@ -26,7 +31,9 @@ interface Session {
 }
 
 export default function App() {
-  const [screen, setScreen] = useState<Screen>('home');
+  const [screen, setScreen] = useState<Screen>(() =>
+    roomCodeFromSearch(window.location.search) ? 'online' : 'home',
+  );
   const [session, setSession] = useState<Session | null>(null);
 
   if (screen === 'rules') return <RulesScreen onBack={() => setScreen('home')} />;

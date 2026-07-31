@@ -100,6 +100,25 @@ A seat the host flipped to CPU while its player was away is not theirs to take
 back mid-game; they return as a spectator instead of fighting the AI for
 control — and are seated again automatically if another seat opens.
 
+**The room is the page's address.** `?room=CODE` opens straight into that room,
+so a reload keeps the table and the code can be sent as a link. Keeping the
+code in component state alone meant the one thing a waiting host actually does
+— reload, to see whether anyone has arrived — dropped them on the home screen
+with nothing but a six-character code to retype.
+
+**A token is per tab, not per browser.** One token holds one live connection,
+so tokens in `localStorage` had two tabs of one browser fighting over a single
+seat: the second evicted the first, the room still saw one player, and the
+start button never lit. The live token lives in `sessionStorage` (per tab,
+survives a reload) with a heartbeat claim in `localStorage` beside it, so a
+closed tab's seat can be reclaimed but a live tab's cannot be taken. Two tabs
+are two people at the table — which is how anyone tries a room out alone.
+
+**The host badge is a loan.** If the host drops, the lobby goes to whoever is
+still there so the room is never frozen; the founder takes it back the moment
+they return. Otherwise a host's refresh moved the start button to the guest
+permanently and both ends waited for each other.
+
 ## The secret
 
 The room draws the map seed and the deck secret. **No client is ever offered a

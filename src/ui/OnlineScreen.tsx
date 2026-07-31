@@ -6,27 +6,43 @@
  * menu deliberately does not open one, so idling on "host or join?" costs the
  * server nothing.
  *
+ * The room you are in is written into the page URL, so it survives a reload
+ * and can be sent to a friend as a link. Which room you are in is a fact about
+ * where you are, not component state: keeping it only in `useState` meant
+ * refreshing the lobby — the obvious way to check whether anyone has turned up
+ * — dumped you back on the home screen.
+ *
  * Nothing here re-implements game rules or hides information: the lobby edits
  * are requests the room can refuse (a non-host's `configure` comes back as an
  * error toast), and the board is `GameScreen` fed the networked session.
  */
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { GARDEN_PRESETS } from '../engine';
 import type { AiDifficulty, GardenPreset } from '../engine';
 import { GameScreen } from './GameScreen';
 import { useNetGame } from './useNetGame';
-import { NAME_KEY } from './netClient';
+import { NAME_KEY, roomCodeFromSearch, roomHref } from './netClient';
 import { ROOM_CODE_LENGTH } from '../net/protocol';
 import { playerColor } from './meta';
+
+/** Point the address bar at the room (or at no room) without a navigation. */
+function syncUrl(code: string | null): void {
+  window.history.replaceState(null, '', roomHref(window.location, code));
+}
 
 // ---------------------------------------------------------------------------
 // Entry: host or join
 // ---------------------------------------------------------------------------
 
 export function OnlineScreen({ onBack }: { onBack: () => void }) {
-  const [code, setCode] = useState<string | null>(null);
+  // A reload (or a link a friend sent) puts us straight back in the room.
+  const [code, setCode] = useState<string | null>(() => roomCodeFromSearch(window.location.search));
   const [name, setName] = useState(() => localStorage.getItem(NAME_KEY) ?? '');
+
+  useEffect(() => {
+    syncUrl(code);
+  }, [code]);
 
   if (code) {
     return (
@@ -201,7 +217,13 @@ function Lobby({
 }) {
   const { room, you, status } = net;
   const isHost = you?.isHost ?? false;
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState<'code' | 'link' | null>(null);
+
+  function copy(what: 'code' | 'link', text: string) {
+    void navigator.clipboard?.writeText(text);
+    setCopied(what);
+    window.setTimeout(() => setCopied(null), 2000);
+  }
 
   const emptyHumanSeats =
     room?.seats.filter((s) => s.controller === 'human' && !s.connected).map((s) => s.index + 1) ?? [];
@@ -212,9 +234,12 @@ function Lobby({
         <h1 className="home-title">Room {code}</h1>
 
         {status === 'taken-over' ? (
-          <p className="form-error" role="alert" data-testid="lobby-taken-over">
-            Another tab took this seat. Close the other tab and rejoin from here if you want it back.
-          </p>
+          <div className="form-error" role="alert" data-testid="lobby-taken-over">
+            <p>Another tab took this seat.</p>
+            <button type="button" className="btn small" data-testid="lobby-rejoin" onClick={net.rejoin}>
+              Sit down as a new player
+            </button>
+          </div>
         ) : status === 'connecting' ? (
           <p className="muted" data-testid="lobby-connecting">
             Connecting to the room…
@@ -227,19 +252,22 @@ function Lobby({
             <code className="room-code" data-testid="lobby-code">
               {code}
             </code>
+            <button type="button" className="btn small" data-testid="lobby-copy" onClick={() => copy('code', code)}>
+              {copied === 'code' ? 'Copied ✔' : 'Copy'}
+            </button>
+            {/* The link drops them straight into this room, no code to retype. */}
             <button
               type="button"
               className="btn small"
-              data-testid="lobby-copy"
-              onClick={() => {
-                void navigator.clipboard?.writeText(code);
-                setCopied(true);
-                window.setTimeout(() => setCopied(false), 2000);
-              }}
+              data-testid="lobby-copy-link"
+              onClick={() => copy('link', roomHref(window.location, code))}
             >
-              {copied ? 'Copied ✔' : 'Copy'}
+              {copied === 'link' ? 'Copied ✔' : 'Copy invite link'}
             </button>
           </div>
+          <span className="muted small">
+            This page is the room — reload it, or come back to it later, and you keep your seat.
+          </span>
         </div>
 
         {room && (
@@ -251,6 +279,12 @@ function Lobby({
                   <span className="seat-name">
                     {seat.name}
                     {you?.seat === seat.index && <span className="muted small"> (you)</span>}
+                    {room.hostSeat === seat.index && (
+                      <span className="muted small" title="Sets the table and starts the game">
+                        {' '}
+                        👑 host
+                      </span>
+                    )}
                   </span>
 
                   <span className="muted small seat-status">
@@ -376,7 +410,9 @@ function Lobby({
             ) : (
               status === 'lobby' && (
                 <p className="muted" data-testid="lobby-waiting">
-                  Waiting for the host to start…
+                  {room.hostSeat !== null
+                    ? `Waiting for ${room.seats[room.hostSeat]?.name ?? 'the host'} to start…`
+                    : 'Waiting for the host to start…'}
                 </p>
               )
             )}
