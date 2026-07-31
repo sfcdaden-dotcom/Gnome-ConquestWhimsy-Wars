@@ -13,7 +13,7 @@
 import { describe, expect, it } from 'vitest';
 import type { GameSeal, MatchRecord } from '../engine';
 import { HIDDEN_CARD_ID, chooseAiAction, getPlayerToAct, replayMatch } from '../engine';
-import { createSeal, verifySeal } from './commitment';
+import { commitmentFor, verifySeal } from './commitment';
 import type { PersistedRoom, RoomConnection, RoomHost } from './room';
 import { Room, generateRoomCode } from './room';
 import {
@@ -85,7 +85,27 @@ function makeHost(): RoomHost & { stored: PersistedRoom | null; alarms: number[]
         }),
       );
     },
-    createSeal,
+    /**
+     * A real seal, drawn deterministically.
+     *
+     * `RoomHost.createSeal` exists to be injected, and handing it the live
+     * `createSeal` quietly made every run play a DIFFERENT game: the secret is
+     * what `sealHiddenState` shuffles the deck with, so a CSPRNG draw here
+     * reshuffled it on each run while everything else in this harness — the
+     * LCG above, the clock below — stayed pinned. The tests that drive a game
+     * deep enough for the deck to matter (the shot clock's, mostly) therefore
+     * failed a few runs in a hundred, on nothing that had changed.
+     *
+     * Drawn from the same LCG so it is reproducible, but still a genuine seal:
+     * the commitment is the true hash of this secret and nonce, so `verifySeal`
+     * and `replayMatch` are testing what they claim to test.
+     */
+    async createSeal(): Promise<GameSeal> {
+      const s = h.randomBytes(4);
+      const secret = ((s[0] << 24) | (s[1] << 16) | (s[2] << 8) | s[3]) >>> 0;
+      const nonce = Array.from(h.randomBytes(16), (b) => b.toString(16).padStart(2, '0')).join('');
+      return { secret, nonce, commitment: await commitmentFor(secret, nonce) };
+    },
     scheduleAlarm(at: number) {
       h.alarms.push(at);
     },
