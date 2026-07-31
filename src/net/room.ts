@@ -77,6 +77,8 @@ export interface PersistedRoom {
   phase: RoomPhase;
   seats: PersistedSeat[];
   hostToken: string | null;
+  /** Whoever opened the room. Gets the lobby back whenever they are present. */
+  founderToken: string | null;
   /** token → seat index, or null for a spectator. Never leaves the server. */
   tokens: Record<string, number | null>;
   boardSize: number;
@@ -196,11 +198,15 @@ export class Room {
     const stored = await host.store.load();
     const room = new Room(
       host,
-      stored ?? {
+      // A room written before `founderToken` existed comes back without one;
+      // normalise it here so `ensureHost` never sees `undefined` and mistakes
+      // it for a founder who is present.
+      (stored && { ...stored, founderToken: stored.founderToken ?? null }) ?? {
         code,
         phase: 'lobby',
         seats: defaultSeats(2),
         hostToken: null,
+        founderToken: null,
         tokens: {},
         boardSize: 7,
         gardenPreset: 'random',
@@ -280,6 +286,7 @@ export class Room {
     if (message.name && seat !== null) this.data.seats[seat].name = message.name.slice(0, 24);
 
     this.conns.set(conn.id, { conn, token, seat, announced: null });
+    if (this.data.founderToken === null) this.data.founderToken = token;
     this.ensureHost();
     await this.save();
 
@@ -369,8 +376,19 @@ export class Room {
    * seat into a CPU to watch two bots play is a thing hosts do, and it must
    * not cost them the start button. Mid-game the host may also be away: their
    * seat is still theirs, and there is no lobby left to own.
+   *
+   * The handover is a loan, not a transfer: the founder takes the lobby back
+   * the moment they are present again. Otherwise the single most ordinary
+   * thing a host does while waiting — reload the page to see whether anyone
+   * has arrived — silently and permanently moved the start button to the
+   * guest, and both ends sat looking at "waiting for the host to start".
    */
   private ensureHost(): void {
+    const founder = this.data.founderToken;
+    if (founder !== null && [...this.conns.values()].some((c) => c.token === founder)) {
+      this.data.hostToken = founder;
+      return;
+    }
     const current = this.data.hostToken;
     if (current !== null) {
       const live = [...this.conns.values()].some((c) => c.token === current);
