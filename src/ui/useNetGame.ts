@@ -14,12 +14,13 @@
  * transmission. This hook adds no hiding of its own, and could not: the
  * information is simply not on the wire.
  *
- * Reconnect: the room's token (stored per room code in localStorage) is
- * presented on every hello, including automatic re-dials after a drop, so a
+ * Reconnect: the room's token (held per tab, per room code — see netClient.ts)
+ * is presented on every hello, including automatic re-dials after a drop, so a
  * refresh, a dead tunnel or a hibernated room all return you to your seat.
- * The one unrecoverable close is the server's "seat taken over by a newer
- * connection" (code 4000) — that means another tab presented our token, and
- * redialing would just steal the seat back and forth forever.
+ * The one close we do not re-dial is the server's "seat taken over by a newer
+ * connection" (code 4000): redialing would just steal the seat back and forth
+ * forever. That is a dead end unless the player asks to come back as somebody
+ * new, which is what `rejoin` is for.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -31,7 +32,18 @@ import type { ClientMessage, RoomSnapshot, SeatConfig } from '../net/protocol';
 import { PROTOCOL_VERSION } from '../net/protocol';
 import type { GameSession } from './useGame';
 import { addedEvents, useChatBubbles, useFightPlayback, useToasts } from './sessionFx';
-import { encodeClientMessage, parseServerMessage, reconnectDelayMs, roomSocketUrl, tokenStore } from './netClient';
+import {
+  browserSeatStores,
+  CLAIM_HEARTBEAT_MS,
+  encodeClientMessage,
+  parseServerMessage,
+  reconnectDelayMs,
+  roomSocketUrl,
+  tokenStore,
+} from './netClient';
+
+/** One set of stores per page: the tab id must not change between renders. */
+const seatStores = browserSeatStores();
 
 /** Keepalive interval — keeps idle-connection middleboxes from reaping us. */
 const PING_MS = 45_000;
@@ -57,6 +69,8 @@ export interface NetGame {
   /** Host lobby controls (server-rejected for anyone else). */
   configure: (config: Omit<Extract<ClientMessage, { t: 'configure' }>, 't'>) => void;
   start: () => void;
+  /** Give up this tab's seat and dial back in as a new player. */
+  rejoin: () => void;
   /** Lobby-level toasts (the in-game ones ride on `game`). */
   toasts: GameSession['toasts'];
 }
@@ -68,6 +82,8 @@ export function useNetGame(code: string, name: string): NetGame {
   const [revealed, setRevealed] = useState<{ seal: GameSeal; record: MatchRecord } | null>(null);
   const [takenOver, setTakenOver] = useState(false);
   const [shotClock, setShotClock] = useState<{ seat: PlayerId; deadlineAt: number } | null>(null);
+  // Bumped to force a fresh dial (see `rejoin`); the socket effect keys on it.
+  const [dial, setDial] = useState(0);
 
   const { toasts, pushToast } = useToasts();
   const { playback, noticeFightEvents, skipPlayback } = useFightPlayback(false);
@@ -103,7 +119,7 @@ export function useNetGame(code: string, name: string): NetGame {
 
       ws.onopen = () => {
         attempt = 0;
-        send({ t: 'hello', protocol: PROTOCOL_VERSION, token: tokenStore.load(localStorage, code), name });
+        send({ t: 'hello', protocol: PROTOCOL_VERSION, token: tokenStore.load(seatStores, code), name });
         ping = window.setInterval(() => send({ t: 'ping' }), PING_MS);
       };
 
@@ -116,7 +132,7 @@ export function useNetGame(code: string, name: string): NetGame {
             // it changes who we are — seated out of the spectator list, moved
             // out of a seat it turned into a CPU, handed the lobby. Always
             // take the new identity.
-            tokenStore.save(localStorage, code, msg.you.token);
+            tokenStore.save(seatStores, code, msg.you.token);
             setYou({ seat: msg.you.seat, isHost: msg.you.isHost });
             setRoom(msg.room);
             return;
@@ -180,6 +196,31 @@ export function useNetGame(code: string, name: string): NetGame {
     // Reconnecting on a name change alone would drop the seat mid-game; the
     // name is only a first-hello nicety, so the socket is keyed by room only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [code, dial]);
+
+  // --- the seat claim ------------------------------------------------------
+  // Says "this tab is still using this seat" to the other tabs of this
+  // browser, so they get seats of their own rather than evicting us. It runs
+  // whenever we are in the room, including while re-dialling: a seat is not
+  // released just because the socket blipped.
+  useEffect(() => {
+    tokenStore.heartbeat(seatStores, code);
+    const beat = window.setInterval(() => tokenStore.heartbeat(seatStores, code), CLAIM_HEARTBEAT_MS);
+    return () => window.clearInterval(beat);
+  }, [code]);
+
+  /** Come back as a new player, abandoning the seat this tab was holding. */
+  const rejoin = useCallback(() => {
+    tokenStore.forget(seatStores, code);
+    setTakenOver(false);
+    setYou(null);
+    setRoom(null);
+    setView(null);
+    viewRef.current = null;
+    setRevealed(null);
+    // The old identity's countdown is not ours to keep showing.
+    setShotClock(null);
+    setDial((n) => n + 1);
   }, [code]);
 
   // --- game-over verification ----------------------------------------------
@@ -278,7 +319,7 @@ export function useNetGame(code: string, name: string): NetGame {
           ? 'finished'
           : 'lobby';
 
-  return { status, room, you, game, revealed, configure, start, toasts };
+  return { status, room, you, game, revealed, configure, start, rejoin, toasts };
 }
 
 // Re-exported so screens can type seat edits without reaching into protocol.

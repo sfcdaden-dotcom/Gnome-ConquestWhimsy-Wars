@@ -283,6 +283,41 @@ describe('a room seats the people in it', () => {
     expect(room.phase).toBe('playing');
   });
 
+  // The handover above is a loan. Reloading the page is the obvious way for a
+  // host to check whether anyone has arrived, and it must not cost them the
+  // start button — otherwise both ends sit waiting for a host who is watching
+  // the same "waiting for the host" line.
+  it('gives the lobby back to the host when they return from a refresh', async () => {
+    const { room, c0 } = await lobby(['human', 'human']);
+    const hostToken = c0.last('welcome')!.you.token;
+    const c1 = new FakeConn('c1');
+    await room.hello(c1, { ...HELLO });
+
+    await room.disconnect('c0');
+    expect(c1.last('welcome')?.you.isHost).toBe(true);
+
+    // The refreshed page: a new socket presenting the same token.
+    const again = new FakeConn('c0-again');
+    await room.hello(again, { ...HELLO, token: hostToken });
+
+    expect(again.last('welcome')?.you.isHost).toBe(true);
+    expect(c1.last('welcome')?.you.isHost).toBe(false);
+    await room.handle('c0-again', { t: 'start' });
+    expect(room.phase).toBe('playing');
+  });
+
+  it('leaves the lobby with whoever is here while the host is away', async () => {
+    const { room } = await lobby(['human', 'human']);
+    const c1 = new FakeConn('c1');
+    await room.hello(c1, { ...HELLO });
+    await room.disconnect('c0');
+
+    // Nobody is coming back: c1 can still set the table up and deal.
+    await room.handle('c1', { t: 'configure', seats: [{ index: 0, controller: 'cpu' }] });
+    await room.handle('c1', { t: 'start' });
+    expect(room.phase).toBe('playing');
+  });
+
   it('leaves a host who took a CPU seat in charge of the lobby', async () => {
     const { room, c0 } = await lobby(['cpu', 'cpu']);
     expect(c0.last('welcome')?.you.seat).toBeNull();
