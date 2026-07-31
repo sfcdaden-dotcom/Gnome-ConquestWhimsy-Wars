@@ -423,6 +423,49 @@ h2 {
   color: var(--muted);
 }
 
+.shot-clock {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 2px 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--muted);
+}
+.shot-clock[data-yours='true'] {
+  color: var(--text);
+  border-color: currentColor;
+}
+.shot-clock[data-urgent='true'] {
+  color: var(--error);
+  border-color: currentColor;
+  animation: shot-clock-pulse 1s ease-in-out infinite;
+}
+.shot-clock-who {
+  font-family: inherit;
+  font-size: 0.7rem;
+  opacity: 0.75;
+  max-width: 9ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@keyframes shot-clock-pulse {
+  50% {
+    opacity: 0.5;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shot-clock[data-urgent='true'] {
+    animation: none;
+  }
+}
+
 .main {
   flex: 1;
   display: grid;

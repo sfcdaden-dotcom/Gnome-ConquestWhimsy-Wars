@@ -293,6 +293,13 @@ export function GameScreen({ game: g, onPlayAgain, onQuit }: GameScreenProps) {
             ⏩ fast CPU
           </label>
         )}
+        {g.shotClock && (
+          <ShotClockPill
+            clock={g.shotClock}
+            who={pname(state, g.shotClock.seat)}
+            yours={g.humanSeats.includes(g.shotClock.seat)}
+          />
+        )}
         <span className="seed-tag" title="Game id">{g.tag}</span>
         {state.status === 'finished' && reviewing && (
           <button
@@ -311,7 +318,7 @@ export function GameScreen({ game: g, onPlayAgain, onQuit }: GameScreenProps) {
 
       <div className="main">
         <aside className="left-col">
-          <PlayerPanels state={state} />
+          <PlayerPanels state={state} takenOverSeats={g.takenOverSeats} />
           {state.activeCurses.length > 0 && <CursePanel state={state} />}
         </aside>
 
@@ -439,6 +446,52 @@ export function GameScreen({ game: g, onPlayAgain, onQuit }: GameScreenProps) {
 // ---------------------------------------------------------------------------
 // Small pieces
 // ---------------------------------------------------------------------------
+
+/** How often the countdown redraws. Fast enough that it never looks stuck. */
+const CLOCK_TICK_MS = 250;
+/** Below this the pill goes loud — the point at which it is worth panicking. */
+const CLOCK_URGENT_MS = 15_000;
+
+/**
+ * The shot clock, counting down for whoever is on it (online games only —
+ * locally `shotClock` is null and this never renders).
+ *
+ * The deadline arrived already corrected for clock skew, so this only has to
+ * subtract. It ticks on its own interval rather than on state updates because
+ * between two actions there are no state updates, which is precisely when the
+ * clock matters most.
+ */
+function ShotClockPill({
+  clock,
+  who,
+  yours,
+}: {
+  clock: NonNullable<GameSession['shotClock']>;
+  who: string;
+  yours: boolean;
+}) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    setNow(Date.now());
+    const t = window.setInterval(() => setNow(Date.now()), CLOCK_TICK_MS);
+    return () => window.clearInterval(t);
+  }, [clock.deadlineAt]);
+
+  const left = Math.max(0, clock.deadlineAt - now);
+  const seconds = Math.ceil(left / 1000);
+  return (
+    <span
+      className="shot-clock"
+      data-testid="shot-clock"
+      data-urgent={left <= CLOCK_URGENT_MS ? 'true' : 'false'}
+      data-yours={yours ? 'true' : 'false'}
+      title={yours ? 'Your time to act' : `${who} is on the clock`}
+    >
+      ⏱ {Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, '0')}
+      <span className="shot-clock-who">{yours ? 'you' : who}</span>
+    </span>
+  );
+}
 
 function CursePanel({ state }: { state: GameState }) {
   return (

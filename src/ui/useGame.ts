@@ -56,12 +56,31 @@ export interface GameSession {
   /** Pass-the-device interstitial required before the next human acts. */
   needsPass: boolean;
   confirmPass: () => void;
+  /**
+   * The shot clock, or null when nothing is being timed — which is always the
+   * case locally: a hot-seat game has nobody to grief but yourself. Online it
+   * carries the seat on the clock and when it runs out, already converted to
+   * THIS device's wall clock (see useNetGame), so rendering it is a plain
+   * `deadlineAt - Date.now()`.
+   */
+  shotClock: { seat: PlayerId; deadlineAt: number } | null;
+  /**
+   * Seats the room took over mid-game because their player stopped playing.
+   * They are CPU seats to the ROOM but still read as human in `state` — the
+   * engine's config is fixed when the game is created and cannot be edited
+   * afterwards without the match record ceasing to replay. So the takeover is
+   * carried here, alongside the state, rather than inside it.
+   */
+  takenOverSeats: PlayerId[];
   /** Short label for the top bar: the seed locally, the room code online. */
   tag: string;
 }
 
 const CPU_DELAY_MS = 400;
 const CPU_FAST_MS = 25;
+
+/** Shared empty list, so a local session's identity stays stable per render. */
+const EMPTY_SEATS: PlayerId[] = [];
 
 // ---------------------------------------------------------------------------
 // Hook
@@ -177,6 +196,8 @@ export function useGame(options: CreateGameOptions, seed: number): GameSession {
     revealedSeat,
     needsPass,
     confirmPass,
+    shotClock: null,
+    takenOverSeats: EMPTY_SEATS,
     tag: `#${seed}`,
   };
 }

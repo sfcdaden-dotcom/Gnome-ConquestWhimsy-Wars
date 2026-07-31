@@ -24,7 +24,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { Action, PlayerView } from '../engine';
+import type { Action, PlayerId, PlayerView } from '../engine';
 import { getPlayerToAct } from '../engine';
 import type { GameSeal, MatchRecord } from '../engine';
 import { verifySeal } from '../net/commitment';
@@ -81,6 +81,7 @@ export function useNetGame(code: string, name: string): NetGame {
   const [view, setView] = useState<PlayerView | null>(null);
   const [revealed, setRevealed] = useState<{ seal: GameSeal; record: MatchRecord } | null>(null);
   const [takenOver, setTakenOver] = useState(false);
+  const [shotClock, setShotClock] = useState<{ seat: PlayerId; deadlineAt: number } | null>(null);
   // Bumped to force a fresh dial (see `rejoin`); the socket effect keys on it.
   const [dial, setDial] = useState(0);
 
@@ -91,6 +92,10 @@ export function useNetGame(code: string, name: string): NetGame {
   const wsRef = useRef<WebSocket | null>(null);
   const viewRef = useRef<PlayerView | null>(null);
   viewRef.current = view;
+  // The socket effect is built once, so anything its handlers need to read
+  // "as of now" — rather than as of the first dial — comes through a ref.
+  const roomRef = useRef<RoomSnapshot | null>(null);
+  roomRef.current = room;
 
   const send = useCallback((message: ClientMessage) => {
     const ws = wsRef.current;
@@ -104,6 +109,8 @@ export function useNetGame(code: string, name: string): NetGame {
     let ws: WebSocket | null = null;
     let redial: number | undefined;
     let ping: number | undefined;
+
+    const seatName = (seat: number) => roomRef.current?.seats[seat]?.name ?? `Seat ${seat + 1}`;
 
     function dial() {
       if (disposed) return;
@@ -140,6 +147,20 @@ export function useNetGame(code: string, name: string): NetGame {
             noticeChatEvents(addedEvents(prev, msg.view));
             viewRef.current = msg.view;
             setView(msg.view);
+            // The server stamps every clock with its OWN wall clock, so the
+            // remaining time is a difference of two server timestamps and a
+            // device whose clock is minutes off still counts down correctly.
+            setShotClock(
+              msg.clock ? { seat: msg.clock.seat, deadlineAt: Date.now() + (msg.clock.deadline - msg.clock.now) } : null,
+            );
+            return;
+          }
+          case 'timedOut': {
+            pushToast(`⏱ ${seatName(msg.seat)} ran out of time — the room played the turn out.`, 'info');
+            return;
+          }
+          case 'seatTakenOver': {
+            pushToast(`🤖 ${seatName(msg.seat)} stopped playing — a CPU has taken the seat.`, 'info');
             return;
           }
           case 'revealed':
@@ -197,6 +218,8 @@ export function useNetGame(code: string, name: string): NetGame {
     setView(null);
     viewRef.current = null;
     setRevealed(null);
+    // The old identity's countdown is not ours to keep showing.
+    setShotClock(null);
     setDial((n) => n + 1);
   }, [code]);
 
@@ -229,6 +252,13 @@ export function useNetGame(code: string, name: string): NetGame {
 
   const mySeat = you?.seat ?? null;
 
+  // The room's word, not the state's: `state.players[].controller` is fixed
+  // when the game is created (see GameSession.takenOverSeats).
+  const takenOverSeats = useMemo(
+    () => (room?.seats ?? []).filter((s) => s.takenOver).map((s) => s.index),
+    [room?.seats],
+  );
+
   const game = useMemo<GameSession | null>(() => {
     if (!view) return null;
     const playerToAct = view.status === 'finished' ? null : getPlayerToAct(view);
@@ -253,9 +283,25 @@ export function useNetGame(code: string, name: string): NetGame {
       revealedSeat: mySeat,
       needsPass: false,
       confirmPass: () => {},
+      shotClock,
+      takenOverSeats,
       tag: `room ${code}`,
     };
-  }, [view, dispatch, toasts, pushToast, playback, skipPlayback, chatBubbles, chatMuted, toggleChatMuted, mySeat, code]);
+  }, [
+    view,
+    dispatch,
+    toasts,
+    pushToast,
+    playback,
+    skipPlayback,
+    chatBubbles,
+    chatMuted,
+    toggleChatMuted,
+    mySeat,
+    shotClock,
+    takenOverSeats,
+    code,
+  ]);
 
   const configure = useCallback(
     (config: Omit<Extract<ClientMessage, { t: 'configure' }>, 't'>) => send({ t: 'configure', ...config } as ClientMessage),

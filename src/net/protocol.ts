@@ -31,6 +31,58 @@ export const ROOM_CODE_LENGTH = 6;
 
 export type RoomPhase = 'lobby' | 'playing' | 'finished';
 
+// ---------------------------------------------------------------------------
+// The shot clock
+// ---------------------------------------------------------------------------
+
+/**
+ * How long a human seat has to send its next action. Every action that seat
+ * takes restarts it, so this is a per-*action* budget, not a per-turn one: a
+ * turn with eight moves in it gets eight minutes if it wants them, and nobody
+ * is ever rushed for playing slowly. It only bites on a seat that has stopped
+ * playing.
+ */
+export const SHOT_CLOCK_MS = 60_000;
+
+/**
+ * The backstop, and the reason the per-action clock is not enough on its own.
+ *
+ * Some actions are state-neutral by design — `playCard` → `cancelTargeting`
+ * leaves the card in hand and the game exactly as it was (see TECH_DEBT.md,
+ * "Stall vectors that rules cannot close"). A seat that spins that loop once a
+ * minute would restart its per-action clock forever and hold the table
+ * hostage. So a seat also gets a total budget for one uninterrupted stretch of
+ * control, which nothing it does restarts; it resets only when control
+ * genuinely passes to somebody else. It is set well above any honest turn.
+ */
+export const CONTROL_BUDGET_MS = 300_000;
+
+/**
+ * Consecutive timeouts before the room stops waiting for a seat and gives it
+ * to a CPU for the rest of the game.
+ *
+ * More than one, because a single timeout is usually a phone call or a tunnel
+ * and the conversion is not reversible mid-game. Few enough that the table is
+ * not made to play three-quarters of a game around an empty chair. Any action
+ * from the seat resets the count — coming back and playing is all it takes.
+ */
+export const TAKEOVER_AFTER_TIMEOUTS = 3;
+
+/** The difficulty a taken-over seat is played at. */
+export const TAKEOVER_DIFFICULTY: AiDifficulty = 'easy';
+
+/**
+ * The live clock as a client sees it. `now` is the SERVER's wall clock at the
+ * moment the frame was built: a client that renders `deadline - now` as a
+ * duration is immune to the two clocks disagreeing, which they routinely do by
+ * enough to matter at this scale.
+ */
+export interface ShotClock {
+  seat: number;
+  deadline: number;
+  now: number;
+}
+
 /** A seat as everyone in the room sees it. Carries no tokens. */
 export interface SeatInfo {
   index: number;
@@ -40,6 +92,12 @@ export interface SeatInfo {
   difficulty: AiDifficulty;
   /** Human seats only: is somebody connected to it right now? */
   connected: boolean;
+  /**
+   * The room took this seat over mid-game because its player stopped playing —
+   * as opposed to a CPU seat the host set up in the lobby. Its original player
+   * may still be in the room, watching.
+   */
+  takenOver: boolean;
 }
 
 /** The room as everyone in it sees it. Public by construction. */
@@ -101,8 +159,21 @@ export type ServerMessage =
    */
   | { t: 'welcome'; you: { seat: number | null; token: string; isHost: boolean }; room: RoomSnapshot }
   | { t: 'room'; room: RoomSnapshot }
-  /** The game, redacted for the receiving seat. */
-  | { t: 'state'; view: PlayerView }
+  /**
+   * The game, redacted for the receiving seat. `clock` is the shot clock for
+   * whoever must act — null when nobody is on it (a CPU seat is thinking, or
+   * the game is over). It rides on `state` rather than on `room` because it
+   * changes with every action, which is exactly when `state` goes out.
+   */
+  | { t: 'state'; view: PlayerView; clock: ShotClock | null }
+  /** A seat ran out of time and the room played its turn out for it. */
+  | { t: 'timedOut'; seat: number }
+  /**
+   * A seat timed out once too often and now belongs to a CPU for the rest of
+   * the game. Its player is not thrown out of the room — they keep watching,
+   * and `welcome` will have moved them to `seat: null`.
+   */
+  | { t: 'seatTakenOver'; seat: number }
   /**
    * Game over: the host reveals the secret it committed to at the start, with
    * the full record. Replay it and check it against `room.commitment` — see

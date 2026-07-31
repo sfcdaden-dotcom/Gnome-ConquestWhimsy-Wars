@@ -29,7 +29,12 @@ import {
 // Player panels
 // ---------------------------------------------------------------------------
 
-export function PlayerPanels({ state }: { state: GameState }) {
+/**
+ * `takenOverSeats` are seats the room is playing because their player stopped
+ * playing. They still read as human in `state` — the engine's config is fixed
+ * at creation — so the panel takes the room's word for who is at the controls.
+ */
+export function PlayerPanels({ state, takenOverSeats = [] }: { state: GameState; takenOverSeats?: PlayerId[] }) {
   const actor = state.status === 'finished' ? null : getPlayerToAct(state);
   const active = state.turn?.activePlayer ?? null;
   return (
@@ -48,7 +53,12 @@ export function PlayerPanels({ state }: { state: GameState }) {
             <div className="pp-head">
               <span className="pp-dot" />
               <span className="pp-name">{p.name}</span>
-              <span className="pp-ctl">{p.controller === 'cpu' ? '🤖' : '🧑'}</span>
+              <span
+                className="pp-ctl"
+                title={takenOverSeats.includes(p.id) ? 'Stopped playing — a CPU took the seat' : undefined}
+              >
+                {p.controller === 'cpu' || takenOverSeats.includes(p.id) ? '🤖' : '🧑'}
+              </span>
               {p.id === actor && <span className="pp-act">acting</span>}
             </div>
             {p.status === 'playing' ? (

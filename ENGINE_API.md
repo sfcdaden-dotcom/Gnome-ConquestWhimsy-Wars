@@ -187,6 +187,11 @@ call closes a whole stalled turn including the moves Antsy Pants forces before
 `endTurn` becomes legal. It is pure, like `applyAction`, and identical on every
 host — a timed-out game replays deterministically.
 
+The room is the host that decides *when* (see MULTIPLAYER.md, "The shot clock").
+It applies `getTimeoutAction` one action at a time rather than calling
+`applyTimeout`, which is the same sequence of states, but leaves every action in
+the match record so a timed-out game still replays and verifies.
+
 ## Quick chat (out-of-band action)
 
 `{ type: 'quickChat', player, phraseId }` says one of the fixed phrases in
