@@ -26,6 +26,11 @@
  *    out by itself, so the room is what decides a seat has stopped playing and
  *    applies the engine's timeout policy on its behalf. CPU pacing and the
  *    shot clock share one alarm, because a Durable Object has exactly one.
+ *  - **The budget.** What a client may cost. Nothing a flood can send makes the
+ *    room do something wrong, but every message costs work and every message
+ *    that lands costs one send per connection — so the room meters its intake,
+ *    per connection and per room, and hangs up on a sender that will not stop
+ *    (see ./ratelimit.ts).
  *
  * PERSISTENCE. The room stores the *record* (config, seed, seal, actions), not
  * the state: replaying it rebuilds the state exactly, it stays small enough to
@@ -66,6 +71,9 @@ import type {
   ShotClock,
 } from './protocol';
 import {
+  CLOSE_RATE_LIMITED,
+  CLOSE_SEAT_TAKEN_OVER,
+  CLOSE_TOO_MANY_CONNECTIONS,
   CONTROL_BUDGET_MS,
   PROTOCOL_VERSION,
   ROOM_CODE_ALPHABET,
@@ -74,6 +82,16 @@ import {
   TAKEOVER_AFTER_TIMEOUTS,
   TAKEOVER_DIFFICULTY,
 } from './protocol';
+import {
+  CONN_BUCKET_CAPACITY,
+  CONN_BUCKET_REFILL_PER_SEC,
+  FLOOD_DISCONNECT_AFTER,
+  MAX_CONNECTIONS,
+  MESSAGE_COST,
+  ROOM_BUCKET_CAPACITY,
+  ROOM_BUCKET_REFILL_PER_SEC,
+  TokenBucket,
+} from './ratelimit';
 
 // ---------------------------------------------------------------------------
 // Host interface (everything platform-shaped)
@@ -210,6 +228,26 @@ interface ConnState {
   announced: { seat: number | null; isHost: boolean } | null;
 }
 
+/**
+ * One connection's intake budget, and what it has done with it.
+ *
+ * Kept beside `conns` rather than inside `ConnState` because it starts earlier:
+ * `hello` is itself metered, and a connection has no `ConnState` until its
+ * `hello` has been accepted.
+ */
+interface Meter {
+  bucket: TokenBucket;
+  /**
+   * Has this connection already been told it is over budget? One warning per
+   * episode, not one per dropped message: answering every message of a flood
+   * with an error frame is the same one-in-one-out amplification the limit
+   * exists to prevent. Cleared as soon as a message gets through.
+   */
+  warned: boolean;
+  /** Consecutive messages dropped on this connection's OWN bucket. */
+  dropped: number;
+}
+
 export class Room {
   private host: RoomHost;
   private data: PersistedRoom;
@@ -221,6 +259,15 @@ export class Room {
    * play the CPU's move immediately rather than sit on it.
    */
   private cpuWakeAt: number | null = null;
+  /** Per-connection intake budgets, by connection id. Never persisted. */
+  private readonly meters = new Map<string, Meter>();
+  /**
+   * Everyone's intake budget, together. Built on first use rather than in the
+   * constructor so it starts full at the moment the room starts being used —
+   * a room that has been sitting in storage for an hour has not been earning
+   * tokens, and charging it for the wait would be the wrong sign.
+   */
+  private roomBucket: TokenBucket | null = null;
 
   private constructor(host: RoomHost, data: PersistedRoom) {
     this.host = host;
@@ -298,6 +345,28 @@ export class Room {
     }
 
     const known = message.token !== undefined && message.token in this.data.tokens;
+
+    // A crowd cap, checked before anything is minted or stored. Broadcast is
+    // O(connections), so an uncapped room is an amplifier with an adjustable
+    // gain. Anyone holding a token the room already knows is exempt: coming
+    // back to your own seat must not depend on how many spectators arrived
+    // while you were gone, and the exemption grants nothing — the takeover
+    // below means one token still holds exactly one live connection.
+    if (!known && !this.conns.has(conn.id) && this.conns.size >= MAX_CONNECTIONS) {
+      conn.send({
+        t: 'error',
+        code: 'ROOM_FULL',
+        message: 'This room is already holding as many connections as it will hold',
+      });
+      conn.close(CLOSE_TOO_MANY_CONNECTIONS, 'too many connections');
+      return;
+    }
+
+    // Metered like any other message — `hello` writes storage and broadcasts,
+    // and the transport hands every one of them straight here rather than
+    // through `handle`, so this is the only place it can be charged.
+    if (!this.admit(conn.id, conn, 'hello')) return;
+
     const token = known ? (message.token as string) : this.mintToken();
 
     // One token, one live connection. A second tab (or a reconnect the room
@@ -308,7 +377,8 @@ export class Room {
     for (const [id, existing] of this.conns) {
       if (existing.token !== token || id === conn.id) continue;
       this.conns.delete(id);
-      existing.conn.close(4000, 'seat taken over by a newer connection');
+      this.meters.delete(id);
+      existing.conn.close(CLOSE_SEAT_TAKEN_OVER, 'seat taken over by a newer connection');
     }
 
     let seat: number | null;
@@ -482,6 +552,7 @@ export class Room {
    */
   async disconnect(connId: string): Promise<void> {
     this.conns.delete(connId);
+    this.meters.delete(connId);
     if (this.data.phase === 'lobby') this.seatSpectators();
     this.ensureHost();
     await this.save();
@@ -489,11 +560,82 @@ export class Room {
     this.broadcastRoom();
   }
 
+  // --- intake metering -----------------------------------------------------
+
+  /**
+   * Should this message be served? Charges for it if so.
+   *
+   * Two buckets, in this order. The connection's own budget is checked first,
+   * and only a message it could afford is charged to the room's — so a client
+   * already over its limit cannot drain the shared ceiling on its way out, and
+   * one flooder cannot spend everybody else's budget for them.
+   *
+   * A refusal is quiet after the first: one error frame per episode, cleared by
+   * the next message that gets through. Answering a flood message-for-message
+   * would be the same amplification the limit exists to stop.
+   */
+  private admit(connId: string, conn: RoomConnection, t: ClientMessage['t']): boolean {
+    const now = this.host.now();
+    let meter = this.meters.get(connId);
+    if (!meter) {
+      meter = {
+        bucket: new TokenBucket(CONN_BUCKET_CAPACITY, CONN_BUCKET_REFILL_PER_SEC, now),
+        warned: false,
+        dropped: 0,
+      };
+      this.meters.set(connId, meter);
+    }
+    this.roomBucket ??= new TokenBucket(ROOM_BUCKET_CAPACITY, ROOM_BUCKET_REFILL_PER_SEC, now);
+    const cost = MESSAGE_COST[t];
+
+    if (!meter.bucket.take(now, cost)) {
+      meter.dropped++;
+      if (meter.dropped >= FLOOD_DISCONNECT_AFTER) {
+        // Told to slow down, and did not. The parse is all this connection can
+        // still cost us, and hanging up is the only way to stop paying it. The
+        // meter stays behind until the transport reports the close, so a
+        // message already in flight cannot arrive to a fresh, full bucket.
+        this.conns.delete(connId);
+        conn.close(CLOSE_RATE_LIMITED, 'rate limited');
+      } else {
+        this.warn(meter, conn, 'You are sending faster than the room will serve — slow down.');
+      }
+      return false;
+    }
+
+    // `hello` is charged to the connection and NOT to the room.
+    //
+    // The shared ceiling is about sustained work from clients already in the
+    // room; arrivals are bounded by a different mechanism, and by a hard one —
+    // a fresh connection's bucket always covers its first `hello`, and
+    // `MAX_CONNECTIONS` caps how many fresh connections there can be. Charging
+    // arrivals to the ceiling as well would mean that every legitimate mass
+    // reconnect — the whole room re-introducing itself after the Durable
+    // Object wakes from hibernation, or a table's worth of phones coming back
+    // from one flaky access point — looked precisely like an attack, and the
+    // room would answer the reconnect it exists to support with "try later".
+    if (t !== 'hello' && !this.roomBucket.take(now, cost)) {
+      this.warn(meter, conn, 'The room is busier than it will serve right now — try again in a moment.');
+      return false;
+    }
+
+    meter.warned = false;
+    meter.dropped = 0;
+    return true;
+  }
+
+  private warn(meter: Meter, conn: RoomConnection, message: string): void {
+    if (meter.warned) return;
+    meter.warned = true;
+    conn.send({ t: 'error', code: 'RATE_LIMITED', message });
+  }
+
   // --- messages ------------------------------------------------------------
 
   async handle(connId: string, message: ClientMessage): Promise<void> {
     const c = this.conns.get(connId);
     if (!c) return;
+    if (!this.admit(connId, c.conn, message.t)) return;
     try {
       switch (message.t) {
         case 'hello':

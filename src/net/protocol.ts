@@ -32,6 +32,34 @@ export const ROOM_CODE_LENGTH = 6;
 export type RoomPhase = 'lobby' | 'playing' | 'finished';
 
 // ---------------------------------------------------------------------------
+// Close codes
+// ---------------------------------------------------------------------------
+
+/**
+ * Why the room hung up. All in the 4000–4999 range WebSocket reserves for the
+ * application, and all meaning "do not simply redial and carry on" to some
+ * degree — which is the whole reason they are worth naming: a client that
+ * treats every close as a dropped tunnel will fight a takeover forever, or
+ * hammer a room that has just told it to slow down.
+ */
+
+/**
+ * A newer connection presented this seat's token. The old socket is closed
+ * rather than left sitting beside itself; the client must NOT redial, or two
+ * tabs trade the seat back and forth indefinitely.
+ */
+export const CLOSE_SEAT_TAKEN_OVER = 4000;
+
+/**
+ * The room stopped reading this socket because it would not stop flooding.
+ * Redialing is allowed — this is not a ban — but only after a long backoff.
+ */
+export const CLOSE_RATE_LIMITED = 4001;
+
+/** The room is already holding as many connections as it will hold. */
+export const CLOSE_TOO_MANY_CONNECTIONS = 4003;
+
+// ---------------------------------------------------------------------------
 // The shot clock
 // ---------------------------------------------------------------------------
 
@@ -188,9 +216,10 @@ export type RoomErrorCode =
   | 'NOT_YOUR_SEAT' // the action's player is not this connection's seat
   | 'NOT_HOST' // a lobby command from someone who does not own the lobby
   | 'WRONG_PHASE' // right message, wrong moment (start twice, act in a lobby)
-  | 'ROOM_FULL' // no free human seat to claim
+  | 'ROOM_FULL' // the room will not hold another connection
   | 'BAD_CONFIG' // lobby settings the engine would reject
-  | 'ILLEGAL_ACTION'; // the engine said no
+  | 'ILLEGAL_ACTION' // the engine said no
+  | 'RATE_LIMITED'; // sending faster than the room will serve (see ratelimit.ts)
 
 /** Narrow an untrusted parsed JSON payload to a ClientMessage. */
 export function parseClientMessage(raw: unknown): ClientMessage | null {

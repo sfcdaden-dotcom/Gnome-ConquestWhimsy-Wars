@@ -34,7 +34,13 @@ assets).
 ### Cloudflare Workers (required for multiplayer)
 1. `npm run deploy` — builds and publishes the Worker, its assets and the
    `ROOMS` Durable Object namespace (declared in `wrangler.jsonc`).
-2. `npx wrangler dev` runs the whole thing locally, rooms included.
+2. `npx wrangler dev` runs the whole thing locally, rooms included — the
+   per-IP rate-limit bindings (`ROOM_CREATE_LIMIT`, `ROOM_JOIN_LIMIT`, also
+   declared in `wrangler.jsonc`) are enforced locally too, so a local run
+   behaves like the deployed one. Both are optional in the Worker's env type:
+   a runtime that does not provide them serves unlimited rather than failing
+   to boot. The limits inside a room are the room's own and need no binding —
+   see MULTIPLAYER.md, "Rate limiting".
 3. Durable Objects are the only paid-tier requirement; everything else fits
    the free tier.
 

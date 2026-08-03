@@ -18,9 +18,11 @@
  * is presented on every hello, including automatic re-dials after a drop, so a
  * refresh, a dead tunnel or a hibernated room all return you to your seat.
  * The one close we do not re-dial is the server's "seat taken over by a newer
- * connection" (code 4000): redialing would just steal the seat back and forth
- * forever. That is a dead end unless the player asks to come back as somebody
- * new, which is what `rejoin` is for.
+ * connection" (`CLOSE_SEAT_TAKEN_OVER`): redialing would just steal the seat
+ * back and forth forever. That is a dead end unless the player asks to come
+ * back as somebody new, which is what `rejoin` is for. A close for flooding
+ * (`CLOSE_RATE_LIMITED`) IS re-dialed, but only after a long backoff — see
+ * RATE_LIMITED_BACKOFF_ATTEMPT.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -29,7 +31,7 @@ import { getPlayerToAct } from '../engine';
 import type { GameSeal, MatchRecord } from '../engine';
 import { verifySeal } from '../net/commitment';
 import type { ClientMessage, RoomSnapshot, SeatConfig } from '../net/protocol';
-import { PROTOCOL_VERSION } from '../net/protocol';
+import { CLOSE_RATE_LIMITED, CLOSE_SEAT_TAKEN_OVER, PROTOCOL_VERSION } from '../net/protocol';
 import type { GameSession } from './useGame';
 import { addedEvents, useChatBubbles, useFightPlayback, useToasts } from './sessionFx';
 import {
@@ -47,8 +49,14 @@ const seatStores = browserSeatStores();
 
 /** Keepalive interval — keeps idle-connection middleboxes from reaping us. */
 const PING_MS = 45_000;
-/** The server's "another connection took this seat" close code. */
-const TAKEN_OVER_CODE = 4000;
+/**
+ * How hard to back off after the room hangs up for flooding. The room is
+ * telling us we sent more than it will serve, so the one thing a re-dial must
+ * not do is arrive immediately — `reconnectDelayMs` at this attempt is 8s.
+ * This client has no way to produce a flood by playing, so reaching it means
+ * something is wrong here, and the honest response is to go quiet for a while.
+ */
+const RATE_LIMITED_BACKOFF_ATTEMPT = 3;
 
 export type NetStatus =
   | 'connecting' // no welcome yet (first dial or a re-dial after a drop)
@@ -177,9 +185,13 @@ export function useNetGame(code: string, name: string): NetGame {
       ws.onclose = (e) => {
         window.clearInterval(ping);
         if (disposed) return;
-        if (e.code === TAKEN_OVER_CODE) {
+        if (e.code === CLOSE_SEAT_TAKEN_OVER) {
           setTakenOver(true);
           return; // deliberate: re-dialing would fight the newer tab forever
+        }
+        if (e.code === CLOSE_RATE_LIMITED) {
+          pushToast('⚠ The room closed the connection for sending too fast. Reconnecting shortly…', 'error');
+          attempt = Math.max(attempt, RATE_LIMITED_BACKOFF_ATTEMPT);
         }
         redial = window.setTimeout(dial, reconnectDelayMs(attempt++));
       };
