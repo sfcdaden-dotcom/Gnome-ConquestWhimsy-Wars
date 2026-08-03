@@ -32,6 +32,17 @@ npm run test:e2e   # playwright: builds, serves and plays the app in a browser
 CI (`.github/workflows/ci.yml`) runs all of the above from a clean `npm ci` on
 every push and pull request.
 
+## Art
+
+Gardens and units are hand-drawn PNGs in `src/assets/art/`, not emoji, so the
+board looks the same on every platform. They are drawn in code —
+`python3 tools/art/generate.py` (needs Pillow) re-renders the whole set at
+128px from shape primitives in a shared palette — and the checked-in PNGs are
+what the app ships; running the script is only needed when the art itself
+changes. `src/ui/art.tsx` exposes them as `<GardenIcon>` and `<UnitIcon>`;
+sizing is left to the stylesheet, because an icon is a board fixture in one
+place and a word in a sentence in another.
+
 ## Architecture in one paragraph
 
 `src/engine` is a pure, deterministic, JSON-serializable state machine —
@@ -59,8 +70,11 @@ src/worker/   Cloudflare Worker entry + the room Durable Object
 src/ui/       App shell + screen router, home screen, rules viewer, setup
               screen (difficulty + preset picker), online menu/lobby, game
               screen, board, panels, decision panel, quick chat, preset
-              editor, error boundary, meta text; the local (useGame) and
-              networked (useNetGame) sessions behind one GameSession shape
+              editor, error boundary, meta text, art (icon components); the
+              local (useGame) and networked (useNetGame) sessions behind one
+              GameSession shape
+src/assets/   the game's picture assets (see Art below)
+tools/art/    the script that draws them
 e2e/          Playwright browser tests (play the real app through the DOM)
 RULES.md      tabletop rules (with [RULING] clarifications)
 CARDS.md      the 23 Whimsy cards + 5 Curses

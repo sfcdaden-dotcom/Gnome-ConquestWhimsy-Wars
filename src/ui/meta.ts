@@ -32,7 +32,6 @@ export function randomSeed(): number {
 }
 
 export interface GardenMeta {
-  emoji: string;
   label: string;
   blurb: string;
   /** Name of the upgraded form (Garden Upgrades, RULES.md). */
@@ -43,42 +42,36 @@ export interface GardenMeta {
 
 export const GARDEN_META: Record<GardenType, GardenMeta> = {
   home: {
-    emoji: '🏡',
     label: 'Home Garden',
     blurb: 'Harvest: 1 Wish or 1 Gnome. Lose it, lose the game.',
     upgradeLabel: 'Home Garden',
     upgradeBlurb: 'Home Gardens cannot be upgraded.',
   },
   dandelion: {
-    emoji: '🌼',
     label: 'Dandelion',
     blurb: 'Harvest: up to 2 occupying gnomes gain 1 Wish each.',
     upgradeLabel: 'Golden Dandelion',
     upgradeBlurb: 'Golden Dandelion: harvest unchanged, and your wish limit is +1 while you control it.',
   },
   mushroom: {
-    emoji: '🍄',
     label: 'Mushroom',
     blurb: 'Harvest: clone up to 2 occupying gnomes.',
     upgradeLabel: 'Elder Mushroom',
     upgradeBlurb: 'Elder Mushroom: harvest unchanged, and your gnome board limit is +1 while you control it.',
   },
   flytrap: {
-    emoji: '🪤',
     label: 'Flytrap',
     blurb: 'Neutral hazard: fights anyone who enters or harvests here.',
     upgradeLabel: 'Snapping Maw',
     upgradeBlurb: 'Snapping Maw: the flytrap adds +1 to its die — against everyone, including you.',
   },
   maize: {
-    emoji: '🌽',
     label: 'Maize',
     blurb: 'Exit costs 1 Wish. Harvest roll < 4 doubles the cost.',
     upgradeLabel: 'Thorn Maize',
     upgradeBlurb: 'Thorn Maize: exit costs 2 Wishes (harvest doubling makes it 4).',
   },
   slippery: {
-    emoji: '🧊',
     label: 'Slippery',
     blurb: 'Entry: slide 1 space. Harvest: slide anywhere adjacent (incl. diagonal).',
     upgradeLabel: 'Glacier',
@@ -86,7 +79,6 @@ export const GARDEN_META: Record<GardenType, GardenMeta> = {
       'Glacier: entry slides may go diagonally; harvest slides exactly 2 orthogonally in a straight line (whooshing past the middle space) or 1 diagonally.',
   },
   tunnel: {
-    emoji: '🕳️',
     label: 'Tunnel',
     blurb: 'Entry: hop to another tunnel. Harvest: tunnel or hop to a garden you occupy.',
     upgradeLabel: 'Grand Burrow',
@@ -190,7 +182,7 @@ export function describeEvent(state: GameState, ev: GameEvent): string {
     case 'entryChainCapped':
       return `${who(state, ev)} is too dizzy to keep hopping (${ev.hops} in a row) and stays at ${posStr(ev.pos)}.`;
     case 'gardenPlanted':
-      return `${pname(state, ev.player)} plants a ${GARDEN_META[ev.gardenType].label} ${GARDEN_META[ev.gardenType].emoji} at ${posStr(ev.pos)}.`;
+      return `${pname(state, ev.player)} plants a ${GARDEN_META[ev.gardenType].label} at ${posStr(ev.pos)}.`;
     case 'gardenUpgraded':
       return `⭐ ${pname(state, ev.player)} upgrades the ${GARDEN_META[ev.gardenType].label} at ${posStr(ev.pos)} into a ${GARDEN_META[ev.gardenType].upgradeLabel}!`;
     case 'gardenDestroyed':
@@ -254,7 +246,7 @@ export function describeEvent(state: GameState, ev: GameEvent): string {
     case 'playerEliminated':
       return `💀 ${pname(state, ev.player)} is eliminated (${ev.reason === 'home-captured' ? 'home garden captured' : 'out of reinforcements'}).`;
     case 'playerSnailified':
-      return `🐌 ${pname(state, ev.player)} returns as an Immortal Snail at ${posStr(ev.pos)}!`;
+      return `${pname(state, ev.player)} returns as an Immortal Snail at ${posStr(ev.pos)}!`;
     case 'snailifyDeclined':
       return `${pname(state, ev.player)} leaves the game.`;
     case 'turnEnded':
@@ -282,7 +274,7 @@ export function describeAction(state: GameState, a: Action): string {
     case 'chooseHarvest':
       return `Harvest ${a.sourceKey === 'home' ? 'Home Garden' : `garden at (${a.sourceKey})`}`;
     case 'homeHarvest':
-      return a.take === 'wish' ? '✨ Take 1 Wish' : '🧙 Spawn a Gnome';
+      return a.take === 'wish' ? '✨ Take 1 Wish' : 'Spawn a Gnome';
     case 'mushroomClones':
       return `Clone ${a.count} gnome${a.count === 1 ? '' : 's'}`;
     case 'slide':
@@ -298,7 +290,7 @@ export function describeAction(state: GameState, a: Action): string {
     case 'discardCard':
       return `Discard ${cardName(a.cardId)}`;
     case 'snailify':
-      return a.accept ? '🐌 Become the Immortal Snail' : 'Leave the game';
+      return a.accept ? 'Become the Immortal Snail' : 'Leave the game';
     case 'sacrificeGnome': {
       const u = state.units[a.unitId];
       return `Sacrifice ${unitNameLive(state, a.unitId)}${u ? ` at ${posStr(u.pos)}` : ''}`;

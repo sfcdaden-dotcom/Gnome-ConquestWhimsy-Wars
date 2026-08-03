@@ -24,6 +24,7 @@ import {
   posStr,
   sideName,
 } from './meta';
+import { GardenIcon, UnitIcon } from './art';
 
 // ---------------------------------------------------------------------------
 // Player panels
@@ -64,13 +65,23 @@ export function PlayerPanels({ state, takenOverSeats = [] }: { state: GameState;
             {p.status === 'playing' ? (
               <div className="pp-stats">
                 <span title={`Wishes (cap ${cap})`}>✨ {p.wishes}/{cap}</span>
-                <span title="Gnomes on board / limit">🧙 {gnomesOnBoard(state, p.id)}/{gnomeBoardCap(state, p.id)}</span>
+                <span title="Gnomes on board / limit">
+                  <UnitIcon className="inline-art" /> {gnomesOnBoard(state, p.id)}/{gnomeBoardCap(state, p.id)}
+                </span>
                 <span title="Reserve gnomes remaining">📦 {reserveGnomes(state, p.id)}</span>
                 <span title="Cards in hand">🃏 {p.hand.length}</span>
               </div>
             ) : (
               <div className="pp-stats">
-                <span>{p.status === 'snail' ? '🐌 Immortal Snail' : '💀 Out of the game'}</span>
+                <span>
+                  {p.status === 'snail' ? (
+                    <>
+                      <UnitIcon kind="snail" className="inline-art" /> Immortal Snail
+                    </>
+                  ) : (
+                    '💀 Out of the game'
+                  )}
+                </span>
               </div>
             )}
           </div>
@@ -255,7 +266,12 @@ function FightSideBadge({
   const color = side.kind === 'player' ? playerColor(side.player) : '#3c7a3c';
   return (
     <span className="fight-side" style={{ '--pc': color } as CSSProperties}>
-      {side.kind === 'flytrap' ? '🪤' : '🧙'} {sideName(state, side)}
+      {side.kind === 'flytrap' ? (
+        <GardenIcon type="flytrap" className="inline-art" />
+      ) : (
+        <UnitIcon className="inline-art" />
+      )}{' '}
+      {sideName(state, side)}
       <span className="side-role">{idx === 0 ? 'defender' : 'attacker'}</span>
     </span>
   );

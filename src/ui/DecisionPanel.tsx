@@ -9,6 +9,7 @@ import type { ReactNode } from 'react';
 import type { Action, CardId, GameState, PendingDecision, PlayerId } from '../engine';
 import { MAX_ENTRY_EFFECT_HOPS } from '../engine';
 import { GARDEN_META, cardName, describeAction, pname, posStr } from './meta';
+import { GardenIcon, UnitIcon } from './art';
 
 export interface DecisionPanelProps {
   state: GameState;
@@ -47,7 +48,7 @@ export function DecisionPanel({ state, decision, legal, interactive, act, onResp
 
     case 'homeHarvest':
       return (
-        <Panel title={`🏡 ${who}: Home Garden harvest`}>
+        <Panel title={`${who}: Home Garden harvest`} icon={<GardenIcon type="home" className="panel-icon" />}>
           <div className="btn-row">
             {decision.options.map((take) => (
               <button
@@ -57,7 +58,13 @@ export function DecisionPanel({ state, decision, legal, interactive, act, onResp
                 data-testid={`home-harvest-${take}`}
                 onClick={() => act({ type: 'homeHarvest', player: decision.player, take })}
               >
-                {take === 'wish' ? '✨ Take 1 Wish' : '🧙 Spawn a Gnome'}
+                {take === 'wish' ? (
+                  '✨ Take 1 Wish'
+                ) : (
+                  <>
+                    <UnitIcon className="btn-icon" /> Spawn a Gnome
+                  </>
+                )}
               </button>
             ))}
           </div>
@@ -77,7 +84,8 @@ export function DecisionPanel({ state, decision, legal, interactive, act, onResp
                 data-testid={`choose-harvest-${s.key}`}
                 onClick={() => act({ type: 'chooseHarvest', player: decision.player, sourceKey: s.key })}
               >
-                {GARDEN_META[s.gardenType].emoji} {GARDEN_META[s.gardenType].label} at {posStr(s.pos)}
+                <GardenIcon type={s.gardenType} className="btn-icon" /> {GARDEN_META[s.gardenType].label} at{' '}
+                {posStr(s.pos)}
                 {s.kind === 'flytrap' ? ' (it attacks!)' : ''}
               </button>
             ))}
@@ -101,7 +109,10 @@ export function DecisionPanel({ state, decision, legal, interactive, act, onResp
         );
       }
       return (
-        <Panel title={`🍄 ${who}: Mushroom at ${posStr(decision.pos)}`}>
+        <Panel
+          title={`${who}: Mushroom at ${posStr(decision.pos)}`}
+          icon={<GardenIcon type="mushroom" className="panel-icon" />}
+        >
           <div className="small muted">How many gnomes to clone (max {decision.max})?</div>
           <div className="btn-row">{buttons}</div>
         </Panel>
@@ -112,7 +123,10 @@ export function DecisionPanel({ state, decision, legal, interactive, act, onResp
     case 'tunnel': {
       const verb = decision.kind === 'slide' ? 'Slide' : 'Tunnel';
       return (
-        <Panel title={`${decision.kind === 'slide' ? '🧊' : '🕳️'} ${who}: ${verb.toLowerCase()} from ${posStr(decision.from)}`}>
+        <Panel
+          title={`${who}: ${verb.toLowerCase()} from ${posStr(decision.from)}`}
+          icon={<GardenIcon type={decision.kind === 'slide' ? 'slippery' : 'tunnel'} className="panel-icon" />}
+        >
           <div className="small muted">
             Click a highlighted destination on the board
             {decision.context === 'harvest' ? ' (harvest effect — must resolve)' : ''}. Hop{' '}
@@ -159,7 +173,7 @@ export function DecisionPanel({ state, decision, legal, interactive, act, onResp
           </div>
           <div className="btn-row">
             <button type="button" className="btn accent" onClick={() => act({ type: 'snailify', player: decision.player, accept: true })}>
-              🐌 Become the Snail
+              <UnitIcon kind="snail" className="btn-icon" /> Become the Snail
             </button>
             <button type="button" className="btn" onClick={() => act({ type: 'snailify', player: decision.player, accept: false })}>
               Leave the game
@@ -224,7 +238,7 @@ export function DecisionPanel({ state, decision, legal, interactive, act, onResp
 
     case 'snailMove':
       return (
-        <Panel title={`🐌 ${who}: Snailmaggedon`}>
+        <Panel title={`${who}: Snailmaggedon`} icon={<UnitIcon kind="snail" className="panel-icon" />}>
           <div className="small muted">
             The curse lets your snail slither 1 space during this Harvest Phase. Click a highlighted space,
             or decline.
@@ -256,10 +270,13 @@ export function DecisionPanel({ state, decision, legal, interactive, act, onResp
   }
 }
 
-function Panel({ title, children }: { title: string; children: ReactNode }) {
+function Panel({ title, icon, children }: { title: string; icon?: ReactNode; children: ReactNode }) {
   return (
     <div className="decision-panel" data-testid="decision-panel">
-      <div className="panel-title">{title}</div>
+      <div className="panel-title">
+        {icon}
+        {title}
+      </div>
       {children}
     </div>
   );

@@ -8,6 +8,7 @@ import type { CSSProperties } from 'react';
 import type { GameState, Pos, Unit } from '../engine';
 import { centerPos, posKey, samePos, unitsAt } from '../engine';
 import { GARDEN_META, playerColor } from './meta';
+import { GardenIcon, UnitIcon } from './art';
 import { unitNameLive } from './gnomeNames';
 
 export type HighlightKind = 'move' | 'decision' | 'target' | 'picked';
@@ -86,9 +87,10 @@ export function Board({ state, highlights, selectedKey, onCellClick }: BoardProp
           title={cellTitle(state, pos)}
         >
           {garden && (
-            <span className={`garden-emoji${gardenInactive(state, garden.plantedOnTurn) ? ' inactive' : ''}`}>
-              {GARDEN_META[garden.type].emoji}
-            </span>
+            <GardenIcon
+              type={garden.type}
+              className={`garden-icon${gardenInactive(state, garden.plantedOnTurn) ? ' inactive' : ''}`}
+            />
           )}
           {garden?.upgraded && <span className="upgraded" data-testid="upgraded-badge">⭐</span>}
           {garden?.type === 'flytrap' && garden.stunnedForPlayerTurn !== null && (
@@ -106,7 +108,7 @@ export function Board({ state, highlights, selectedKey, onCellClick }: BoardProp
                   data-kind={g.kind}
                   data-count={g.count}
                 >
-                  <span className="token-face">{g.kind === 'snail' ? '🐌' : '🧙'}</span>
+                  <UnitIcon kind={g.kind} className="token-face" />
                   {g.count > 1 && <span className="token-count">{g.count}</span>}
                 </span>
               ))}

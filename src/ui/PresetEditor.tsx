@@ -24,6 +24,7 @@ import type { CSSProperties } from 'react';
 import type { GardenPresetDef, PlantableGardenType, Pos } from '../engine';
 import { PLANTABLE_GARDEN_TYPES, posKey } from '../engine';
 import { GARDEN_META } from './meta';
+import { GardenIcon } from './art';
 import {
   CUSTOM_EDITOR_BOARD_SIZE,
   PRESET_DESCRIPTION_MAX_LENGTH,
@@ -229,7 +230,8 @@ export function PresetEditor({ initial, onCancel, onApply }: PresetEditorProps) 
               disabled={counts[type] >= PRESET_MAX_PER_TYPE && tool !== type}
               title={GARDEN_META[type].blurb}
             >
-              {GARDEN_META[type].emoji} {GARDEN_META[type].label} ({counts[type]}/{PRESET_MAX_PER_TYPE})
+              <GardenIcon type={type} className="btn-icon" /> {GARDEN_META[type].label} ({counts[type]}/
+              {PRESET_MAX_PER_TYPE})
             </button>
           ))}
           <button
@@ -284,11 +286,11 @@ export function PresetEditor({ initial, onCancel, onApply }: PresetEditorProps) 
                 >
                   {homeIdx !== -1 && (
                     <>
-                      <span className="garden-emoji">🏡</span>
+                      <GardenIcon type="home" className="garden-icon" />
                       <span className="home-index">{homeIdx + 1}</span>
                     </>
                   )}
-                  {type && <span className="garden-emoji">{GARDEN_META[type].emoji}</span>}
+                  {type && <GardenIcon type={type} className="garden-icon" />}
                 </button>
               );
             })}
@@ -297,7 +299,7 @@ export function PresetEditor({ initial, onCancel, onApply }: PresetEditorProps) 
         <p className="preset-description muted small">
           {pickedHome !== null
             ? `Moving Home ${pickedHome + 1} — click an empty space to drop it, or click it again to cancel.`
-            : 'Click a 🏡 Home Garden to move it. 2-player games use Home 1 & Home 3; 4-player games use all four.'}
+            : 'Click a Home Garden to move it. 2-player games use Home 1 & Home 3; 4-player games use all four.'}
         </p>
 
         {error && <div className="setup-error">{error}</div>}

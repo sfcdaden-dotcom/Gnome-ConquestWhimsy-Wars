@@ -18,6 +18,7 @@ import { DecisionPanel } from './DecisionPanel';
 import { FightPanel, FightPlaybackOverlay, HandPanel, PlayerPanels } from './panels';
 import { ChatPanel, QuickChatFeed } from './QuickChat';
 import { GARDEN_META, cardName, decisionLabel, playerColor, pname } from './meta';
+import { GardenIcon, UnitIcon } from './art';
 import { unitNameLive } from './gnomeNames';
 import { actionableUnitsAt, unitChipLabels } from './selection';
 import type { InteractionContext, Sel } from './interaction';
@@ -220,7 +221,11 @@ export function GameScreen({ game: g, onPlayAgain, onQuit }: GameScreenProps) {
       heading: 'Plant a Garden',
       items: plantChoices.map((o) => ({
         key: o.gardenType,
-        label: `${GARDEN_META[o.gardenType].emoji} ${GARDEN_META[o.gardenType].label}`,
+        label: (
+          <>
+            <GardenIcon type={o.gardenType} className="btn-icon" /> {GARDEN_META[o.gardenType].label}
+          </>
+        ),
         badge: `×${o.remaining}`,
         testId: `plant-${o.gardenType}`,
         title: GARDEN_META[o.gardenType].blurb,
@@ -279,7 +284,9 @@ export function GameScreen({ game: g, onPlayAgain, onQuit }: GameScreenProps) {
       data-selected-unit={selectedUnit?.id ?? ''}
     >
       <header className="topbar">
-        <span className="brand">🧙 Whimsy Wars</span>
+        <span className="brand">
+          <UnitIcon className="brand-art" /> Whimsy Wars
+        </span>
         <span className="banner" data-testid="banner">
           {bannerText(state, playerToAct, pname, decisionLabel)}
         </span>
@@ -345,7 +352,8 @@ export function GameScreen({ game: g, onPlayAgain, onQuit }: GameScreenProps) {
               <div className="action-bar" data-testid="action-bar">
                 {selectedUnit && !openSubmenu && (
                   <span className="selected-unit" data-testid="selected-unit-name">
-                    🧙 {unitNameLive(state, selectedUnit.id)}
+                    <UnitIcon kind={selectedUnit.kind} className="inline-art" />{' '}
+                    {unitNameLive(state, selectedUnit.id)}
                   </span>
                 )}
                 {stackChips.length > 0 && !openSubmenu && (
@@ -577,7 +585,7 @@ function TargetChip({
   }
   return (
     <button type="button" className="btn small" onClick={() => onSelect(target)}>
-      {GARDEN_META[target.gardenType].emoji} {GARDEN_META[target.gardenType].label}
+      <GardenIcon type={target.gardenType} className="btn-icon" /> {GARDEN_META[target.gardenType].label}
     </button>
   );
 }
