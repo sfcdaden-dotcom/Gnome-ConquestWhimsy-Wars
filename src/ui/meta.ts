@@ -104,6 +104,11 @@ export function cardName(id: string): string {
   return getCardDef(id)?.name ?? getCurseDef(id)?.name ?? id;
 }
 
+/** Rules text of a card or curse, for tooltips. Empty when the id is unknown. */
+export function cardText(id: string): string {
+  return getCardDef(id)?.text ?? getCurseDef(id)?.text ?? '';
+}
+
 export function sideName(state: GameState, side: FightSide): string {
   return side.kind === 'flytrap' ? 'the Flytrap' : pname(state, side.player);
 }
