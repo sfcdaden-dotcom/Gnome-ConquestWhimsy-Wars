@@ -10,14 +10,14 @@
  * otherwise deals only in layout.
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Action, CardId, CardTarget, GameState, PendingDecision, PlayerId, Pos } from '../engine';
 import { gardenAt, getLegalActionIntents, getPendingDecisionOptions, posKey } from '../engine';
 import { Board } from './Board';
 import { DecisionPanel } from './DecisionPanel';
 import { FightPanel, FightPlaybackOverlay, HandPanel, PlayerPanels } from './panels';
 import { ChatPanel, QuickChatFeed } from './QuickChat';
-import { GARDEN_META, cardName, decisionLabel, playerColor, pname } from './meta';
+import { GARDEN_META, cardName, cardText, decisionLabel, playerColor, pname } from './meta';
 import { GardenIcon, UnitIcon } from './art';
 import { unitNameLive } from './gnomeNames';
 import { actionableUnitsAt, unitChipLabels } from './selection';
@@ -501,18 +501,105 @@ function ShotClockPill({
   );
 }
 
+/**
+ * Active curses, each with a hover/focus tooltip carrying its rules text.
+ * The text comes straight from the curse definition, so the panel never
+ * restates rules the engine owns.
+ *
+ * The tooltip is position: fixed and placed from the row's rect because the
+ * left column scrolls (`overflow-y: auto`), which would clip an absolutely
+ * positioned bubble hanging off the last panel.
+ */
 function CursePanel({ state }: { state: GameState }) {
+  const [openId, setOpenId] = useState<CardId | null>(null);
+  const [pos, setPos] = useState<TipPos | null>(null);
+  const anchor = useRef<HTMLElement | null>(null);
+
+  const place = useCallback(() => {
+    const el = anchor.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    // Flip above the row when there isn't room for the bubble underneath.
+    const above = r.bottom + CURSE_TIP_MAX_HEIGHT > window.innerHeight;
+    setPos({ x: r.left, y: above ? r.top - 6 : r.bottom + 6, above });
+  }, []);
+
+  const show = (id: CardId, el: HTMLElement) => {
+    anchor.current = el;
+    setOpenId(id);
+    place();
+  };
+  const hide = (id: CardId) => setOpenId((cur) => (cur === id ? null : cur));
+  // Tapping toggles, so touch devices (no hover) can read a curse too.
+  const toggle = (id: CardId, el: HTMLElement) => (openId === id ? setOpenId(null) : show(id, el));
+
+  // Fixed coordinates go stale as soon as anything moves under the bubble —
+  // including the left column auto-scrolling a just-focused row into view.
+  useEffect(() => {
+    if (openId === null) return;
+    place();
+    window.addEventListener('scroll', place, true);
+    window.addEventListener('resize', place);
+    return () => {
+      window.removeEventListener('scroll', place, true);
+      window.removeEventListener('resize', place);
+    };
+  }, [openId, place]);
+
   return (
     <div className="curse-panel">
       <div className="panel-title">☠️ Active Curses</div>
       {state.activeCurses.map((id) => (
-        <div key={id} className="small" title={cardName(id)}>
+        <div
+          key={id}
+          className="small curse-item"
+          tabIndex={0}
+          aria-describedby={openId === id ? `curse-tip-${id}` : undefined}
+          // Pointer events, not mouse ones: a tap also emits compatibility
+          // mouseenter/mouseleave, and the trailing mouseleave would close the
+          // bubble the tap just opened.
+          onPointerEnter={(e) => {
+            if (e.pointerType === 'mouse') show(id, e.currentTarget);
+          }}
+          onPointerLeave={(e) => {
+            if (e.pointerType === 'mouse') hide(id);
+          }}
+          onFocus={(e) => show(id, e.currentTarget)}
+          onBlur={() => hide(id)}
+          onPointerDown={(e) => {
+            if (e.pointerType !== 'mouse') toggle(id, e.currentTarget);
+          }}
+        >
           <b>{cardName(id)}</b>
         </div>
       ))}
+      {openId !== null && pos && (
+        <div
+          className="curse-tip"
+          role="tooltip"
+          id={`curse-tip-${openId}`}
+          style={{
+            left: pos.x,
+            ...(pos.above ? { bottom: window.innerHeight - pos.y } : { top: pos.y }),
+          }}
+        >
+          <b>{cardName(openId)}</b>
+          <span>{cardText(openId) || 'Unknown curse.'}</span>
+        </div>
+      )}
     </div>
   );
 }
+
+interface TipPos {
+  x: number;
+  y: number;
+  /** True when the bubble hangs above its row instead of below it. */
+  above: boolean;
+}
+
+/** Room to reserve below a curse row before the tooltip flips above it. */
+const CURSE_TIP_MAX_HEIGHT = 110;
 
 /**
  * Card-agnostic targeting banner. It renders whatever the engine's current
