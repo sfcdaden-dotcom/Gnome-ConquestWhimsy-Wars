@@ -10,6 +10,7 @@
  */
 
 import { Fragment } from 'react';
+import { UnitIcon } from './art';
 import type { JSX, ReactNode } from 'react';
 import rulesText from '../../RULES.md?raw';
 
@@ -154,7 +155,9 @@ export function RulesScreen({ onBack }: { onBack: () => void }) {
         <button type="button" className="btn" data-testid="rules-back" onClick={onBack}>
           ← Back
         </button>
-        <span className="brand">🧙 Whimsy Wars — how to play</span>
+        <span className="brand">
+          <UnitIcon className="brand-art" /> Whimsy Wars — how to play
+        </span>
       </header>
       <article className="rules-body">{BLOCKS.map(renderBlock)}</article>
     </div>

@@ -23,6 +23,7 @@ import {
   seatHomes,
 } from '../engine';
 import { GARDEN_META, playerColor, randomSeed, PLAYER_COLOR_NAMES } from './meta';
+import { GardenIcon, UnitIcon } from './art';
 import { PresetEditor } from './PresetEditor';
 import type { PresetDraft } from './PresetEditor';
 import {
@@ -125,11 +126,11 @@ function LayoutPreview({
         return (
           <div key={key} className={classes.join(' ')} title={title}>
             {isHome ? (
-              <span className="garden-emoji">🏡</span>
+              <GardenIcon type="home" className="garden-icon" />
             ) : type ? (
-              <span className="garden-emoji">{GARDEN_META[type].emoji}</span>
+              <GardenIcon type={type} className="garden-icon" />
             ) : isCenter && centerStar ? (
-              <span className="garden-emoji">⭐</span>
+              <span className="garden-icon is-glyph">⭐</span>
             ) : null}
           </div>
         );
@@ -341,7 +342,11 @@ export function SetupScreen({
   return (
     <div className="setup-screen">
       <div className="setup-card">
-        <h1 className="game-title">🧙 Whimsy Wars 🌼</h1>
+        <h1 className="game-title">
+          <UnitIcon className="title-art" />
+          Whimsy Wars
+          <GardenIcon type="dandelion" className="title-art" />
+        </h1>
         <p className="tagline">Harvest gardens, hoard wishes, and gnome your enemies into the compost.</p>
 
         <div className="setup-row">

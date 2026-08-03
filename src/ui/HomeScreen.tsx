@@ -7,13 +7,19 @@
  * it are the ones who have not started a game yet.
  */
 
+import { GardenIcon, UnitIcon } from './art';
+
 export type HomeChoice = 'local' | 'online' | 'rules';
 
 export function HomeScreen({ onChoose }: { onChoose: (choice: HomeChoice) => void }) {
   return (
     <div className="home-screen" data-testid="home-screen">
       <div className="home-card">
-        <h1 className="home-title">🧙 Whimsy Wars 🌼</h1>
+        <h1 className="home-title">
+          <UnitIcon className="title-art" />
+          Whimsy Wars
+          <GardenIcon type="dandelion" className="title-art" />
+        </h1>
         <p className="home-tagline">
           Harvest gardens, hoard Wishes, and gnome your enemies into the compost.
         </p>

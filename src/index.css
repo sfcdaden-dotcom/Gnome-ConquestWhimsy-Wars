@@ -1,4 +1,5 @@
-/* Whimsy Wars — garden-party UI theme. System fonts + emoji only. */
+/* Whimsy Wars — garden-party UI theme. System fonts, hand-drawn art for
+   gardens and units (src/assets/art), emoji for incidental flourishes. */
 
 :root {
   --sans: system-ui, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
@@ -571,18 +572,74 @@ h2 {
   background: color-mix(in srgb, #6b5a8c 30%, var(--cell));
 }
 
-.garden-emoji {
+/* Hand-drawn art (src/assets/art). The base
+   class only makes the picture behave like a glyph would; every context below
+   gives it a size, because a garden is a board fixture in one place and a word
+   in a sentence in another. */
+.art {
+  object-fit: contain;
+  -webkit-user-select: none;
+  user-select: none;
+  flex: none;
+}
+
+/* Art standing in for a word: sized in `em` so it tracks the text it sits in,
+   and nudged onto the baseline the way an emoji glyph used to sit. */
+.inline-art {
+  width: 1.15em;
+  height: 1.15em;
+  vertical-align: -0.22em;
+}
+.btn-icon {
+  width: 1.25em;
+  height: 1.25em;
+  vertical-align: -0.26em;
+}
+.panel-icon {
+  width: 1.3em;
+  height: 1.3em;
+  vertical-align: -0.28em;
+  margin-right: 0.3em;
+}
+.brand-art {
+  width: 1.5em;
+  height: 1.5em;
+  vertical-align: -0.4em;
+}
+.title-art {
+  width: 1.2em;
+  height: 1.2em;
+  vertical-align: -0.18em;
+  margin: 0 0.1em;
+}
+
+.garden-icon {
   position: absolute;
   top: 2px;
-  left: 4px;
+  left: 3px;
   /* ≈ a third of one cell, whatever the board size (--n). */
-  font-size: clamp(12px, calc(36cqi / var(--n, 7)), 20px);
+  width: clamp(14px, calc(40cqi / var(--n, 7)), 24px);
+  height: clamp(14px, calc(40cqi / var(--n, 7)), 24px);
   line-height: 1;
   pointer-events: none;
 }
-.garden-emoji.inactive {
+/* The Center Star is still a glyph — it marks a space, it is not a garden. */
+.garden-icon.is-glyph {
+  width: auto;
+  height: auto;
+  font-size: clamp(12px, calc(36cqi / var(--n, 7)), 20px);
+}
+.garden-icon.inactive {
   opacity: 0.45;
   filter: grayscale(0.6);
+}
+/* Boards that hold no units let the garden art take the whole space. */
+.preset-preview .garden-icon,
+.editor-board .garden-icon {
+  top: 8%;
+  left: 8%;
+  width: 84%;
+  height: 84%;
 }
 .star {
   position: absolute;
@@ -638,9 +695,11 @@ h2 {
 .token.snail {
   border-radius: 30%;
 }
+/* The unit art carries its own white sticker outline, so it reads on all four
+   seat colours; it fills most of the token rather than floating inside it. */
 .token-face {
-  font-size: clamp(10px, calc(34cqi / var(--n, 7)), 18px);
-  line-height: 1;
+  width: 78%;
+  height: 78%;
 }
 .token-count {
   position: absolute;
