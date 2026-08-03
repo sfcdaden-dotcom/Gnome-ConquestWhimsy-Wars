@@ -105,6 +105,14 @@ h2 {
   color: var(--accent-text);
   font-weight: 600;
 }
+/* Accent buttons keep their accent fill on hover — the generic .btn hover
+   swaps in the near-white panel colour, which leaves the light accent text
+   unreadable. Shade the accent instead so the label contrast holds. */
+.btn.accent:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 82%, var(--text));
+  border-color: color-mix(in srgb, var(--accent) 82%, var(--text));
+  color: var(--accent-text);
+}
 .btn.warn {
   border-color: var(--warn);
   color: var(--warn);
