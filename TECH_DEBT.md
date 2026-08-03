@@ -83,6 +83,27 @@ handful of things anyone actually needs to do.
 
 ### P3
 
+- **Rate limiting has two ends and nothing in between (Milestone 11).** Shipped
+  2026-08-03: per-IP limits at the Worker's door and per-connection/per-room
+  token buckets inside (see MULTIPLAYER.md, "Rate limiting"). What is left is
+  the middle. A caller spread across many source addresses gets a fresh per-IP
+  budget per address and can hold many rooms at their individual ceilings —
+  each room bounded, the total not. Nothing in `Room` can see that, because a
+  Durable Object's whole value here is that it knows only about itself. The
+  answer is Cloudflare-shaped (WAF rules, Turnstile in front of `POST
+  /api/rooms`) rather than room-shaped, and it is P3 because the cost of the
+  attack it enables is idle Durable Objects, which Cloudflare bills by use and
+  evicts when idle.
+
+  Two smaller residuals, both deliberate. **A flooder inside a room can degrade
+  that room**: the shared ceiling is what bounds total work, and a shared
+  ceiling is by definition spendable by anyone in it. A room is a private table
+  you gave a code to, so the blast radius is your own guests. And **buckets are
+  in memory**, so a room that hibernates forgives whatever a flooder had spent
+  — which requires the flooder to have stopped for long enough to let the room
+  hibernate. `MAX_CONNECTIONS` is the part that does not depend on remembering
+  anything.
+
 - **Enumeration cost: measured 2026-07-30, deliberately not yet optimized.**
   The open question was whether legal-action and card-target feasibility work is
   repeated unnecessarily. It is — twice — but both are small, so this is

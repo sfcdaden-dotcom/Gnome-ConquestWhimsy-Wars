@@ -62,6 +62,8 @@ either wait or switch it to a CPU rather than guessing. Since every seat starts
 human, this is what a solo host hits: fill the other seats with people or with
 bots, deliberately.
 
+**More than it will serve.** See below.
+
 ## Seats
 
 **Every seat in a fresh room starts human.** A room exists so that people can
@@ -273,7 +275,87 @@ also the only way a client *can* tell: `state.players[].controller` is fixed
 when the game is created, and editing it afterwards would stop the match record
 replaying. So the takeover travels beside the state, never inside it.
 
+## Rate limiting
+
+Nothing a flood can send makes the room do something *wrong* — the seat check
+and the engine see to that — but wrong was never the worry. Every message costs
+a parse, most cost an `applyAction`, and every message that lands costs a
+storage write plus one separately-redacted send **per connection in the room**.
+A message in is N messages out, so an unmetered sender is an amplifier.
+
+The budgets are token buckets (`src/net/ratelimit.ts`): `capacity` answers "how
+much at once" and `refillPerSecond` answers "how much forever". A fixed window
+cannot answer both — play is bursty (a card with three targets is three actions
+in a second and a half) and a window sized for the burst permits that burst
+*continuously*.
+
+Four limits, on three scopes.
+
+**Per connection** — 60 tokens, refilling at 10/s. Messages are priced by what
+they ask for rather than counted flat: `ping` 1, `action` 2, `configure` 4,
+`start` and `hello` 10. So one client sustains 5 actions a second forever and
+30 back to back, which no human hand reaches and no script can exceed.
+
+**Per room** — 240 tokens at 40/s, across every connection in it. This is the
+one that actually bounds the work, because a determined client can always open
+more sockets: per-connection limits multiply by the number of connections and
+only a shared ceiling does not. Four seats at full tilt come to ~20 tokens a
+second, so honest play has a factor of two of headroom.
+
+The trade-off is deliberate: a flooder inside a room can degrade that room. A
+room is a private table you shared a code with, so the blast radius is your own
+guests — and the alternative to a shared ceiling is not "nobody is affected", it
+is unbounded work.
+
+**Connections per room** — 24 (`ROOM_FULL`, close code 4003). Broadcast is
+O(connections), so this is the multiplier on every action in the game. Anyone
+presenting a token the room already knows is exempt: coming back to your seat
+must not depend on how many spectators arrived while you were gone, and the
+exemption grants nothing, since one token still holds exactly one live
+connection.
+
+**Per IP, at the door** (`wrangler.jsonc`, Cloudflare rate-limit bindings) —
+10/min on `POST /api/rooms` and 60/min on everything under `/api/rooms/:code`.
+The room can only meter a client once there is a connection, and both endpoints
+are reachable without one. The second is the load-bearing one: *addressing* a
+Durable Object is what brings it into existence, so a caller walking the code
+space creates a fresh object per request, and no per-room cap can help when
+every request is a different room. The bindings are optional in the Worker's
+env type — a local runtime that lacks them runs unlimited rather than not
+running.
+
+### Being refused
+
+One `RATE_LIMITED` error per episode, not one per dropped message: answering a
+flood message-for-message is the same amplification the limit exists to stop.
+The warning is re-armed by the next message that gets through.
+
+A connection that keeps sending after being told to stop is hung up on after 60
+of its own messages have been dropped (close code 4001) — past that point the
+parse is the only cost left and closing is the only way to stop paying it. Only
+a connection's **own** bucket counts toward this; messages dropped because the
+*room's* ceiling was empty are somebody else's doing, and disconnecting the
+bystanders of a flood would hand any flooder the room. The real client re-dials
+after 4001, but only on a long backoff.
+
+`hello` is charged to the connection and **not** to the room. Arrivals are
+bounded by a harder mechanism — a fresh connection's bucket always covers its
+first `hello`, and there can only be 24 connections — and charging them to the
+shared ceiling would make every legitimate mass reconnect look exactly like an
+attack: the whole room re-introduces itself in one burst when the Durable
+Object wakes from hibernation, and answering that with "try later" would break
+the reconnect the design exists to support.
+
+Buckets are in memory and never persisted. A write per message would cost more
+than the messages being defended against, and the failure mode of losing them —
+a room evicted from memory forgives what a flooder had spent — requires the
+flooder to have stopped sending long enough for the room to hibernate, i.e. to
+have stopped being a flooder. The connection cap is the part that does not
+depend on remembering anything.
+
 ## Not built yet
 
-- **Rate limiting.** A client can currently send as fast as it likes; illegal
-  actions are cheap to reject but not free.
+- **Cross-room limits.** The per-IP limiter at the door and the per-room
+  ceilings inside are the two ends; there is nothing in between, so a caller
+  spread across many IPs can hold many rooms at their individual ceilings. That
+  is a Cloudflare-shaped problem (WAF, Turnstile) rather than a room-shaped one.

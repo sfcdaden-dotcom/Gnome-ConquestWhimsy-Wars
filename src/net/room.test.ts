@@ -17,13 +17,24 @@ import { commitmentFor, verifySeal } from './commitment';
 import type { PersistedRoom, RoomConnection, RoomHost } from './room';
 import { Room, generateRoomCode } from './room';
 import {
+  CLOSE_RATE_LIMITED,
+  CLOSE_SEAT_TAKEN_OVER,
+  CLOSE_TOO_MANY_CONNECTIONS,
   CONTROL_BUDGET_MS,
   ROOM_CODE_ALPHABET,
   SHOT_CLOCK_MS,
   TAKEOVER_AFTER_TIMEOUTS,
   TAKEOVER_DIFFICULTY,
 } from './protocol';
-import type { ServerMessage } from './protocol';
+import type { ClientMessage, ServerMessage } from './protocol';
+import {
+  CONN_BUCKET_CAPACITY,
+  CONN_BUCKET_REFILL_PER_SEC,
+  FLOOD_DISCONNECT_AFTER,
+  MAX_CONNECTIONS,
+  MESSAGE_COST,
+  ROOM_BUCKET_CAPACITY,
+} from './ratelimit';
 
 // ---------------------------------------------------------------------------
 // Harness
@@ -116,6 +127,30 @@ function makeHost(): RoomHost & { stored: PersistedRoom | null; alarms: number[]
 }
 
 const HELLO = { t: 'hello', protocol: 1 } as const;
+
+type FakeHost = ReturnType<typeof makeHost>;
+
+/**
+ * How long a person takes over one click. Not a real measurement — just a
+ * number small enough that no test waits for it and large enough to be a
+ * physically possible rate of play.
+ */
+const PLAY_TICK_MS = 400;
+
+/**
+ * One client message, with a beat of simulated time in front of it.
+ *
+ * The loops below drive entire games through `handle` in zero simulated
+ * milliseconds, which is exactly the traffic the room's intake limiter
+ * (ratelimit.ts) exists to refuse. Letting a moment pass per message keeps the
+ * simulation honest about what a human hand can produce — and, more usefully,
+ * keeps the limiter ARMED for every other test in this file rather than
+ * switched off for the convenience of the harness.
+ */
+async function play(room: Room, host: FakeHost, connId: string, message: ClientMessage): Promise<void> {
+  host.clock += PLAY_TICK_MS;
+  await room.handle(connId, message);
+}
 
 /** A room with one connected human host, seats as given. */
 async function lobby(seats: Array<'human' | 'cpu'> = ['human', 'cpu']) {
@@ -669,7 +704,7 @@ describe('the shot clock', () => {
     const { host, room } = await lobby(['human', 'cpu']);
     await room.handle('c0', { t: 'start' });
     while (getPlayerToAct(room.gameState!) === 0) {
-      await room.handle('c0', { t: 'action', action: chooseAiAction(room.gameState!) });
+      await play(room, host, 'c0', { t: 'action', action: chooseAiAction(room.gameState!) });
     }
     expect(host.stored!.clock).toBeNull();
   });
@@ -704,7 +739,7 @@ describe('the shot clock', () => {
         const actor = getPlayerToAct(room.gameState!);
         if (actor === null || actor === seat || room.phase !== 'playing') break;
         if (host.stored!.seats[actor].controller === 'cpu') await room.onAlarm();
-        else await room.handle(`c${actor}`, { t: 'action', action: chooseAiAction(room.gameState!) });
+        else await play(room, host, `c${actor}`, { t: 'action', action: chooseAiAction(room.gameState!) });
       }
       const clock = host.stored!.clock;
       if (room.phase !== 'playing' || clock === null || clock.seat !== seat) return;
@@ -770,11 +805,11 @@ describe('the shot clock', () => {
   });
 
   /** Let everyone else play until `seat` is the one to act again. */
-  async function untilTurnOf(room: Room, seat: number): Promise<void> {
+  async function untilTurnOf(room: Room, host: FakeHost, seat: number): Promise<void> {
     for (let i = 0; i < 400 && room.phase === 'playing'; i++) {
       const actor = getPlayerToAct(room.gameState!);
       if (actor === null || actor === seat) return;
-      await room.handle(`c${actor}`, { t: 'action', action: chooseAiAction(room.gameState!) });
+      await play(room, host, `c${actor}`, { t: 'action', action: chooseAiAction(room.gameState!) });
     }
   }
 
@@ -785,8 +820,8 @@ describe('the shot clock', () => {
     await timeOutSeat(room, host, seat, TAKEOVER_AFTER_TIMEOUTS - 1);
     // Back at the table: the count is cleared by playing, not by being present.
     expect(host.stored!.seats[seat].timeouts).toBe(TAKEOVER_AFTER_TIMEOUTS - 1);
-    await untilTurnOf(room, seat);
-    await room.handle(`c${seat}`, { t: 'action', action: chooseAiAction(room.gameState!) });
+    await untilTurnOf(room, host, seat);
+    await play(room, host, `c${seat}`, { t: 'action', action: chooseAiAction(room.gameState!) });
     expect(host.stored!.seats[seat].timeouts).toBe(0);
 
     await timeOutSeat(room, host, seat, TAKEOVER_AFTER_TIMEOUTS - 1);
@@ -802,10 +837,10 @@ describe('the shot clock', () => {
 
     // Nonsense from the seat, and chat, are not playing. (The roll-off is long
     // over, so it is an action the engine refuses outright.)
-    await untilTurnOf(room, seat);
-    await room.handle(`c${seat}`, { t: 'action', action: { type: 'rollOff', player: seat } });
+    await untilTurnOf(room, host, seat);
+    await play(room, host, `c${seat}`, { t: 'action', action: { type: 'rollOff', player: seat } });
     expect(conns[seat].last('error')?.code).toBe('ILLEGAL_ACTION');
-    await room.handle(`c${seat}`, { t: 'action', action: { type: 'quickChat', player: seat, phraseId: 'hi' } });
+    await play(room, host, `c${seat}`, { t: 'action', action: { type: 'quickChat', player: seat, phraseId: 'hi' } });
 
     expect(host.stored!.seats[seat].timeouts).toBe(before);
   });
@@ -899,14 +934,14 @@ describe('game over', () => {
 
 describe('quick chat after the final fight', () => {
   it('still accepts "gg" once the game is over, and reveals only once', async () => {
-    const { room, c0 } = await lobby(['human', 'cpu']);
+    const { host, room, c0 } = await lobby(['human', 'cpu']);
     await room.handle('c0', { t: 'start' });
     await runToEnd(room, 4000);
     // Seat 0 is human, so drive the human turns too until somebody wins.
     for (let i = 0; i < 4000 && room.phase === 'playing'; i++) {
       const actor = getPlayerToAct(room.gameState!);
       if (actor === 0) {
-        await room.handle('c0', { t: 'action', action: chooseAiAction(room.gameState!) });
+        await play(room, host, 'c0', { t: 'action', action: chooseAiAction(room.gameState!) });
       } else {
         await room.onAlarm();
       }
@@ -934,4 +969,189 @@ describe('quick chat after the final fight', () => {
     await room.handle('c0', { t: 'action', action: { type: 'endTurn', player: 0 } });
     expect(c0.last('error')?.code).toBe('WRONG_PHASE');
   }, 60_000);
+});
+
+describe('rate limiting', () => {
+  /** Flood one connection until the room drops something. Returns how many got through. */
+  async function floodUntilRefused(room: Room, c: FakeConn, cap = 1000): Promise<number> {
+    let sent = 0;
+    while (c.errors().length === 0 && sent < cap) {
+      await room.handle(c.id, { t: 'ping' });
+      sent++;
+    }
+    return sent;
+  }
+
+  it('never limits a whole game played at a human pace', async () => {
+    // The property that matters most: the defence must be invisible to the
+    // people it is defending. A full game, every human action a `handle` with
+    // a plausible pause in front of it, and not one refusal.
+    const { host, room, c0 } = await lobby(['human', 'cpu']);
+    await room.handle('c0', { t: 'start' });
+    for (let i = 0; i < 4000 && room.phase === 'playing'; i++) {
+      const actor = getPlayerToAct(room.gameState!);
+      if (actor === 0) await play(room, host, 'c0', { t: 'action', action: chooseAiAction(room.gameState!) });
+      else await room.onAlarm();
+    }
+
+    expect(room.phase).toBe('finished');
+    expect(c0.errors()).not.toContain('RATE_LIMITED');
+  }, 60_000);
+
+  it('answers a flood with one warning, not one warning per message', async () => {
+    // One error frame per dropped message would be exactly the one-in-one-out
+    // amplification the limit exists to stop.
+    const { room, c0 } = await lobby();
+    const served = await floodUntilRefused(room, c0);
+    expect(served).toBeGreaterThan(20); // the budget was a real one
+
+    for (let i = 0; i < FLOOD_DISCONNECT_AFTER - 2; i++) await room.handle('c0', { t: 'ping' });
+
+    expect(c0.errors()).toEqual(['RATE_LIMITED']);
+    expect(c0.closed).toBeNull(); // warned, not hung up on
+  });
+
+  it('stops reading a socket that will not slow down', async () => {
+    const { room, c0 } = await lobby();
+    for (let i = 0; i < CONN_BUCKET_CAPACITY + FLOOD_DISCONNECT_AFTER + 10; i++) {
+      await room.handle('c0', { t: 'ping' });
+    }
+
+    expect(c0.closed?.code).toBe(CLOSE_RATE_LIMITED);
+  });
+
+  it('forgives a client that takes the hint', async () => {
+    const { host, room, c0 } = await lobby();
+    await floodUntilRefused(room, c0);
+    const pongs = () => c0.sent.filter((m) => m.t === 'pong').length;
+    const before = pongs();
+
+    host.clock += CONN_BUCKET_CAPACITY / CONN_BUCKET_REFILL_PER_SEC * 1000;
+    await room.handle('c0', { t: 'ping' });
+    expect(pongs()).toBe(before + 1);
+
+    // ...and the next episode gets its own warning, rather than being silent
+    // because the client was told once half an hour ago.
+    while (c0.errors().length === 1) await room.handle('c0', { t: 'ping' });
+    expect(c0.errors()).toEqual(['RATE_LIMITED', 'RATE_LIMITED']);
+  });
+
+  it('never lets a dropped action reach the engine or the record', async () => {
+    const { host, room, c0 } = await lobby(['human', 'cpu']);
+    await room.handle('c0', { t: 'start' });
+    await floodUntilRefused(room, c0);
+
+    const events = room.gameState!.eventCount;
+    const actions = host.stored!.actions.length;
+    await room.handle('c0', { t: 'action', action: chooseAiAction(room.gameState!) });
+
+    // A refused message is refused before anything is asked of the game: the
+    // limit is on intake, not on outcomes.
+    expect(room.gameState!.eventCount).toBe(events);
+    expect(host.stored!.actions.length).toBe(actions);
+  });
+
+  it('bounds the whole room, not just each connection in it', async () => {
+    const host = makeHost();
+    const room = await Room.open(host, 'ABC123');
+    // Each of these stays inside its OWN budget; together they are past the
+    // room's. Per-connection limits multiply by the number of connections, and
+    // this is the ceiling that does not.
+    const each = (CONN_BUCKET_CAPACITY - MESSAGE_COST.hello) / MESSAGE_COST.ping;
+    const conns = Array.from({ length: 6 }, (_, i) => new FakeConn(`f${i}`));
+    for (const c of conns) await room.hello(c, { ...HELLO });
+    expect(conns.length * each * MESSAGE_COST.ping).toBeGreaterThan(ROOM_BUCKET_CAPACITY);
+
+    for (let i = 0; i < each; i++) {
+      for (const c of conns) await room.handle(c.id, { t: 'ping' });
+    }
+
+    expect(conns.some((c) => c.errors().includes('RATE_LIMITED'))).toBe(true);
+    // Nobody is hung up on for it: the drops were somebody else's doing, and
+    // disconnecting the bystanders of a flood would hand any flooder the room.
+    expect(conns.every((c) => c.closed === null)).toBe(true);
+
+    // ...and the ceiling is a rate, not a ban.
+    host.clock += ROOM_BUCKET_CAPACITY * 1000;
+    const pongs = conns[0].sent.filter((m) => m.t === 'pong').length;
+    await room.handle('f0', { t: 'ping' });
+    expect(conns[0].sent.filter((m) => m.t === 'pong').length).toBe(pongs + 1);
+  });
+
+  it('will not hold more connections than it will broadcast to', async () => {
+    const host = makeHost();
+    const room = await Room.open(host, 'ABC123');
+    const conns = Array.from({ length: MAX_CONNECTIONS }, (_, i) => new FakeConn(`c${i}`));
+    for (const c of conns) await room.hello(c, { ...HELLO });
+    expect(conns.every((c) => c.closed === null)).toBe(true);
+
+    const extra = new FakeConn('extra');
+    await room.hello(extra, { ...HELLO });
+    expect(extra.last('error')?.code).toBe('ROOM_FULL');
+    expect(extra.closed?.code).toBe(CLOSE_TOO_MANY_CONNECTIONS);
+  });
+
+  it('always lets a player with a seat back in, however big the crowd', async () => {
+    const host = makeHost();
+    const room = await Room.open(host, 'ABC123');
+    const seated = new FakeConn('seated');
+    await room.hello(seated, { ...HELLO });
+    const token = seated.last('welcome')!.you.token;
+    for (let i = 0; i < MAX_CONNECTIONS + 5; i++) await room.hello(new FakeConn(`x${i}`), { ...HELLO });
+
+    const returning = new FakeConn('returning');
+    await room.hello(returning, { ...HELLO, token });
+
+    expect(returning.last('welcome')?.you.seat).toBe(0);
+    // The exemption grants nothing: one token still holds one live connection,
+    // so the crowd did not grow by letting them back in.
+    expect(seated.closed?.code).toBe(CLOSE_SEAT_TAKEN_OVER);
+  });
+
+  it('meters hello, which the transport delivers outside `handle`', async () => {
+    const host = makeHost();
+    const room = await Room.open(host, 'ABC123');
+    const c = new FakeConn('c0');
+    // Every hello re-settles identity, writes storage and broadcasts, so a
+    // repeat is not free — and it is the one message that never passes through
+    // the metered `handle` path.
+    for (let i = 0; i < CONN_BUCKET_CAPACITY / MESSAGE_COST.hello + 2; i++) {
+      await room.hello(c, { ...HELLO });
+    }
+
+    expect(c.errors()).toContain('RATE_LIMITED');
+  });
+
+  it('lets a whole room re-introduce itself at once after a wake', async () => {
+    // Hibernation ends with every live socket replaying its `hello` in one
+    // burst. If arrivals drew on the room's shared ceiling, that burst would
+    // look exactly like an attack and the room would answer the reconnect it
+    // exists to support by telling everybody to come back later.
+    const host = makeHost();
+    const room = await Room.open(host, 'ABC123');
+    const conns = Array.from({ length: MAX_CONNECTIONS }, (_, i) => new FakeConn(`c${i}`));
+    for (const c of conns) await room.hello(c, { ...HELLO });
+    const tokens = conns.map((c) => c.last('welcome')!.you.token);
+
+    const woken = await Room.open(host, 'ABC123');
+    const back = tokens.map((_, i) => new FakeConn(`b${i}`));
+    for (let i = 0; i < back.length; i++) await woken.hello(back[i], { ...HELLO, token: tokens[i] });
+
+    expect(back.every((c) => c.errors().length === 0)).toBe(true);
+    expect(back.every((c) => c.last('welcome') !== undefined)).toBe(true);
+  });
+
+  it('starts a woken room with a full budget rather than charging it for the wait', async () => {
+    const { host, room, c0 } = await lobby();
+    await floodUntilRefused(room, c0);
+
+    // Eviction and wake: buckets are in memory, and a room that has been in
+    // storage has not been earning tokens — but it has not been spending them
+    // either, and the connections are new.
+    const woken = await Room.open(host, 'ABC123');
+    const back = new FakeConn('back');
+    await woken.hello(back, { ...HELLO, token: c0.last('welcome')!.you.token });
+
+    expect(back.errors()).not.toContain('RATE_LIMITED');
+  });
 });
