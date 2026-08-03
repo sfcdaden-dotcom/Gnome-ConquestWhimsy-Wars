@@ -572,7 +572,7 @@ h2 {
   background: color-mix(in srgb, #6b5a8c 30%, var(--cell));
 }
 
-/* Hand-drawn art (src/assets/art, drawn by tools/art/generate.py). The base
+/* Hand-drawn art (src/assets/art). The base
    class only makes the picture behave like a glyph would; every context below
    gives it a size, because a garden is a board fixture in one place and a word
    in a sentence in another. */

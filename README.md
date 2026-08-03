@@ -34,14 +34,32 @@ every push and pull request.
 
 ## Art
 
-Gardens and units are hand-drawn PNGs in `src/assets/art/`, not emoji, so the
-board looks the same on every platform. They are drawn in code —
-`python3 tools/art/generate.py` (needs Pillow) re-renders the whole set at
-128px from shape primitives in a shared palette — and the checked-in PNGs are
-what the app ships; running the script is only needed when the art itself
-changes. `src/ui/art.tsx` exposes them as `<GardenIcon>` and `<UnitIcon>`;
-sizing is left to the stylesheet, because an icon is a board fixture in one
-place and a word in a sentence in another.
+Gardens and units are hand-drawn images in `src/assets/art/`, not emoji, so the
+board looks the same on every platform. `src/ui/art.tsx` shows them as
+`<GardenIcon>` and `<UnitIcon>`; sizing is left to the stylesheet, because an
+icon is a board fixture in one place and a word in a sentence in another.
+
+To replace a picture, overwrite the file — the filenames are the whole
+contract, and `src/ui/artAssets.ts` is the one place that maps them to game
+types (edit it to change a name or use another format Vite handles: SVG, WebP,
+JPEG).
+
+```
+src/assets/art/
+  garden-home.png       garden-maize.png      unit-gnome.png
+  garden-dandelion.png  garden-slippery.png   unit-snail.png
+  garden-mushroom.png   garden-tunnel.png
+  garden-flytrap.png
+```
+
+What the art has to survive: square and transparent, 128–256px (they render at
+14–24px in a board cell, ~40px in a token — anything fiddly turns to mush at
+that size; non-square is allowed but letterboxes, since the CSS uses
+`object-fit: contain`). **Unit art** sits on a disc filled with its seat's
+colour — red, blue, gold or purple — so it needs a light outline or halo to
+stay legible on all four. **Garden art** appears at two very different scales:
+tucked into a cell's top-left corner during play, and filling the whole cell in
+the setup preview and the preset editor.
 
 ## Architecture in one paragraph
 
@@ -73,8 +91,7 @@ src/ui/       App shell + screen router, home screen, rules viewer, setup
               editor, error boundary, meta text, art (icon components); the
               local (useGame) and networked (useNetGame) sessions behind one
               GameSession shape
-src/assets/   the game's picture assets (see Art below)
-tools/art/    the script that draws them
+src/assets/   the game's picture assets (see Art above)
 e2e/          Playwright browser tests (play the real app through the DOM)
 RULES.md      tabletop rules (with [RULING] clarifications)
 CARDS.md      the 23 Whimsy cards + 5 Curses

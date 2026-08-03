@@ -4,9 +4,13 @@
  *
  * Gardens and units used to be emoji, which meant the board looked like a
  * different game on every platform (and like nothing at all where a glyph was
- * missing). The art is drawn by hand instead — see `tools/art/generate.py`,
- * which renders every file in `src/assets/art/` — and imported here so Vite
- * hashes and inlines it like any other asset.
+ * missing). The art is drawn by hand instead, and imported here so Vite hashes
+ * and inlines it like any other asset.
+ *
+ * This file is the only place a game type is tied to a filename: swapping a
+ * picture is dropping a new file into `src/assets/art/` under the same name,
+ * and renaming one (or moving to SVG/WebP) is a one-line edit here. See the
+ * Art section in README.md for what the drawings have to survive.
  *
  * `art.tsx` next door renders these; keeping the imports separate from the
  * components is what lets a module either be all-components (fast refresh) or
