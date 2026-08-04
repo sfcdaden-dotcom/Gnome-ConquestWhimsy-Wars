@@ -119,6 +119,13 @@ export interface GameConfig {
   centerStar: boolean;
   /** Garden tiles of each plantable type in each player's supply. Default 4. */
   tilesPerType: number;
+  /**
+   * Per-card deck composition, overriding the stock copy counts (2 of each
+   * Whimsy card, 1 of each Curse — see cards.ts). Sparse: only the cards that
+   * differ need an entry, and 0 removes a card from the deck entirely. Plain
+   * data, so it round-trips through save/replay like the rest of GameConfig.
+   */
+  deckCounts?: Record<CardId, number>;
   /** Additional-garden layout preset. Default 'none'. */
   gardenPreset: GardenPreset;
   /**

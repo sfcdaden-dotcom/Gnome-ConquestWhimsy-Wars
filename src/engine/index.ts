@@ -118,7 +118,19 @@ export {
 } from './helpers';
 
 // Card framework (data-driven; the full 23-card + 5-curse list from CARDS.md).
-export { CARD_DEFINITIONS, CURSE_DEFINITIONS, getCardDef, getCurseDef, isCurseId, deckHasCards } from './cards';
+export {
+  CARD_DEFINITIONS,
+  CURSE_DEFINITIONS,
+  DECK_CARD_IDS,
+  DEFAULT_CURSE_COPIES,
+  MAX_CARD_COPIES,
+  defaultDeckCounts,
+  resolveDeckCounts,
+  getCardDef,
+  getCurseDef,
+  isCurseId,
+  deckHasCards,
+} from './cards';
 export type { WhimsyCardDef, CurseCardDef, CardTiming, TargetStep, TargetingContext } from './cards';
 
 // Heuristic CPU player.

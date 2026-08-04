@@ -457,7 +457,13 @@ play (a response window, or the idle Action Phase).
 ## Cards
 
 Data-driven in `cards.ts`: 23 Whimsy cards × 2 copies + 5 Curses (all shuffled
-into the deck from the start, revealed face-up on draw, permanently active). A targeted
+into the deck from the start, revealed face-up on draw, permanently active).
+`GameConfig.deckCounts` overrides those copy counts per card — sparse (only the
+cards that differ need an entry), 0 removes a card outright, and
+`resolveDeckCounts` is the single place the stock counts and the override meet,
+so the setup screen's deck editor and `buildInitialDeck` cannot disagree.
+`createGame` rejects an unknown id, a count outside 0…`MAX_CARD_COPIES`, and a
+deck left with no Whimsy cards at all. A targeted
 card declares a `targetFlow(state, player) → TargetStep[]` — the ordered steps
 the engine walks during phased targeting (each step's `getOptions` computes its
 legal options from the state and the earlier picks). Once targeting completes

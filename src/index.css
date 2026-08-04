@@ -294,6 +294,88 @@ h2 {
   color: var(--error);
   font-size: 0.9rem;
 }
+
+/* ------------------------------------------------------------------ */
+/* Advanced settings (modal over the setup screen)                     */
+/* ------------------------------------------------------------------ */
+
+.advanced-card {
+  max-width: min(600px, 94vw);
+  text-align: left;
+  align-items: stretch;
+  max-height: min(88vh, 780px);
+  overflow: hidden;
+}
+.advanced-title {
+  font-size: 1.2rem;
+  margin: 0;
+  text-align: center;
+}
+.advanced-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  overflow-y: auto;
+}
+.advanced-card .setup-label {
+  width: 160px;
+}
+
+.stepper {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.stepper-input {
+  font: inherit;
+  width: 4.5rem;
+  text-align: center;
+  padding: 4px 6px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--cell);
+  color: inherit;
+}
+
+.deck-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.deck-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 6px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+}
+.deck-row.changed {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.deck-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.9rem;
+}
+.deck-tag {
+  flex: none;
+  width: 5.2rem;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+.deck-tag.tag-curse {
+  color: var(--error);
+}
 .editor-input {
   font: inherit;
   flex: 1;

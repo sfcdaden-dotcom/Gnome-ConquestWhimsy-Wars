@@ -1247,13 +1247,54 @@ export function isCurseId(id: CardId): boolean {
 // Deck operations
 // ---------------------------------------------------------------------------
 
-/** Build the initial shuffled deck. All 5 Curse Cards start shuffled into it. */
+/** Stock copies of each Curse Card (the defs carry no count — all are unique). */
+export const DEFAULT_CURSE_COPIES = 1;
+
+/** The most copies of one card a game may be configured with. */
+export const MAX_CARD_COPIES = 10;
+
+/** Every id the deck can hold, whimsy cards first, then curses. */
+export const DECK_CARD_IDS: readonly CardId[] = [
+  ...CARD_DEFINITIONS.map((c) => c.id),
+  ...CURSE_DEFINITIONS.map((c) => c.id),
+];
+
+/** The stock deck: 2 of each Whimsy card, 1 of each Curse. */
+export function defaultDeckCounts(): Record<CardId, number> {
+  const counts: Record<CardId, number> = {};
+  for (const def of CARD_DEFINITIONS) counts[def.id] = def.copies;
+  for (const def of CURSE_DEFINITIONS) counts[def.id] = DEFAULT_CURSE_COPIES;
+  return counts;
+}
+
+/**
+ * The stock counts with `overrides` applied — the one place that decides how
+ * many of each card a game holds, so the setup screen's deck editor and
+ * `buildInitialDeck` cannot disagree. Unknown ids are ignored (a config from
+ * an older build naming a card this one dropped still opens).
+ */
+export function resolveDeckCounts(overrides?: Readonly<Record<CardId, number>>): Record<CardId, number> {
+  const counts = defaultDeckCounts();
+  if (!overrides) return counts;
+  for (const [id, n] of Object.entries(overrides)) {
+    if (id in counts) counts[id] = n;
+  }
+  return counts;
+}
+
+/**
+ * Build the initial shuffled deck. All 5 Curse Cards start shuffled into it,
+ * unless `config.deckCounts` says otherwise (see `resolveDeckCounts`).
+ */
 export function buildInitialDeck(draft: GameState): void {
+  const counts = resolveDeckCounts(draft.config.deckCounts);
   const ids: CardId[] = [];
   for (const def of CARD_DEFINITIONS) {
-    for (let i = 0; i < def.copies; i++) ids.push(def.id);
+    for (let i = 0; i < counts[def.id]; i++) ids.push(def.id);
   }
-  for (const curse of CURSE_DEFINITIONS) ids.push(curse.id);
+  for (const curse of CURSE_DEFINITIONS) {
+    for (let i = 0; i < counts[curse.id]; i++) ids.push(curse.id);
+  }
   draft.deck = draftShuffle(draft, ids);
   draft.cursePool = [];
 }
