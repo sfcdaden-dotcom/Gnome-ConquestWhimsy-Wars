@@ -10,6 +10,18 @@
 
 import { expect, type Locator, type Page } from '@playwright/test';
 
+/**
+ * Pin the game seed. It lives in the advanced settings panel, so setting it is
+ * open → type → Done; every test that wants a deterministic game goes through
+ * here rather than repeating the three clicks.
+ */
+export async function setSeed(page: Page, seed: number): Promise<void> {
+  await page.getByTestId('open-advanced').click();
+  await page.getByTestId('seed-input').fill(String(seed));
+  await page.getByTestId('advanced-done').click();
+  await expect(page.getByTestId('open-advanced')).toBeVisible();
+}
+
 export interface BoardUnit {
   pos: string; // "x,y"
   x: number;
@@ -42,7 +54,7 @@ export class Game {
     // and every step of the test is a deliberate click.
     await this.page.getByTestId('seat-0-human').click();
     await this.page.getByTestId('seat-1-human').click();
-    await this.page.getByTestId('seed-input').fill(String(seed));
+    await setSeed(this.page, seed);
     await this.page.getByTestId('start-game').click();
     await expect(this.page.getByTestId('game-screen')).toBeVisible();
   }

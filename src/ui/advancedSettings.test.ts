@@ -12,6 +12,7 @@ import {
   deckCountOf,
   deckTotal,
   isDefaultSettings,
+  parseSeedText,
   settingsProblem,
 } from './advancedSettings';
 import type { AdvancedSettingsValue } from './advancedSettings';
@@ -57,6 +58,25 @@ describe('deck bookkeeping', () => {
   });
 });
 
+describe('the seed', () => {
+  it('is blank by default, which means "roll a fresh one"', () => {
+    expect(parseSeedText(DEFAULT_ADVANCED_SETTINGS.seedText)).toBeNull();
+    expect(settingsProblem(DEFAULT_ADVANCED_SETTINGS)).toBeNull();
+    expect(isDefaultSettings(DEFAULT_ADVANCED_SETTINGS)).toBe(true);
+  });
+
+  it('parses a typed number, and counts as a change', () => {
+    const v = { ...DEFAULT_ADVANCED_SETTINGS, seedText: ' 4242 ' };
+    expect(parseSeedText(v.seedText)).toBe(4242);
+    expect(settingsProblem(v)).toBeNull();
+    expect(isDefaultSettings(v)).toBe(false);
+  });
+
+  it('refuses anything that is not a number', () => {
+    expect(settingsProblem({ ...DEFAULT_ADVANCED_SETTINGS, seedText: 'banana' })).toMatch(/Seed must be a number/);
+  });
+});
+
 describe('settingsProblem', () => {
   it('passes the defaults, and the engine starts them', () => {
     expect(settingsProblem(DEFAULT_ADVANCED_SETTINGS)).toBeNull();
@@ -83,6 +103,7 @@ describe('settingsProblem', () => {
       gnomeBoardLimit: 12,
       totalReinforcements: 30,
       deckCounts: { [CARD_DEFINITIONS[0].id]: 4 },
+      seedText: '',
     };
     expect(settingsProblem(v)).toBeNull();
     const s = start(v);
