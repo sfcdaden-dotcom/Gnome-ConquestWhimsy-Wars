@@ -31,7 +31,7 @@ import { EngineError, PLANTABLE_GARDEN_TYPES } from './types';
 import { normalizeSeed, shuffled } from './rng';
 import { posKey } from './helpers';
 import { makeGarden } from './gardens';
-import { buildInitialDeck } from './cards';
+import { buildInitialDeck, isCurseId, MAX_CARD_COPIES, resolveDeckCounts } from './cards';
 import { DEFAULT_GARDEN_PRESET_ID, findGardenPreset } from './gardenPresets';
 
 // ---------------------------------------------------------------------------
@@ -111,6 +111,25 @@ function badConfig(message: string): never {
   throw new EngineError('BAD_CONFIG', message);
 }
 
+/**
+ * A configured deck has to be a deck: known cards, sane counts, and at least
+ * one card that can actually be held. A pile of nothing but curses is rejected
+ * because a drawn curse never enters a hand — every draw would resolve as a
+ * curse and the game would have no Whimsy Magic in it at all.
+ */
+function validateDeckCounts(counts: Record<string, number> | undefined): void {
+  if (!counts) return;
+  for (const [id, n] of Object.entries(counts)) {
+    if (!(id in resolveDeckCounts())) badConfig(`deckCounts names an unknown card "${id}"`);
+    if (!Number.isInteger(n) || n < 0 || n > MAX_CARD_COPIES) {
+      badConfig(`deckCounts["${id}"] must be an integer between 0 and ${MAX_CARD_COPIES}`);
+    }
+  }
+  const resolved = resolveDeckCounts(counts);
+  const whimsy = Object.entries(resolved).reduce((sum, [id, n]) => (isCurseId(id) ? sum : sum + n), 0);
+  if (whimsy < 1) badConfig('deckCounts must leave at least one Whimsy card in the deck');
+}
+
 function resolveConfig(options: CreateGameOptions): GameConfig {
   const playerCount = options.players.length;
   if (playerCount !== 2 && playerCount !== 4) badConfig('Whimsy Wars supports exactly 2 or 4 players');
@@ -163,6 +182,7 @@ function resolveConfig(options: CreateGameOptions): GameConfig {
     handLimit: options.handLimit ?? DEFAULT_CONFIG.handLimit,
     centerStar: options.centerStar ?? DEFAULT_CONFIG.centerStar,
     tilesPerType: options.tilesPerType ?? DEFAULT_CONFIG.tilesPerType,
+    ...(options.deckCounts ? { deckCounts: { ...options.deckCounts } } : {}),
     gardenPreset,
     ...(customGardens ? { customGardens } : {}),
     ...(customHomes ? { customHomes } : {}),
@@ -181,6 +201,7 @@ function resolveConfig(options: CreateGameOptions): GameConfig {
   if (!Number.isInteger(cfg.tilesPerType) || cfg.tilesPerType < 1) {
     badConfig('tilesPerType must be a positive integer');
   }
+  validateDeckCounts(cfg.deckCounts);
   return cfg;
 }
 

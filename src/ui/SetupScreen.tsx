@@ -1,6 +1,7 @@
 /**
  * New-game setup: player count, per-seat name + human/CPU, board preset,
- * Center Star toggle, optional seed.
+ * Center Star toggle, optional seed, and an advanced panel (board size, the
+ * wish/gnome economies, and the deck) behind a button.
  */
 
 import { useMemo, useRef, useState } from 'react';
@@ -14,7 +15,6 @@ import type {
   RandomLayout,
 } from '../engine';
 import {
-  DEFAULT_CONFIG,
   DEFAULT_GARDEN_PRESET_ID,
   GARDEN_PRESETS,
   generateRandomLayout,
@@ -24,10 +24,12 @@ import {
 } from '../engine';
 import { GARDEN_META, playerColor, randomSeed, PLAYER_COLOR_NAMES } from './meta';
 import { GardenIcon, UnitIcon } from './art';
+import { AdvancedSettings } from './AdvancedSettings';
+import { DEFAULT_ADVANCED_SETTINGS, isDefaultSettings, settingsOptions } from './advancedSettings';
+import type { AdvancedSettingsValue } from './advancedSettings';
 import { PresetEditor } from './PresetEditor';
 import type { PresetDraft } from './PresetEditor';
 import {
-  CUSTOM_EDITOR_BOARD_SIZE,
   PRESET_LABEL_MAX_LENGTH,
   buildCustomPresetDef,
   downloadCustomPreset,
@@ -35,8 +37,16 @@ import {
   parseCustomPresetFile,
 } from './customPresets';
 
-/** Board size the procedural preset previews (and plays) on. */
-const PREVIEW_BOARD_SIZE = DEFAULT_CONFIG.boardSize;
+/**
+ * The board a layout is played on, when the layout itself decides. A preset
+ * drawn on a fixed board — a file-backed built-in, or one from the editor —
+ * carries its gardens and homes as literal coordinates, so it only makes sense
+ * at the size it was authored for (`minBoardSize`). Scaling and procedural
+ * presets return null and follow the advanced board-size setting instead.
+ */
+function fixedBoardSize(def: GardenPresetDef): number | null {
+  return !def.seeded && def.homes ? def.minBoardSize : null;
+}
 
 export interface SetupResult {
   options: CreateGameOptions;
@@ -163,6 +173,10 @@ export function SetupScreen({
   const [centerStar, setCenterStar] = useState(true);
   const [seedText, setSeedText] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [settings, setSettings] = useState<AdvancedSettingsValue>(DEFAULT_ADVANCED_SETTINGS);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  /** Explains a preset the board size forced us to change (cleared on the next choice). */
+  const [presetNotice, setPresetNotice] = useState<string | null>(null);
   // The procedural preset's map seed, kept apart from the game seed so
   // re-rolling the board doesn't also re-roll the dice and the deck.
   const [layoutSeed, setLayoutSeed] = useState(randomSeed);
@@ -173,11 +187,17 @@ export function SetupScreen({
   /** The selected preset, when it is one the player drew (remove applies only to those). */
   const selectedCustom = isCustomPresetId(preset) ? customPresets.find((p) => p.id === preset) : undefined;
 
+  /**
+   * The board this game will actually be played on: the selected layout's own
+   * size when it has one, otherwise whatever the advanced panel is set to.
+   */
+  const boardSize = fixedBoardSize(presetDef) ?? settings.boardSize;
+
   // What you see in the preview is what you play: the rolled layout is handed
   // to the engine verbatim rather than re-derived from the game seed.
   const rolled = useMemo(
-    () => (presetDef.seeded ? generateRandomLayout(PREVIEW_BOARD_SIZE, layoutSeed) : null),
-    [presetDef, layoutSeed],
+    () => (presetDef.seeded ? generateRandomLayout(boardSize, layoutSeed) : null),
+    [presetDef, boardSize, layoutSeed],
   );
 
   /**
@@ -187,8 +207,7 @@ export function SetupScreen({
    * a player-drawn one carries its own (see `layoutOptions` below).
    */
   const previewLayout = useMemo<PreviewLayout>(() => {
-    const boardSize = isCustomPresetId(presetDef.id) ? CUSTOM_EDITOR_BOARD_SIZE : PREVIEW_BOARD_SIZE;
-    if (rolled) return { ...rolled, boardSize: PREVIEW_BOARD_SIZE };
+    if (rolled) return { ...rolled, boardSize };
     return {
       boardSize,
       gardens: presetDef.build(boardSize),
@@ -196,7 +215,7 @@ export function SetupScreen({
       // disagree with the game it starts.
       homes: presetDef.buildHomes?.(boardSize, layoutSeed) ?? presetDef.homes ?? homePositions(boardSize, 4),
     };
-  }, [presetDef, rolled, layoutSeed]);
+  }, [presetDef, boardSize, rolled, layoutSeed]);
 
   /**
    * The selected preset as a concrete layout the editor can open — the map
@@ -261,11 +280,38 @@ export function SetupScreen({
 
   /** Dropdown handler: every option but "Custom" resolves to a preset id. */
   function choosePreset(value: string) {
+    setPresetNotice(null);
     if (value === CUSTOM_PRESET_OPTION) {
       setEditorTarget({ mode: 'new' });
       return;
     }
     setPreset(value);
+  }
+
+  /** Can this layout be played on the board the advanced panel is set to? */
+  function presetFits(def: GardenPresetDef): boolean {
+    return fixedBoardSize(def) !== null || def.minBoardSize <= settings.boardSize;
+  }
+
+  /**
+   * Closing the advanced panel can strand the selected preset — Gauntlet needs
+   * a 7×7 board and cannot be drawn on a 5×5 one — so the largest stock layout
+   * that does fit takes over, with a line saying so. Better here than as an
+   * engine error after "Start the war".
+   */
+  function applySettings(next: AdvancedSettingsValue) {
+    setSettings(next);
+    setAdvancedOpen(false);
+    if (fixedBoardSize(presetDef) !== null || presetDef.minBoardSize <= next.boardSize) {
+      setPresetNotice(null);
+      return;
+    }
+    const fallback = GARDEN_PRESETS.find((p) => fixedBoardSize(p) === null && p.minBoardSize <= next.boardSize);
+    if (!fallback) return;
+    setPreset(fallback.id);
+    setPresetNotice(
+      `${presetDef.label} needs a ${presetDef.minBoardSize}×${presetDef.minBoardSize} board, so the layout is now ${fallback.label}.`,
+    );
   }
 
   function removeCustomPreset(id: string) {
@@ -297,15 +343,15 @@ export function SetupScreen({
   function layoutOptions(): Partial<CreateGameOptions> {
     if (rolled) {
       return {
-        boardSize: PREVIEW_BOARD_SIZE,
+        boardSize,
         customGardens: rolled.gardens,
         customHomes: seatHomes(rolled.homes, count),
       };
     }
-    if (!isCustomPresetId(preset)) return {};
+    if (!isCustomPresetId(preset)) return { boardSize };
     return {
-      boardSize: CUSTOM_EDITOR_BOARD_SIZE,
-      customGardens: presetDef.build(CUSTOM_EDITOR_BOARD_SIZE),
+      boardSize,
+      customGardens: presetDef.build(boardSize),
       ...(presetDef.homes ? { customHomes: seatHomes(presetDef.homes, count) } : {}),
     };
   }
@@ -320,6 +366,7 @@ export function SetupScreen({
       gardenPreset: preset,
       ...layoutOptions(),
       centerStar,
+      ...settingsOptions(settings),
       players: seats.slice(0, count).map((s, i) => ({
         name: s.name.trim() || DEFAULT_NAMES[i],
         controller: s.controller,
@@ -426,8 +473,9 @@ export function SetupScreen({
             >
               <optgroup label="Built-in">
                 {GARDEN_PRESETS.map((p) => (
-                  <option key={p.id} value={p.id}>
+                  <option key={p.id} value={p.id} disabled={!presetFits(p)}>
                     Preset: {p.label}
+                    {presetFits(p) ? '' : ` (needs ${p.minBoardSize}×${p.minBoardSize})`}
                   </option>
                 ))}
               </optgroup>
@@ -498,6 +546,11 @@ export function SetupScreen({
             </div>
           </div>
           <p className="preset-description muted small">{presetDef.description}</p>
+          <p className="preset-description muted small">
+            Board: {boardSize}×{boardSize}
+            {fixedBoardSize(presetDef) !== null && ' (fixed by this layout)'}
+          </p>
+          {presetNotice && <p className="preset-description muted small">{presetNotice}</p>}
         </div>
 
         <div className="setup-row">
@@ -521,7 +574,35 @@ export function SetupScreen({
           />
         </div>
 
+        <div className="setup-row">
+          <span className="setup-label">Advanced</span>
+          <div className="btn-row">
+            <button
+              type="button"
+              className="btn small"
+              data-testid="open-advanced"
+              onClick={() => setAdvancedOpen(true)}
+            >
+              ⚙️ Advanced settings{isDefaultSettings(settings) ? '' : ' •'}
+            </button>
+            {!isDefaultSettings(settings) && <span className="muted small">Customised</span>}
+          </div>
+        </div>
+
         {error && <div className="setup-error">{error}</div>}
+
+        {advancedOpen && (
+          <AdvancedSettings
+            value={settings}
+            onApply={applySettings}
+            onCancel={() => setAdvancedOpen(false)}
+            boardSizeLockedReason={
+              fixedBoardSize(presetDef) !== null
+                ? `“${presetDef.label}” is drawn on a fixed ${boardSize}×${boardSize} board. Pick a scaling layout to change the board size.`
+                : undefined
+            }
+          />
+        )}
 
         <button type="button" className="btn accent big" data-testid="start-game" onClick={start}>
           🌱 Start the war
