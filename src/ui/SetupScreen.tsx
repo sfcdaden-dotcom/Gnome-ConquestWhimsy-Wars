@@ -25,7 +25,7 @@ import {
 import { GARDEN_META, playerColor, randomSeed, PLAYER_COLOR_NAMES } from './meta';
 import { GardenIcon, UnitIcon } from './art';
 import { AdvancedSettings } from './AdvancedSettings';
-import { DEFAULT_ADVANCED_SETTINGS, isDefaultSettings, settingsOptions } from './advancedSettings';
+import { DEFAULT_ADVANCED_SETTINGS, isDefaultSettings, parseSeedText, settingsOptions } from './advancedSettings';
 import type { AdvancedSettingsValue } from './advancedSettings';
 import { PresetEditor } from './PresetEditor';
 import type { PresetDraft } from './PresetEditor';
@@ -171,7 +171,6 @@ export function SetupScreen({
   // editor never disturbs the selection.
   const [editorTarget, setEditorTarget] = useState<EditorTarget | null>(null);
   const [centerStar, setCenterStar] = useState(true);
-  const [seedText, setSeedText] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [settings, setSettings] = useState<AdvancedSettingsValue>(DEFAULT_ADVANCED_SETTINGS);
   const [advancedOpen, setAdvancedOpen] = useState(false);
@@ -357,11 +356,10 @@ export function SetupScreen({
   }
 
   function start() {
-    const parsed = seedText.trim() === '' ? randomSeed() : Number(seedText.trim());
-    if (!Number.isFinite(parsed)) {
-      setError('Seed must be a number (or leave it blank for a random one).');
-      return;
-    }
+    // A blank seed is the common case: roll one here, so every game the panel
+    // did not pin is a fresh one. Anything unparseable was already refused by
+    // the panel (`settingsProblem`), which is why there is no error path.
+    const seed = parseSeedText(settings.seedText) ?? randomSeed();
     const options: CreateGameOptions = {
       gardenPreset: preset,
       ...layoutOptions(),
@@ -373,7 +371,7 @@ export function SetupScreen({
         ...(s.controller === 'cpu' ? { difficulty: s.difficulty } : {}),
       })),
     };
-    onStart({ options, seed: Math.floor(parsed) });
+    onStart({ options, seed });
   }
 
   if (editorTarget) {
@@ -562,19 +560,6 @@ export function SetupScreen({
         </div>
 
         <div className="setup-row">
-          <span className="setup-label">Seed</span>
-          <input
-            type="text"
-            className="seed-input"
-            placeholder="random"
-            value={seedText}
-            onChange={(e) => setSeedText(e.target.value)}
-            aria-label="Random seed (optional)"
-            data-testid="seed-input"
-          />
-        </div>
-
-        <div className="setup-row">
           <span className="setup-label">Advanced</span>
           <div className="btn-row">
             <button
@@ -585,7 +570,12 @@ export function SetupScreen({
             >
               ⚙️ Advanced settings{isDefaultSettings(settings) ? '' : ' •'}
             </button>
-            {!isDefaultSettings(settings) && <span className="muted small">Customised</span>}
+            {!isDefaultSettings(settings) && (
+              <span className="muted small">
+                Customised
+                {settings.seedText.trim() !== '' && ` · seed ${settings.seedText.trim()}`}
+              </span>
+            )}
           </div>
         </div>
 

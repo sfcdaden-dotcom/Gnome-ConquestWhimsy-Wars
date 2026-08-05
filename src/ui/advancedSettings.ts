@@ -31,6 +31,12 @@ export interface AdvancedSettingsValue {
    * entry, so an untouched deck adds nothing to the game config.
    */
   deckCounts: Record<CardId, number>;
+  /**
+   * The game seed, as typed. Blank means "roll a fresh one at start", which is
+   * why this is text rather than a number — there is no number that means
+   * "unset", and the raw text is also what a bad entry is reported against.
+   */
+  seedText: string;
 }
 
 export const DEFAULT_ADVANCED_SETTINGS: AdvancedSettingsValue = {
@@ -40,7 +46,25 @@ export const DEFAULT_ADVANCED_SETTINGS: AdvancedSettingsValue = {
   gnomeBoardLimit: DEFAULT_CONFIG.gnomeBoardLimit,
   totalReinforcements: DEFAULT_CONFIG.totalReinforcements,
   deckCounts: {},
+  seedText: '',
 };
+
+/**
+ * The typed seed as a number: null when it is not one. Blank is not an error
+ * — it means "roll a fresh seed", which the setup screen does at start rather
+ * than here, so the panel never shows a seed the game will not use.
+ */
+export function parseSeedText(text: string): number | null {
+  const trimmed = text.trim();
+  if (trimmed === '') return null;
+  const n = Number(trimmed);
+  return Number.isFinite(n) ? Math.floor(n) : null;
+}
+
+/** True when `text` is something other than a seed (blank is fine). */
+export function seedTextIsBad(text: string): boolean {
+  return text.trim() !== '' && parseSeedText(text) === null;
+}
 
 export type NumericSetting = 'startingWishes' | 'wishLimit' | 'gnomeBoardLimit' | 'totalReinforcements';
 
@@ -94,7 +118,8 @@ export function isDefaultSettings(v: AdvancedSettingsValue): boolean {
     v.wishLimit === DEFAULT_ADVANCED_SETTINGS.wishLimit &&
     v.gnomeBoardLimit === DEFAULT_ADVANCED_SETTINGS.gnomeBoardLimit &&
     v.totalReinforcements === DEFAULT_ADVANCED_SETTINGS.totalReinforcements &&
-    Object.keys(v.deckCounts).length === 0
+    Object.keys(v.deckCounts).length === 0 &&
+    v.seedText.trim() === ''
   );
 }
 
@@ -129,6 +154,7 @@ export function settingsProblem(v: AdvancedSettingsValue): string | null {
     return 'Total reinforcements cannot be below the gnome limit.';
   }
   if (whimsyTotal(v) < 1) return 'The deck needs at least one Whimsy card.';
+  if (seedTextIsBad(v.seedText)) return 'Seed must be a number (or leave it blank for a random one).';
   return null;
 }
 

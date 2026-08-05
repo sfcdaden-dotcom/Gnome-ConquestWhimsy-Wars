@@ -10,6 +10,7 @@
 import { readFile } from 'node:fs/promises';
 import type { Page } from '@playwright/test';
 import { expect, test } from '@playwright/test';
+import { setSeed } from './helpers';
 
 const SEED = 4242;
 
@@ -151,7 +152,7 @@ test('plays a custom preset without saving: no download, no filename, and the ma
   await page.getByTestId('player-count-2').click();
   await page.getByTestId('seat-0-human').click();
   await page.getByTestId('seat-1-human').click();
-  await page.getByTestId('seed-input').fill(String(SEED));
+  await setSeed(page, SEED);
   await page.getByTestId('start-game').click();
   await expect(page.getByTestId('game-screen')).toBeVisible();
 
@@ -221,7 +222,7 @@ test('a preset shipped as a file plays its own home positions', async ({ page })
   await page.getByTestId('player-count-2').click();
   await page.getByTestId('seat-0-human').click();
   await page.getByTestId('seat-1-human').click();
-  await page.getByTestId('seed-input').fill(String(SEED));
+  await setSeed(page, SEED);
   await page.getByTestId('start-game').click();
   await expect(page.getByTestId('game-screen')).toBeVisible();
 

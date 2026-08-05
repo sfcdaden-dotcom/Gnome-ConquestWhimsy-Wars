@@ -9,6 +9,7 @@
 
 import type { Page } from '@playwright/test';
 import { expect, test } from '@playwright/test';
+import { setSeed } from './helpers';
 
 async function openSetup(page: Page): Promise<void> {
   await page.goto('/');
@@ -49,7 +50,7 @@ test('a new board size reaches the preview and the game', async ({ page }) => {
 
   await page.getByTestId('player-count-2').click();
   await page.getByTestId('seat-1-human').click();
-  await page.getByTestId('seed-input').fill('4242');
+  await setSeed(page, 4242);
   await page.getByTestId('start-game').click();
   await expect(page.getByTestId('game-screen')).toBeVisible();
   await expect(page.locator('.board').first().locator('button.cell')).toHaveCount(81);
@@ -102,6 +103,30 @@ test('the deck editor changes card counts, and refuses an empty deck', async ({ 
   await expect(page.getByTestId('advanced-done')).toBeEnabled();
 });
 
+test('the seed lives in the panel, and a bad one is refused', async ({ page }) => {
+  await openSetup(page);
+  // It is no longer a row on the setup screen itself.
+  await expect(page.getByTestId('seed-input')).toBeHidden();
+
+  await openAdvanced(page);
+  await page.getByTestId('seed-input').fill('banana');
+  await expect(page.getByTestId('advanced-done')).toBeDisabled();
+  await expect(page.getByRole('dialog')).toContainText('Seed must be a number');
+
+  await page.getByTestId('seed-input').fill('4242');
+  await expect(page.getByTestId('advanced-done')).toBeEnabled();
+  await page.getByTestId('advanced-done').click();
+
+  // A pinned seed is worth seeing without reopening the panel.
+  await expect(page.getByTestId('preset-section')).toBeVisible();
+  await expect(page.getByText('seed 4242')).toBeVisible();
+
+  await page.getByTestId('preset-select').selectOption('few');
+  await page.getByTestId('seat-1-human').click();
+  await page.getByTestId('start-game').click();
+  await expect(page.getByTestId('game-screen')).toBeVisible();
+});
+
 test('a raised wish economy is what the game starts with', async ({ page }) => {
   await openSetup(page);
   await openAdvanced(page);
@@ -112,7 +137,7 @@ test('a raised wish economy is what the game starts with', async ({ page }) => {
   await page.getByTestId('preset-select').selectOption('few');
   await page.getByTestId('player-count-2').click();
   await page.getByTestId('seat-1-human').click();
-  await page.getByTestId('seed-input').fill('4242');
+  await setSeed(page, 4242);
   await page.getByTestId('start-game').click();
 
   await expect(page.getByTestId('game-screen')).toBeVisible();

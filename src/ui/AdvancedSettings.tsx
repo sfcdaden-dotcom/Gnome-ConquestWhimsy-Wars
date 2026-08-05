@@ -229,6 +229,24 @@ export function AdvancedSettings({
                 </button>
               </div>
             </div>
+
+            <div className="setup-row">
+              <span
+                className="setup-label"
+                title="Fixes every roll and shuffle: the same seed replays the same game. Blank rolls a fresh one."
+              >
+                Seed
+              </span>
+              <input
+                type="text"
+                className="seed-input"
+                placeholder="random"
+                value={draft.seedText}
+                onChange={(e) => setDraft({ ...draft, seedText: e.target.value })}
+                aria-label="Random seed (optional)"
+                data-testid="seed-input"
+              />
+            </div>
           </div>
         )}
 
