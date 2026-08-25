@@ -1,7 +1,14 @@
 /**
- * New-game setup: player count, per-seat name + human/CPU, board preset,
- * Center Star toggle, optional seed, and an advanced panel (board size, the
- * wish/gnome economies, and the deck) behind a button.
+ * New-game setup: player count, per-seat name + human/CPU, board layout,
+ * Center Star toggle, and an advanced panel (board size, the wish/gnome
+ * economies, the deck and the seed) behind a button.
+ *
+ * The layout menu leads with the three starting-board MODES — Fresh, Bare
+ * Essentials, True Random — which are generated, so they fit every board size
+ * the advanced panel offers. The fixed classic layouts are mostly drawn for a
+ * 7×7 and would otherwise be most of the menu, so they sit behind a "Classic
+ * layouts" toggle; the toggle opens itself whenever a classic is the current
+ * selection, so a preset arriving from anywhere else is never invisible.
  */
 
 import { useMemo, useRef, useState } from 'react';
@@ -15,9 +22,10 @@ import type {
   RandomLayout,
 } from '../engine';
 import {
+  CLASSIC_PRESETS,
   DEFAULT_GARDEN_PRESET_ID,
   GARDEN_PRESETS,
-  generateRandomLayout,
+  MODE_PRESETS,
   homePositions,
   posKey,
   seatHomes,
@@ -174,6 +182,8 @@ export function SetupScreen({
   const [error, setError] = useState<string | null>(null);
   const [settings, setSettings] = useState<AdvancedSettingsValue>(DEFAULT_ADVANCED_SETTINGS);
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  /** Whether the menu also lists the fixed classic layouts (see the note up top). */
+  const [showClassic, setShowClassic] = useState(false);
   /** Explains a preset the board size forced us to change (cleared on the next choice). */
   const [presetNotice, setPresetNotice] = useState<string | null>(null);
   // The procedural preset's map seed, kept apart from the game seed so
@@ -182,6 +192,11 @@ export function SetupScreen({
   const importInputRef = useRef<HTMLInputElement>(null);
 
   const allPresets = [...GARDEN_PRESETS, ...customPresets];
+  const classicSelected = CLASSIC_PRESETS.some((p) => p.id === preset);
+  // A classic can be selected without the toggle — the board-size fallback
+  // below, or a session that started on one — and a selection the menu does
+  // not list would render as blank.
+  const classicVisible = showClassic || classicSelected;
   const presetDef = allPresets.find((p) => p.id === preset) ?? allPresets.find((p) => p.id === DEFAULT_GARDEN_PRESET_ID)!;
   /** The selected preset, when it is one the player drew (remove applies only to those). */
   const selectedCustom = isCustomPresetId(preset) ? customPresets.find((p) => p.id === preset) : undefined;
@@ -193,9 +208,14 @@ export function SetupScreen({
   const boardSize = fixedBoardSize(presetDef) ?? settings.boardSize;
 
   // What you see in the preview is what you play: the rolled layout is handed
-  // to the engine verbatim rather than re-derived from the game seed.
-  const rolled = useMemo(
-    () => (presetDef.seeded ? generateRandomLayout(boardSize, layoutSeed) : null),
+  // to the engine verbatim rather than re-derived from the game seed. It is
+  // rolled through the PRESET rather than by calling the generator directly,
+  // so each mode previews its own kind of board.
+  const rolled = useMemo<RandomLayout | null>(
+    () =>
+      presetDef.seeded && presetDef.buildHomes
+        ? { gardens: presetDef.build(boardSize, layoutSeed), homes: presetDef.buildHomes(boardSize, layoutSeed) }
+        : null,
     [presetDef, boardSize, layoutSeed],
   );
 
@@ -305,7 +325,9 @@ export function SetupScreen({
       setPresetNotice(null);
       return;
     }
-    const fallback = GARDEN_PRESETS.find((p) => fixedBoardSize(p) === null && p.minBoardSize <= next.boardSize);
+    const fits = (p: GardenPresetDef) => fixedBoardSize(p) === null && p.minBoardSize <= next.boardSize;
+    // A mode first: it is generated, so it fits whatever size was just chosen.
+    const fallback = MODE_PRESETS.find(fits) ?? GARDEN_PRESETS.find(fits);
     if (!fallback) return;
     setPreset(fallback.id);
     setPresetNotice(
@@ -469,10 +491,10 @@ export function SetupScreen({
               aria-label="Extra-garden preset"
               data-testid="preset-select"
             >
-              <optgroup label="Built-in">
-                {GARDEN_PRESETS.map((p) => (
+              <optgroup label="Modes">
+                {MODE_PRESETS.map((p) => (
                   <option key={p.id} value={p.id} disabled={!presetFits(p)}>
-                    Preset: {p.label}
+                    {p.label}
                     {presetFits(p) ? '' : ` (needs ${p.minBoardSize}×${p.minBoardSize})`}
                   </option>
                 ))}
@@ -481,12 +503,22 @@ export function SetupScreen({
                 <optgroup label="This session">
                   {customPresets.map((p) => (
                     <option key={p.id} value={p.id}>
-                      Preset: {p.label}
+                      {p.label}
                     </option>
                   ))}
                 </optgroup>
               )}
-              <option value={CUSTOM_PRESET_OPTION}>Preset: Custom</option>
+              {classicVisible && (
+                <optgroup label="Classic layouts">
+                  {CLASSIC_PRESETS.map((p) => (
+                    <option key={p.id} value={p.id} disabled={!presetFits(p)}>
+                      {p.label}
+                      {presetFits(p) ? '' : ` (needs ${p.minBoardSize}×${p.minBoardSize})`}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              <option value={CUSTOM_PRESET_OPTION}>Custom — draw your own…</option>
             </select>
             <div className="btn-row">
               {rolled && (
@@ -504,6 +536,23 @@ export function SetupScreen({
               )}
               <button type="button" className="btn small" onClick={() => importInputRef.current?.click()}>
                 📂 Import…
+              </button>
+              {/* The classics stay one click away rather than in the menu.
+                  Hiding them is refused while one is selected, since the menu
+                  would then show a blank selection. */}
+              <button
+                type="button"
+                className={`btn small${classicVisible ? ' accent' : ''}`}
+                data-testid="toggle-classic-presets"
+                disabled={classicSelected}
+                title={
+                  classicSelected
+                    ? 'A classic layout is selected — pick a mode to fold these away again.'
+                    : 'The fixed hand-drawn layouts (Orchard, Fortress, Gauntlet, …)'
+                }
+                onClick={() => setShowClassic((v) => !v)}
+              >
+                🗂️ Classic layouts
               </button>
               {/* Edit/Export work on any preset — a built-in opens as a fork,
                   and its exported .json is what `src/engine/presets/` takes. */}

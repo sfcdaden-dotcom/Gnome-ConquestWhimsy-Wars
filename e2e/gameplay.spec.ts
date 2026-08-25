@@ -413,7 +413,7 @@ test('cancelling phased targeting returns the card to the hand', async ({ page }
 });
 
 // ---------------------------------------------------------------------------
-// The Random preset (the shipping default)
+// The True Random mode (the shipping default)
 // ---------------------------------------------------------------------------
 
 /** Row-major indices of the cells carrying each kind of marker, read off the DOM. */
@@ -439,7 +439,7 @@ async function openSetup(page: Page): Promise<void> {
   await page.getByTestId('home-local').click();
 }
 
-test('the Random preset is the default and previews a symmetric map', async ({ page }) => {
+test('True Random is the default mode and previews a symmetric map', async ({ page }) => {
   await openSetup(page);
   await expect(page.getByLabel('Extra-garden preset')).toHaveValue('random');
 

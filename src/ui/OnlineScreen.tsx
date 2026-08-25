@@ -18,7 +18,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import { GARDEN_PRESETS } from '../engine';
+import { CLASSIC_PRESETS, MODE_PRESETS } from '../engine';
 import type { AiDifficulty, GardenPreset } from '../engine';
 import { GameScreen } from './GameScreen';
 import { useNetGame } from './useNetGame';
@@ -373,11 +373,22 @@ function Lobby({
                     value={room.gardenPreset}
                     onChange={(e) => net.configure({ gardenPreset: e.target.value as GardenPreset })}
                   >
-                    {GARDEN_PRESETS.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.label}
-                      </option>
-                    ))}
+                    {/* Same split as local setup: the generated modes first,
+                        the fixed classic layouts in a group of their own. */}
+                    <optgroup label="Modes">
+                      {MODE_PRESETS.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.label}
+                        </option>
+                      ))}
+                    </optgroup>
+                    <optgroup label="Classic layouts">
+                      {CLASSIC_PRESETS.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.label}
+                        </option>
+                      ))}
+                    </optgroup>
                   </select>
                 </label>
                 <p className="muted small">

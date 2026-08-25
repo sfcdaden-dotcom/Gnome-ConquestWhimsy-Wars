@@ -9,11 +9,14 @@
 
 import type { Page } from '@playwright/test';
 import { expect, test } from '@playwright/test';
-import { setSeed } from './helpers';
+import { setSeed, showClassicPresets } from './helpers';
 
 async function openSetup(page: Page): Promise<void> {
   await page.goto('/');
   await page.getByTestId('home-local').click();
+  // These tests pin exact preview coordinates, so they play on the fixed
+  // classic layouts rather than on a mode that rolls a new map per load.
+  await showClassicPresets(page);
 }
 
 async function openAdvanced(page: Page): Promise<void> {

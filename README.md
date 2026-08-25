@@ -3,8 +3,10 @@
 A digital version of the Whimsy Wars tabletop game: harvest gardens, hoard
 Wishes, and gnome your enemies into the compost. 2 or 4 players (any mix of
 human hot-seat and CPU, with Easy/Normal/Hard difficulty per seat) on an N×N
-garden board — play a freshly rolled symmetrical map, pick a built-in board
-preset, or draw your own in the editor. An **advanced panel** on the setup
+garden board — start from one of three rolled-fresh symmetrical modes
+(**Fresh**: homes only; **Bare Essentials**: a Mushroom and a Dandelion beside
+every home; **True Random**: a full map), draw your own layout in the editor,
+or pick one of the fixed classic layouts. An **advanced panel** on the setup
 screen opens the rest of the game's shape: board size, the economies (starting
 wishes, wish cap, gnome board limit, reinforcements), the per-card deck
 counts, and a fixed seed. Play **local** (hot-seat and CPU on one device) or

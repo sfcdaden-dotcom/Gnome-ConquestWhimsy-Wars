@@ -27,6 +27,8 @@ export type { GameSeal } from './setup';
 // Garden preset registry (UI reads this to render the preset menu).
 export {
   GARDEN_PRESETS,
+  MODE_PRESETS,
+  CLASSIC_PRESETS,
   DEFAULT_GARDEN_PRESET_ID,
   RANDOM_GARDEN_PRESET_ID,
   findGardenPreset,
@@ -49,9 +51,16 @@ export {
 } from './presetFile';
 export type { GardenPresetFile, ValidatedPresetLayout, PresetLayoutValidation } from './presetFile';
 
-// Procedural map generation (the "Random" preset; the setup screen previews it).
-export { generateRandomLayout, orbitOf, rotate90, RANDOM_LAYOUT_MIN_BOARD_SIZE } from './randomLayout';
-export type { RandomLayout } from './randomLayout';
+// Procedural map generation (the three starting-board modes; setup previews them).
+export {
+  generateRandomLayout,
+  orbitOf,
+  rotate90,
+  LAYOUT_MODES,
+  LAYOUT_MODE_MIN_BOARD_SIZE,
+  RANDOM_LAYOUT_MIN_BOARD_SIZE,
+} from './randomLayout';
+export type { RandomLayout, LayoutMode } from './randomLayout';
 
 // Core reducer API.
 export {
