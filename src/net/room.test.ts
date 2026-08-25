@@ -324,7 +324,11 @@ describe('a room seats the people in it', () => {
     expect(stranger.last('welcome')?.you.seat).toBeNull();
   });
 
-  it('hands the lobby to someone who is still here when the host leaves', async () => {
+  // The host used to be a loan that moved to whoever was present, which read
+  // as the start button teleporting between players — and left both ends of a
+  // two-player room waiting for each other. It is static now: it moves only
+  // when somebody explicitly takes the room over.
+  it('keeps the room with the host when they disconnect', async () => {
     const { room } = await lobby(['human', 'human']);
     const c1 = new FakeConn('c1');
     await room.hello(c1, { ...HELLO });
@@ -332,24 +336,20 @@ describe('a room seats the people in it', () => {
 
     await room.disconnect('c0');
 
-    expect(c1.last('welcome')?.you.isHost).toBe(true);
-    await room.handle('c1', { t: 'configure', seats: [{ index: 0, controller: 'cpu' }] });
+    // The guest is not quietly promoted, and cannot deal in the host's place.
+    expect(c1.last('welcome')?.you.isHost).toBe(false);
     await room.handle('c1', { t: 'start' });
-    expect(room.phase).toBe('playing');
+    expect(c1.last('error')?.code).toBe('NOT_HOST');
+    expect(room.phase).toBe('lobby');
   });
 
-  // The handover above is a loan. Reloading the page is the obvious way for a
-  // host to check whether anyone has arrived, and it must not cost them the
-  // start button — otherwise both ends sit waiting for a host who is watching
-  // the same "waiting for the host" line.
-  it('gives the lobby back to the host when they return from a refresh', async () => {
+  it('is still the host after a refresh', async () => {
     const { room, c0 } = await lobby(['human', 'human']);
     const hostToken = c0.last('welcome')!.you.token;
     const c1 = new FakeConn('c1');
     await room.hello(c1, { ...HELLO });
 
     await room.disconnect('c0');
-    expect(c1.last('welcome')?.you.isHost).toBe(true);
 
     // The refreshed page: a new socket presenting the same token.
     const again = new FakeConn('c0-again');
@@ -361,16 +361,62 @@ describe('a room seats the people in it', () => {
     expect(room.phase).toBe('playing');
   });
 
-  it('leaves the lobby with whoever is here while the host is away', async () => {
-    const { room } = await lobby(['human', 'human']);
-    const c1 = new FakeConn('c1');
-    await room.hello(c1, { ...HELLO });
-    await room.disconnect('c0');
+  it('binds the host to whoever holds the room key, not to whoever dials first', async () => {
+    const host = makeHost();
+    const room = await Room.open(host, 'ABC123');
+    const hostKey = await room.hostKeyForCreate();
 
-    // Nobody is coming back: c1 can still set the table up and deal.
-    await room.handle('c1', { t: 'configure', seats: [{ index: 0, controller: 'cpu' }] });
-    await room.handle('c1', { t: 'start' });
-    expect(room.phase).toBe('playing');
+    // The friend clicks the invite link before the host's own socket lands.
+    const friend = new FakeConn('friend');
+    await room.hello(friend, { ...HELLO });
+    expect(friend.last('welcome')?.you.isHost).toBe(false);
+
+    const opener = new FakeConn('opener');
+    await room.hello(opener, { ...HELLO, hostKey });
+    expect(opener.last('welcome')?.you.isHost).toBe(true);
+  });
+
+  it('binds the host key once and ignores it afterwards', async () => {
+    const host = makeHost();
+    const room = await Room.open(host, 'ABC123');
+    const hostKey = await room.hostKeyForCreate();
+
+    const opener = new FakeConn('opener');
+    await room.hello(opener, { ...HELLO, hostKey });
+    expect(opener.last('welcome')?.you.isHost).toBe(true);
+
+    // A copy of the key — a second tab, or somebody it was pasted to — does
+    // not take the room off the person already holding it.
+    const other = new FakeConn('other');
+    await room.hello(other, { ...HELLO, hostKey });
+    expect(other.last('welcome')?.you.isHost).toBe(false);
+    expect(opener.last('welcome')?.you.isHost).toBe(true);
+  });
+
+  it('lets a host whose first dial failed present the key again', async () => {
+    const host = makeHost();
+    const room = await Room.open(host, 'ABC123');
+    const hostKey = await room.hostKeyForCreate();
+
+    // The socket dies before `hello` ever lands, then the client redials.
+    const retry = new FakeConn('retry');
+    await room.hello(retry, { ...HELLO, hostKey });
+    expect(retry.last('welcome')?.you.isHost).toBe(true);
+  });
+
+  it('makes the first connection the host in a room that has no key', async () => {
+    // Rooms persisted before `hostKey` existed, and any path that skipped the
+    // create endpoint. Still static — set once, and it does not move.
+    const host = makeHost();
+    const room = await Room.open(host, 'ABC123');
+    const first = new FakeConn('first');
+    await room.hello(first, { ...HELLO });
+    expect(first.last('welcome')?.you.isHost).toBe(true);
+
+    await room.disconnect('first');
+    const second = new FakeConn('second');
+    await room.hello(second, { ...HELLO });
+    expect(second.last('welcome')?.you.isHost).toBe(false);
   });
 
   it('leaves a host who took a CPU seat in charge of the lobby', async () => {

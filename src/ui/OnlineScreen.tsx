@@ -22,7 +22,7 @@ import { CLASSIC_PRESETS, MODE_PRESETS } from '../engine';
 import type { AiDifficulty, GardenPreset } from '../engine';
 import { GameScreen } from './GameScreen';
 import { useNetGame } from './useNetGame';
-import { NAME_KEY, roomCodeFromSearch, roomHref } from './netClient';
+import { hostKeyStore, NAME_KEY, roomCodeFromSearch, roomHref } from './netClient';
 import { ROOM_CODE_LENGTH } from '../net/protocol';
 import { playerColor } from './meta';
 import { blockerAction, blockerText, canStart, lobbyBlocker } from './lobbyStatus';
@@ -89,7 +89,11 @@ function OnlineMenu({
     try {
       const res = await fetch('/api/rooms', { method: 'POST' });
       if (!res.ok) throw new Error(`The server said ${res.status}`);
-      const { code } = (await res.json()) as { code: string };
+      const { code, hostKey } = (await res.json()) as { code: string; hostKey?: string };
+      // Keep the credential before entering the room: the socket presents it
+      // on `hello`, and it is what makes us the host rather than whoever
+      // happens to connect first.
+      if (hostKey) hostKeyStore.save(localStorage, code, hostKey);
       onEnter(code);
     } catch (err) {
       // Almost always "this build is served without the Worker" — say so

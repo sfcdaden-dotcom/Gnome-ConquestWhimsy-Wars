@@ -163,7 +163,13 @@ export type ClientMessage =
    * player presents the `token` it was given, which is what restores its seat
    * (and its hand) after a refresh, a tunnel, or the room hibernating.
    */
-  | { t: 'hello'; protocol: number; token?: string; name?: string }
+  /**
+   * `hostKey` is the credential `POST /api/rooms` handed whoever opened the
+   * room. It binds the host ONCE, to the token of the connection that first
+   * presents it, and is ignored ever after — the host does not move because
+   * somebody reloaded. See `Room.hello`.
+   */
+  | { t: 'hello'; protocol: number; token?: string; name?: string; hostKey?: string }
   /** Host only: lobby settings. Rejected once the game has started. */
   | { t: 'configure'; playerCount?: 2 | 4; boardSize?: number; gardenPreset?: GardenPreset; seats?: SeatConfig[] }
   /** Host only: deal the cards. The room picks the seed; no client ever does. */

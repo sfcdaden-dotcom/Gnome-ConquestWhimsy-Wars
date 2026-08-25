@@ -39,6 +39,7 @@ import {
   CLAIM_HEARTBEAT_MS,
   encodeClientMessage,
   parseServerMessage,
+  hostKeyStore,
   reconnectDelayMs,
   roomSocketUrl,
   tokenStore,
@@ -127,7 +128,16 @@ export function useNetGame(code: string, name: string): NetGame {
 
       ws.onopen = () => {
         attempt = 0;
-        send({ t: 'hello', protocol: PROTOCOL_VERSION, token: tokenStore.load(seatStores, code), name });
+        send({
+          t: 'hello',
+          protocol: PROTOCOL_VERSION,
+          token: tokenStore.load(seatStores, code),
+          // Only ever set for a room this browser opened. The room binds it
+          // once and ignores it afterwards, so re-sending it on every dial
+          // costs nothing and covers a first dial that failed.
+          hostKey: hostKeyStore.load(localStorage, code),
+          name,
+        });
         ping = window.setInterval(() => send({ t: 'ping' }), PING_MS);
       };
 

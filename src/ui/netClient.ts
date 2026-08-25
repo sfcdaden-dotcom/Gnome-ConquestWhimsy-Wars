@@ -171,6 +171,30 @@ export const tokenStore = {
   },
 };
 
+/**
+ * The host credential for a room this browser opened.
+ *
+ * Unlike the seat token this lives in `localStorage`, not `sessionStorage`,
+ * and deliberately: the seat token is "this tab is sitting here", but the host
+ * key is "I opened this room", which should survive closing the tab. It only
+ * ever binds a room that has no host yet, so a second tab presenting it while
+ * the first tab is hosting changes nothing.
+ */
+export const hostKeyStore = {
+  key(code: string): string {
+    return `ww:room:${code}:hostkey`;
+  },
+  load(local: Slot, code: string): string | undefined {
+    return local.getItem(this.key(code)) ?? undefined;
+  },
+  save(local: Slot, code: string, hostKey: string): void {
+    local.setItem(this.key(code), hostKey);
+  },
+  forget(local: Slot, code: string): void {
+    local.removeItem(this.key(code));
+  },
+};
+
 const TAB_KEY = 'ww:tab';
 
 /** This tab's id, minted once and remembered for as long as the tab lives. */

@@ -109,9 +109,24 @@ export interface PersistedRoom {
   code: string;
   phase: RoomPhase;
   seats: PersistedSeat[];
+  /**
+   * The host's seat token. Set once — when the room's `hostKey` is first
+   * presented — and never moved by anything the room does on its own. A host
+   * who disconnects is still the host; see `hostKey`.
+   */
   hostToken: string | null;
-  /** Whoever opened the room. Gets the lobby back whenever they are present. */
-  founderToken: string | null;
+  /**
+   * The bearer credential minted by `POST /api/rooms` and handed to whoever
+   * opened the room. Presented in `hello`, it binds `hostToken` while that is
+   * still null, which is what makes the host the person who created the room
+   * rather than whoever's socket happened to connect first.
+   *
+   * It stays usable while `hostToken` is null, so a host whose first dial
+   * failed can retry, and so a host who lost their seat token can come back
+   * during the grace window. A takeover clears it: once somebody else has the
+   * room, the original host cannot silently reclaim it.
+   */
+  hostKey: string | null;
   /** token → seat index, or null for a spectator. Never leaves the server. */
   tokens: Record<string, number | null>;
   boardSize: number;
@@ -286,15 +301,14 @@ export class Room {
     const stored = await host.store.load();
     const room = new Room(
       host,
-      // A room written before `founderToken` existed comes back without one;
-      // normalise it here so `ensureHost` never sees `undefined` and mistakes
-      // it for a founder who is present.
-      (stored && { ...stored, founderToken: stored.founderToken ?? null }) ?? {
+      // A room written before `hostKey` existed comes back without one;
+      // normalise it here so the fallback in `hello` can recognise it.
+      (stored && { ...stored, hostKey: stored.hostKey ?? null }) ?? {
         code,
         phase: 'lobby',
         seats: defaultSeats(2),
         hostToken: null,
-        founderToken: null,
+        hostKey: null,
         tokens: {},
         boardSize: 7,
         gardenPreset: 'random',
@@ -400,8 +414,7 @@ export class Room {
     if (message.name && seat !== null) this.data.seats[seat].name = message.name.slice(0, 24);
 
     this.conns.set(conn.id, { conn, token, seat, announced: null });
-    if (this.data.founderToken === null) this.data.founderToken = token;
-    this.ensureHost();
+    this.bindHost(token, message.hostKey);
     await this.save();
 
     this.announceIdentities();
@@ -499,41 +512,44 @@ export class Room {
   }
 
   /**
-   * Keep the lobby owned by somebody who is actually at the table.
+   * Mint (or return) the credential that binds this room's host.
    *
-   * Only the host token can `configure` or `start`, so if its holder walked
-   * away before the deal the room would be frozen for everyone still in it.
-   * A host who is *here* keeps the room even with no seat — turning your own
-   * seat into a CPU to watch two bots play is a thing hosts do, and it must
-   * not cost them the start button. Mid-game the host may also be away: their
-   * seat is still theirs, and there is no lobby left to own.
-   *
-   * The handover is a loan, not a transfer: the founder takes the lobby back
-   * the moment they are present again. Otherwise the single most ordinary
-   * thing a host does while waiting — reload the page to see whether anyone
-   * has arrived — silently and permanently moved the start button to the
-   * guest, and both ends sat looking at "waiting for the host to start".
+   * Called by `POST /api/rooms`, before anybody has connected, so the host is
+   * decided by who *opened* the room rather than by whose socket won a race.
+   * Idempotent: a retried create gets the same key back rather than rotating
+   * it out from under the client that already has one.
    */
-  private ensureHost(): void {
-    const founder = this.data.founderToken;
-    if (founder !== null && [...this.conns.values()].some((c) => c.token === founder)) {
-      this.data.hostToken = founder;
+  async hostKeyForCreate(): Promise<string> {
+    if (this.data.hostKey === null) {
+      this.data.hostKey = hex(this.host.randomBytes(16));
+      await this.save();
+    }
+    return this.data.hostKey;
+  }
+
+  /**
+   * Bind the host, if this `hello` is the one that gets to.
+   *
+   * The host is STATIC. It used to be a loan that moved to whoever was present
+   * — which read as the start button teleporting between players for no
+   * visible reason, and left both ends of a two-player room waiting for each
+   * other. Now it is set once and only changes when somebody explicitly takes
+   * the room over (`takeOverRoom`).
+   *
+   * Two ways in, both only while the room has no host at all:
+   *
+   *  - the `hostKey` from `POST /api/rooms`, which is the normal path; and
+   *  - being the first connection to a room that has no key, which is how
+   *    rooms persisted before `hostKey` existed still work, and the only case
+   *    where connecting first decides anything.
+   */
+  private bindHost(token: string, hostKey: string | undefined): void {
+    if (this.data.hostToken !== null) return;
+    if (this.data.hostKey !== null) {
+      if (hostKey === this.data.hostKey) this.data.hostToken = token;
       return;
     }
-    const current = this.data.hostToken;
-    if (current !== null) {
-      const live = [...this.conns.values()].some((c) => c.token === current);
-      if (live) return;
-      if (this.data.phase !== 'lobby' && (this.data.tokens[current] ?? null) !== null) return;
-    }
-    // Whoever is here, seated first — a spectator running the lobby is odd,
-    // but an unstartable room is worse.
-    let next: ConnState | null = null;
-    for (const c of this.conns.values()) {
-      if (next === null) next = c;
-      else if (c.seat !== null && (next.seat === null || c.seat < next.seat)) next = c;
-    }
-    this.data.hostToken = next?.token ?? null;
+    this.data.hostToken = token;
   }
 
   /**
@@ -554,7 +570,6 @@ export class Room {
     this.conns.delete(connId);
     this.meters.delete(connId);
     if (this.data.phase === 'lobby') this.seatSpectators();
-    this.ensureHost();
     await this.save();
     this.announceIdentities();
     this.broadcastRoom();
@@ -698,7 +713,6 @@ export class Room {
     // CPU seat human is how a host makes room for a friend who is already
     // here, so it has to actually seat them.
     this.seatSpectators();
-    this.ensureHost();
 
     await this.save();
     this.announceIdentities();
@@ -974,8 +988,10 @@ export class Room {
     info.takenOver = true;
     info.timeouts = 0;
 
+    // The host keeps the room even when the clock takes their seat: they are
+    // a token, not a seat, and a host watching from the spectator list is
+    // still the host.
     this.vacateNonHumanSeats();
-    this.ensureHost();
     for (const c of this.conns.values()) c.conn.send({ t: 'seatTakenOver', seat });
     // The seat may be the one to act right now — a timeout that ends the game
     // aside, control passes on, but a Respond window can come straight back.

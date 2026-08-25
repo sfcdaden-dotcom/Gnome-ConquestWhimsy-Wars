@@ -134,6 +134,14 @@ export class RoomDurableObject implements DurableObject {
     const url = new URL(request.url);
     const code = url.searchParams.get('code') ?? '';
 
+    // Minting the host credential. Reachable only from the Worker's own
+    // `POST /api/rooms` — the public route regex does not match this path, so
+    // no client can ask a room for its host key.
+    if (url.pathname.endsWith('/host-key') && request.method === 'POST') {
+      const room = await this.roomFor(code);
+      return Response.json({ hostKey: await room.hostKeyForCreate() });
+    }
+
     if (request.headers.get('Upgrade') !== 'websocket') {
       const room = await this.roomFor(code);
       return Response.json(room.snapshot());

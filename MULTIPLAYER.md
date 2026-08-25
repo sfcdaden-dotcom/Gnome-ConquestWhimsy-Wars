@@ -83,10 +83,10 @@ Seats are therefore reconsidered, not decided once:
   seat the host is waiting on.
 - **A seat dropped from mid-game is not.** There the token holds it against all
   comers until its player reconnects (see below).
-- **The lobby follows whoever is still here.** If the host leaves before the
-  deal, the room hands the settings and the start button to another player
-  rather than freezing. A host who is present but seatless — having turned
-  their own seat into a CPU — keeps it.
+- **The host does not move.** The room belongs to whoever opened it, for as
+  long as they hold it. A host who is present but seatless — having turned
+  their own seat into a CPU — keeps it, and so does a host who has just
+  dropped. See "The host is static" below for what happens if they stay gone.
 
 ## Identity and reconnect
 
@@ -116,10 +116,22 @@ survives a reload) with a heartbeat claim in `localStorage` beside it, so a
 closed tab's seat can be reclaimed but a live tab's cannot be taken. Two tabs
 are two people at the table — which is how anyone tries a room out alone.
 
-**The host badge is a loan.** If the host drops, the lobby goes to whoever is
-still there so the room is never frozen; the founder takes it back the moment
-they return. Otherwise a host's refresh moved the start button to the guest
-permanently and both ends waited for each other.
+**The host is static.** `POST /api/rooms` mints a `hostKey` and hands it to
+whoever opened the room; the first `hello` that presents it binds `hostToken`,
+and nothing the room does on its own moves it afterwards. A host can drop,
+refresh, close the tab, or sit in the spectator list, and the room is still
+theirs.
+
+This replaced a badge that was loaned to whoever was present. The loan meant
+the start button moved between players for no reason a player could see, and a
+room whose host had reloaded could leave both ends reading a "waiting for the
+other one" line at the same time. Binding at *create* time rather than on the
+first socket also settles the race where a friend clicks the invite link before
+the host's own connection lands.
+
+The key stays usable only while the room has no host — so a failed first dial
+can retry, and a host who lost their seat token can come back — and a takeover
+clears it for good.
 
 ## The secret
 
