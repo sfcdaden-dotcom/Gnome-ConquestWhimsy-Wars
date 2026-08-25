@@ -7,6 +7,7 @@ import {
   NAME_SPACE,
   gnomeFirstName,
   gnomeName,
+  marriageTitle,
   unitNameFromEvent,
   unitNameLive,
 } from './gnomeNames';
@@ -154,5 +155,48 @@ describe('unitNameLive', () => {
       units: { u2: { id: 'u2', owner: 0, kind: 'snail', pos: { x: 0, y: 3 }, movedOnTurn: null } },
     };
     expect(unitNameLive(state, 'u2')).toBe("P0's Immortal Snail");
+  });
+});
+
+describe('marriage titles', () => {
+  /** Two gnomes on the board, married in the order given. */
+  function married(pairs: Array<[string, string]>): GameState {
+    const s = newGame(12345);
+    return {
+      ...s,
+      units: {
+        u1: { id: 'u1', owner: 0, kind: 'gnome', pos: { x: 0, y: 0 }, movedOnTurn: null },
+        u2: { id: 'u2', owner: 1, kind: 'gnome', pos: { x: 1, y: 1 }, movedOnTurn: null },
+        u3: { id: 'u3', owner: 0, kind: 'gnome', pos: { x: 2, y: 2 }, movedOnTurn: null },
+      },
+      marriages: pairs as GameState['marriages'],
+    };
+  }
+
+  it('gives an unmarried gnome no title at all', () => {
+    expect(marriageTitle(married([]), 'u1')).toBeNull();
+    expect(unitNameLive(married([]), 'u1')).toBe(gnomeName(12345, 'u1'));
+  });
+
+  it('titles the pair Mr and Mrs, in the order the card married them', () => {
+    const state = married([['u1', 'u2']]);
+    expect(marriageTitle(state, 'u1')).toBe('Mr');
+    expect(marriageTitle(state, 'u2')).toBe('Mrs');
+    expect(unitNameLive(state, 'u1')).toBe(`Mr ${gnomeName(12345, 'u1')}`);
+    expect(unitNameLive(state, 'u2')).toBe(`Mrs ${gnomeName(12345, 'u2')}`);
+  });
+
+  it("keeps the first marriage's title when a gnome is wed again", () => {
+    const state = married([
+      ['u1', 'u2'],
+      ['u3', 'u1'],
+    ]);
+    expect(marriageTitle(state, 'u1')).toBe('Mr');
+    expect(marriageTitle(state, 'u3')).toBe('Mr');
+  });
+
+  it('drops the title when the marriage dissolves', () => {
+    expect(marriageTitle(married([['u1', 'u2']]), 'u1')).toBe('Mr');
+    expect(marriageTitle(married([]), 'u1')).toBeNull();
   });
 });

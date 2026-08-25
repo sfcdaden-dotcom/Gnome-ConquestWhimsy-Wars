@@ -256,7 +256,9 @@ export function describeEvent(state: GameState, ev: GameEvent): string {
     case 'destructionPrevented':
       return `🛡️ ${who(state, ev)} is saved (Gnomebody Dies)!`;
     case 'gnomesMarried':
-      return `💍 ${gnomeName(nameSaltOf(state), ev.unitA)} and ${gnomeName(nameSaltOf(state), ev.unitB)} are married — till death do them join.`;
+      // Titled off the event's own pair order, which is the order the engine
+      // stores the marriage in — so the line agrees with every later label.
+      return `💍 Mr ${gnomeName(nameSaltOf(state), ev.unitA)} and Mrs ${gnomeName(nameSaltOf(state), ev.unitB)} are married — till death do them join.`;
     case 'unitTeleported':
       return `${who(state, ev)} moves ${posStr(ev.from)} → ${posStr(ev.to)} (${cardName(ev.cardId)}).`;
     case 'spacesSwapped':

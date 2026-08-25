@@ -14,7 +14,7 @@
 
 import type { Action, GameState, PlayerId, Pos, Unit } from '../engine';
 import { nameSaltOf, samePos, unitsAt } from '../engine';
-import { gnomeFirstName, unitNameLive } from './gnomeNames';
+import { gnomeFirstName, unitNameLive, withMarriageTitle } from './gnomeNames';
 
 /**
  * The acting player's units on `pos` that can still do something this turn —
@@ -71,6 +71,9 @@ export function unitChipLabels(state: GameState, units: readonly Unit[]): UnitCh
   const ambiguous = shorts.some((s, i) => shorts.indexOf(s) !== i);
   return units.map((u, i) => {
     const full = unitNameLive(state, u.id);
-    return { unitId: u.id, short: ambiguous ? full : shorts[i], full };
+    // Titled on the chip too — a married gnome reads as married wherever it
+    // is named, and "Mr Bramblewick" still fits a chip.
+    const short = withMarriageTitle(state, u.id, shorts[i]);
+    return { unitId: u.id, short: ambiguous ? full : short, full };
   });
 }
