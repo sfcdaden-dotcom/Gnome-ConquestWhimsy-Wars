@@ -184,6 +184,9 @@ export interface RoomHost {
 
 const DEFAULT_CPU_DELAY_MS = 700;
 
+/** What the room's single alarm can be waiting for. See `Room.deadlines`. */
+type DeadlineKind = 'cpu' | 'clock';
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -905,18 +908,51 @@ export class Room {
     return c === null ? null : Math.min(c.actionDeadline, c.controlDeadline);
   }
 
-  /** Ask the host to wake us for the next thing that is due, if anything is. */
+  /**
+   * Everything the room is currently waiting to be woken for.
+   *
+   * A Durable Object has exactly ONE alarm, and the room has grown several
+   * things that need one: the CPU's pause before it plays, the shot clock, and
+   * the lobby timers that decide an abandoned room's fate. They used to be a
+   * `??` chain, which silently meant "only the first one that happens to be
+   * set" — and an `onAlarm` that returned early unless a game was running,
+   * which meant a lobby deadline could be armed and then swallowed.
+   *
+   * So the deadlines are a list. `arm` sleeps until the earliest of them and
+   * `onAlarm` runs every one that has come due, which is the only arrangement
+   * that stays correct as more of them are added.
+   */
+  private deadlines(): Array<{ kind: DeadlineKind; at: number }> {
+    const out: Array<{ kind: DeadlineKind; at: number }> = [];
+    if (this.cpuWakeAt !== null) out.push({ kind: 'cpu', at: this.cpuWakeAt });
+    const clock = this.expiryAt();
+    if (clock !== null) out.push({ kind: 'clock', at: clock });
+    return out;
+  }
+
+  /** Ask the host to wake us for the earliest thing that is due, if anything is. */
   private async arm(): Promise<void> {
-    const at = this.cpuWakeAt ?? this.expiryAt();
-    if (at !== null) await this.host.scheduleAlarm(at);
+    const pending = this.deadlines();
+    if (pending.length === 0) return;
+    const at = Math.min(...pending.map((d) => d.at));
+    await this.host.scheduleAlarm(at);
   }
 
   /**
-   * The scheduled wake-up. One alarm serves both timers, because a Durable
-   * Object has exactly one: whichever is due gets run, and anything still
-   * pending is re-armed.
+   * The scheduled wake-up. Whichever deadlines are due get run, and anything
+   * still pending is re-armed.
    */
   async onAlarm(): Promise<void> {
+    await this.runGameTimers();
+    await this.arm();
+  }
+
+  /**
+   * The CPU pause and the shot clock. Guarded on a running game HERE rather
+   * than in `onAlarm`, so that a room with no game — a lobby waiting out a
+   * missing host — still gets its own deadlines looked at.
+   */
+  private async runGameTimers(): Promise<void> {
     if (!this.state || this.data.phase !== 'playing') return;
     const actor = getPlayerToAct(this.state);
     if (actor === null) return;
