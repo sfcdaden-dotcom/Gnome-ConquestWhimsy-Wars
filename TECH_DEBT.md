@@ -186,10 +186,6 @@ handful of things anyone actually needs to do.
   events (which needs a trigger table, and a rule that it still says nothing
   informative).
 
-- **`GameLog` keys.** Log lines key by window index; with the 1000-event
-  rolling window, React keys shift after trim. Cosmetic (append-mostly), fix
-  when touching the log UI.
-
 - **Vitest smoke duration.** ~11 full AI games per run (the invariant validator
   and the AI fingerprints added two more). Fine now — the whole suite is ~22 s;
   if it creeps, split into a `test:full` tier and keep 3 games in the default
@@ -210,6 +206,21 @@ handful of things anyone actually needs to do.
 ## Resolved
 
 Newest first. Kept for the reasoning, not as a to-do list.
+
+### 2026-08-25 — Quality-of-life pass
+
+- **`GameLog` keys.** Log lines keyed by their index in the rolling window, so
+  every key meant a different line after the engine trimmed. Fixed while
+  touching the log UI, as the entry anticipated: `logLines`
+  (`src/ui/gameLog.ts`) tags each event with its match-wide ordinal, derived
+  from `eventCount` — which is never trimmed — and the component renders that
+  as the key. Unit-tested in `gameLog.test.ts`, including an event keeping its
+  key across a window slide.
+
+  Found and fixed alongside it, in the same component: the log auto-scrolled to
+  the bottom on every new event, which yanked the view away from anyone who had
+  scrolled back to re-read a fight. It now follows the tail only while the
+  reader is already at the tail (`isPinnedToBottom`).
 
 ### 2026-08-25 — Backlog audit
 
