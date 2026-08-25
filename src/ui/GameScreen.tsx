@@ -484,11 +484,20 @@ export function GameScreen({ game: g, onPlayAgain, onQuit }: GameScreenProps) {
         <PassOverlay state={state} seat={playerToAct} onConfirm={g.confirmPass} />
       ) : null}
 
+      {/* Click one away rather than waiting out its timer — a rejected action
+          leaves a red bar over the board, and "I have read it" is a click. */}
       <div className="toasts">
         {g.toasts.map((t) => (
-          <div key={t.id} className={`toast ${t.kind}`}>
+          <button
+            key={t.id}
+            type="button"
+            className={`toast ${t.kind}`}
+            title="Dismiss"
+            data-testid={`toast-${t.id}`}
+            onClick={() => g.dismissToast(t.id)}
+          >
             {t.text}
-          </div>
+          </button>
         ))}
       </div>
     </div>

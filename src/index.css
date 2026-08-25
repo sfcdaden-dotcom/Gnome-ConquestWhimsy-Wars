@@ -1260,6 +1260,13 @@ h2 {
   pointer-events: none;
 }
 .toast {
+  /* .toasts is click-through; each toast takes its own clicks back so it can
+     be dismissed without blocking the board underneath. */
+  pointer-events: auto;
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+  font: inherit;
   background: var(--panel);
   border: 1px solid var(--border);
   border-left: 5px solid var(--accent);

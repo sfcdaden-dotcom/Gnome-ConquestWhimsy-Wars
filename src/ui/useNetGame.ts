@@ -107,7 +107,7 @@ export function useNetGame(code: string, name: string): NetGame {
   // Bumped to force a fresh dial (see `rejoin`); the socket effect keys on it.
   const [dial, setDial] = useState(0);
 
-  const { toasts, pushToast } = useToasts();
+  const { toasts, pushToast, dismissToast } = useToasts();
   const { playback, noticeFightEvents, skipPlayback } = useFightPlayback(false);
   const { chatBubbles, chatMuted, toggleChatMuted, noticeChatEvents } = useChatBubbles();
 
@@ -328,6 +328,7 @@ export function useNetGame(code: string, name: string): NetGame {
       dispatch,
       toasts,
       pushToast,
+      dismissToast,
       fastForward: false,
       setFastForward: () => {},
       canFastForward: false,
@@ -353,6 +354,7 @@ export function useNetGame(code: string, name: string): NetGame {
     dispatch,
     toasts,
     pushToast,
+    dismissToast,
     playback,
     skipPlayback,
     chatBubbles,

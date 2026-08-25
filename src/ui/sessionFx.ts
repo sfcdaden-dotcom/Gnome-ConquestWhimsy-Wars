@@ -45,13 +45,18 @@ let toastSeq = 1;
 export function useToasts() {
   const [toasts, setToasts] = useState<Toast[]>([]);
 
+  /** Take one off screen early. Harmless if its timer already got there. */
+  const dismissToast = useCallback((id: number) => {
+    setToasts((ts) => ts.filter((t) => t.id !== id));
+  }, []);
+
   const pushToast = useCallback((text: string, kind: Toast['kind'] = 'error') => {
     const id = toastSeq++;
     setToasts((ts) => [...ts.slice(-3), { id, text, kind }]);
     window.setTimeout(() => setToasts((ts) => ts.filter((t) => t.id !== id)), 4500);
   }, []);
 
-  return { toasts, pushToast };
+  return { toasts, pushToast, dismissToast };
 }
 
 // ---------------------------------------------------------------------------

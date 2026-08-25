@@ -37,6 +37,8 @@ export interface GameSession {
   dispatch: (action: Action) => boolean;
   toasts: Toast[];
   pushToast: (text: string, kind?: Toast['kind']) => void;
+  /** Take one toast off screen before its timer does. */
+  dismissToast: (id: number) => void;
   /** Skip CPU pacing and fight animations. Meaningless online. */
   fastForward: boolean;
   setFastForward: (on: boolean) => void;
@@ -92,7 +94,7 @@ export function useGame(options: CreateGameOptions, seed: number): GameSession {
   /** Which human seat's private info (hand) is currently on screen. */
   const [revealedSeat, setRevealedSeat] = useState<PlayerId | null>(null);
 
-  const { toasts, pushToast } = useToasts();
+  const { toasts, pushToast, dismissToast } = useToasts();
   const { playback, noticeFightEvents, skipPlayback } = useFightPlayback(fastForward);
   const { chatBubbles, chatMuted, toggleChatMuted, noticeChatEvents } = useChatBubbles();
 
@@ -182,6 +184,7 @@ export function useGame(options: CreateGameOptions, seed: number): GameSession {
     dispatch,
     toasts,
     pushToast,
+    dismissToast,
     fastForward,
     setFastForward,
     canFastForward: true,
