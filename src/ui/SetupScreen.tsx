@@ -67,7 +67,13 @@ interface SeatDraft {
   difficulty: AiDifficulty;
 }
 
-const DEFAULT_NAMES = ['Alice', 'Bob', 'Carol', 'Dave'];
+/**
+ * Seats are named for their colour, so the name on the panel, the dot beside
+ * it and the tokens on the board all say the same thing. (Typing over one is
+ * still the first thing a hot-seat table does — these only have to be right
+ * for the table that doesn't bother.)
+ */
+const DEFAULT_NAMES = PLAYER_COLOR_NAMES;
 const DIFFICULTIES: readonly AiDifficulty[] = ['easy', 'normal', 'hard'];
 const DIFFICULTY_LABELS: Record<AiDifficulty, string> = { easy: 'Easy', normal: 'Normal', hard: 'Hard' };
 

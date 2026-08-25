@@ -24,9 +24,10 @@ import { gnomeName, unitNameFromEvent, unitNameLive } from './gnomeNames';
 // Player + garden presentation
 // ---------------------------------------------------------------------------
 
-/** Seat colors: red, blue, gold, purple (clockwise). */
+/** Seat colors: red, blue, yellow, purple (clockwise). Named in
+ * `PLAYER_COLOR_NAMES`, which is also what an untouched seat is called. */
 export const PLAYER_COLORS = ['#d8504d', '#3f7ad8', '#c9930a', '#9256cf'];
-export const PLAYER_COLOR_NAMES = ['Red', 'Blue', 'Gold', 'Purple'];
+export const PLAYER_COLOR_NAMES = ['Red', 'Blue', 'Yellow', 'Purple'];
 
 export function playerColor(id: number): string {
   return PLAYER_COLORS[id % PLAYER_COLORS.length];
