@@ -15,6 +15,12 @@
  * Nothing here re-implements game rules or hides information: the lobby edits
  * are requests the room can refuse (a non-host's `configure` comes back as an
  * error toast), and the board is `GameScreen` fed the networked session.
+ *
+ * WHO IS WAITING FOR WHOM. The lobby says one thing about the room's state and
+ * says it to everybody — see `lobbyStatus.ts`. The host gets the start button
+ * under that sentence and nobody else does; a room whose host has gone gets a
+ * countdown and then a takeover button. What no screen does any more is tell
+ * one player to wait for another while telling that player the same thing.
  */
 
 import { useEffect, useState } from 'react';
@@ -22,9 +28,12 @@ import { CLASSIC_PRESETS, MODE_PRESETS } from '../engine';
 import type { AiDifficulty, GardenPreset } from '../engine';
 import { GameScreen } from './GameScreen';
 import { useNetGame } from './useNetGame';
-import { NAME_KEY, roomCodeFromSearch, roomHref } from './netClient';
-import { ROOM_CODE_LENGTH } from '../net/protocol';
+import { hostKeyStore, NAME_KEY, recentRoom, roomCodeFromSearch, roomHref } from './netClient';
+import { HOST_GRACE_MS, ROOM_CODE_LENGTH } from '../net/protocol';
+import type { RoomClosedReason } from '../net/protocol';
+import { HostGraceBanner } from './HostGraceBanner';
 import { playerColor } from './meta';
+import { blockerAction, blockerText, canStart, lobbyBlocker } from './lobbyStatus';
 
 /** Point the address bar at the room (or at no room) without a navigation. */
 function syncUrl(code: string | null): void {
@@ -88,7 +97,11 @@ function OnlineMenu({
     try {
       const res = await fetch('/api/rooms', { method: 'POST' });
       if (!res.ok) throw new Error(`The server said ${res.status}`);
-      const { code } = (await res.json()) as { code: string };
+      const { code, hostKey } = (await res.json()) as { code: string; hostKey?: string };
+      // Keep the credential before entering the room: the socket presents it
+      // on `hello`, and it is what makes us the host rather than whoever
+      // happens to connect first.
+      if (hostKey) hostKeyStore.save(localStorage, code, hostKey);
       onEnter(code);
     } catch (err) {
       // Almost always "this build is served without the Worker" — say so
@@ -101,6 +114,10 @@ function OnlineMenu({
   }
 
   const codeReady = joinCode.trim().length === ROOM_CODE_LENGTH;
+  // A room this browser was recently in. The credentials to walk back into it
+  // are already here, keyed by code — this is the only thing that was missing,
+  // for somebody who closed the tab and came back without the link.
+  const [recent] = useState(() => recentRoom.load(localStorage, Date.now()));
 
   return (
     <div className="home-screen" data-testid="online-menu">
@@ -126,6 +143,21 @@ function OnlineMenu({
           <p className="form-error" role="alert" data-testid="online-error">
             {error}
           </p>
+        )}
+
+        {recent && (
+          <button
+            type="button"
+            className="btn big home-choice"
+            data-testid="online-rejoin"
+            onClick={() => onEnter(recent.code)}
+          >
+            <span className="home-choice-icon">↩️</span>
+            <span className="home-choice-label">Rejoin room {recent.code}</span>
+            <span className="home-choice-sub">
+              You were here recently — your seat is waiting if the room still is
+            </span>
+          </button>
         )}
 
         <div className="home-choices">
@@ -197,6 +229,12 @@ function OnlineMenu({
 function RoomView({ code, name, onLeave }: { code: string; name: string; onLeave: () => void }) {
   const net = useNetGame(code, name);
 
+  // A closed room is not a lobby with a problem — there is nothing left to
+  // render and nothing to reconnect to.
+  if (net.status === 'closed') {
+    return <RoomClosed code={code} reason={net.closedReason} onLeave={onLeave} />;
+  }
+
   if (net.status === 'playing' || (net.status === 'finished' && net.game)) {
     // No "play again": a room's next game is the host's call, not a button
     // that would silently re-deal for everyone.
@@ -204,6 +242,35 @@ function RoomView({ code, name, onLeave }: { code: string; name: string; onLeave
   }
 
   return <Lobby net={net} code={code} onLeave={onLeave} />;
+}
+
+function RoomClosed({
+  code,
+  reason,
+  onLeave,
+}: {
+  code: string;
+  reason: RoomClosedReason | null;
+  onLeave: () => void;
+}) {
+  return (
+    <div className="home-screen" data-testid="room-closed">
+      <div className="home-card">
+        <h1 className="home-title">Room {code} is closed</h1>
+        <p className="home-tagline">
+          {reason === 'host-left'
+            ? 'The host left and nobody took the room over, so it shut down.'
+            : 'Nobody had been in this room for a while, so it shut down.'}
+        </p>
+        <p className="muted small">
+          Rooms only last as long as somebody is in them. Host a new one and share the code again.
+        </p>
+        <button type="button" className="btn accent big" data-testid="room-closed-back" onClick={onLeave}>
+          ← Back to the menu
+        </button>
+      </div>
+    </div>
+  );
 }
 
 function Lobby({
@@ -225,13 +292,21 @@ function Lobby({
     window.setTimeout(() => setCopied(null), 2000);
   }
 
-  const emptyHumanSeats =
-    room?.seats.filter((s) => s.controller === 'human' && !s.connected).map((s) => s.index + 1) ?? [];
+  // One reading of the room, shared by every screen looking at it. See
+  // lobbyStatus.ts for why this is not computed per viewer.
+  const blocker = room ? lobbyBlocker(room) : null;
 
   return (
     <div className="home-screen" data-testid="room-lobby">
       <div className="home-card lobby-card">
         <h1 className="home-title">Room {code}</h1>
+
+        {room?.hostGrace && (
+          <HostGraceBanner
+            grace={room.hostGrace}
+            hostName={room.hostSeat === null ? null : (room.seats[room.hostSeat]?.name ?? null)}
+          />
+        )}
 
         {status === 'taken-over' ? (
           <div className="form-error" role="alert" data-testid="lobby-taken-over">
@@ -398,34 +473,50 @@ function Lobby({
               </div>
             )}
 
-            {isHost && status === 'lobby' ? (
-              <>
-                <button
-                  type="button"
-                  className="btn accent big"
-                  data-testid="lobby-start"
-                  disabled={emptyHumanSeats.length > 0}
-                  onClick={net.start}
-                >
-                  {emptyHumanSeats.length > 0
-                    ? `Waiting for seat ${emptyHumanSeats.join(', ')}…`
-                    : '🎲 Start the game'}
-                </button>
-                {emptyHumanSeats.length > 0 && (
-                  <p className="muted small" data-testid="lobby-empty-hint">
-                    Every seat starts open for a person. Share the code and they'll be seated as they
-                    arrive — or switch seat {emptyHumanSeats.join(', ')} to CPU to play without them.
+            {status === 'lobby' && blocker && (
+              <div className="lobby-status">
+                {/* The same sentence on every screen in the room. */}
+                <p className="lobby-blocker" data-testid="lobby-blocker">
+                  {blockerText(blocker)}
+                </p>
+                {blocker.kind === 'hostless' ? (
+                  // The room waited out its host and nobody owns it. This is
+                  // the deliberate handover: whoever presses it becomes the
+                  // host, and everyone is told who did.
+                  <>
+                    <button
+                      type="button"
+                      className="btn accent big"
+                      data-testid="lobby-take-over"
+                      onClick={net.takeOverRoom}
+                    >
+                      👑 Take over the room
+                    </button>
+                    <p className="muted small">
+                      They waited {Math.round(HOST_GRACE_MS / 1000)} seconds and did not come back.
+                      Whoever takes the room over sets the table and starts the game; if they turn
+                      up later they join as an ordinary player.
+                    </p>
+                  </>
+                ) : (
+                  isHost && (
+                    <button
+                      type="button"
+                      className="btn accent big"
+                      data-testid="lobby-start"
+                      disabled={!canStart(blocker)}
+                      onClick={net.start}
+                    >
+                      🎲 Start the game
+                    </button>
+                  )
+                )}
+                {blockerAction(blocker, isHost) && (
+                  <p className="muted small" data-testid="lobby-blocker-action">
+                    {blockerAction(blocker, isHost)}
                   </p>
                 )}
-              </>
-            ) : (
-              status === 'lobby' && (
-                <p className="muted" data-testid="lobby-waiting">
-                  {room.hostSeat !== null
-                    ? `Waiting for ${room.seats[room.hostSeat]?.name ?? 'the host'} to start…`
-                    : 'Waiting for the host to start…'}
-                </p>
-              )
+              </div>
             )}
           </>
         )}

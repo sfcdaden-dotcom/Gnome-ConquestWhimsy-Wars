@@ -37,8 +37,12 @@ test('two browsers meet in a room and play a networked turn', async ({ browser }
   await guest.getByTestId('online-join-go').click();
   await expect(guest.getByTestId('room-lobby')).toBeVisible();
 
-  // The guest is not the host: no start button for them.
-  await expect(guest.getByTestId('lobby-waiting')).toBeVisible();
+  // The guest is not the host: no start button for them, but the same
+  // description of what the room is waiting for.
+  await expect(guest.getByTestId('lobby-start')).toHaveCount(0);
+  await expect(guest.getByTestId('lobby-blocker')).toHaveText(
+    /Waiting for Ada to start the game/,
+  );
   await expect(host.getByTestId('lobby-start')).toBeEnabled();
   await host.getByTestId('lobby-start').click();
 
@@ -165,7 +169,7 @@ test('a host can reload the lobby while waiting, and still be the host', async (
   await expect(host.getByTestId('room-lobby')).toBeVisible();
   await expect(host.getByTestId('lobby-code')).toHaveText(code);
   await expect(host.getByTestId('lobby-start')).toBeEnabled();
-  await expect(guest.getByTestId('lobby-waiting')).toBeVisible();
+  await expect(guest.getByTestId('lobby-start')).toHaveCount(0);
 
   await host.getByTestId('lobby-start').click();
   await expect(host.getByTestId('game-screen')).toBeVisible();
@@ -231,6 +235,39 @@ test('two tabs in one browser are two players, not one seat fought over', async 
   await host.getByTestId('lobby-start').click();
   await expect(host.getByTestId('game-screen')).toBeVisible();
   await expect(guest.getByTestId('game-screen')).toBeVisible();
+
+  await ctx.close();
+});
+
+/**
+ * Closing the tab and coming back to the app — with no link and no code in
+ * hand — used to be the end of a room, even though the credentials to walk
+ * straight back in were sitting in storage the whole time.
+ */
+test('the menu offers a way back into the room you just left', async ({ browser }) => {
+  const ctx = await browser.newContext();
+  const page = await ctx.newPage();
+
+  await page.goto('/');
+  await page.getByTestId('home-online').click();
+  await page.getByTestId('online-name').fill('Ada');
+  await page.getByTestId('online-host').click();
+  await expect(page.getByTestId('room-lobby')).toBeVisible();
+  const code = (await page.getByTestId('lobby-code').textContent())!.trim();
+
+  // Back to the app with no room in the URL at all — the bookmark, not the
+  // invite link.
+  await page.goto('/');
+  await page.getByTestId('home-online').click();
+
+  const rejoin = page.getByTestId('online-rejoin');
+  await expect(rejoin).toContainText(code);
+  await rejoin.click();
+
+  // Same room, same seat, still the host.
+  await expect(page.getByTestId('room-lobby')).toBeVisible();
+  await expect(page.getByTestId('lobby-code')).toHaveText(code);
+  await expect(page.getByTestId('lobby-start')).toBeVisible();
 
   await ctx.close();
 });

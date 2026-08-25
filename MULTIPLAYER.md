@@ -83,10 +83,10 @@ Seats are therefore reconsidered, not decided once:
   seat the host is waiting on.
 - **A seat dropped from mid-game is not.** There the token holds it against all
   comers until its player reconnects (see below).
-- **The lobby follows whoever is still here.** If the host leaves before the
-  deal, the room hands the settings and the start button to another player
-  rather than freezing. A host who is present but seatless — having turned
-  their own seat into a CPU — keeps it.
+- **The host does not move.** The room belongs to whoever opened it, for as
+  long as they hold it. A host who is present but seatless — having turned
+  their own seat into a CPU — keeps it, and so does a host who has just
+  dropped. See "The host is static" below for what happens if they stay gone.
 
 ## Identity and reconnect
 
@@ -116,10 +116,58 @@ survives a reload) with a heartbeat claim in `localStorage` beside it, so a
 closed tab's seat can be reclaimed but a live tab's cannot be taken. Two tabs
 are two people at the table — which is how anyone tries a room out alone.
 
-**The host badge is a loan.** If the host drops, the lobby goes to whoever is
-still there so the room is never frozen; the founder takes it back the moment
-they return. Otherwise a host's refresh moved the start button to the guest
-permanently and both ends waited for each other.
+**The host is static.** `POST /api/rooms` mints a `hostKey` and hands it to
+whoever opened the room; the first `hello` that presents it binds `hostToken`,
+and nothing the room does on its own moves it afterwards. A host can drop,
+refresh, close the tab, or sit in the spectator list, and the room is still
+theirs.
+
+This replaced a badge that was loaned to whoever was present. The loan meant
+the start button moved between players for no reason a player could see, and a
+room whose host had reloaded could leave both ends reading a "waiting for the
+other one" line at the same time. Binding at *create* time rather than on the
+first socket also settles the race where a friend clicks the invite link before
+the host's own connection lands.
+
+The key stays usable only while the room has no host — so a failed first dial
+can retry, and a host who lost their seat token can come back — and a takeover
+clears it for good.
+
+**A lobby waits sixty seconds for a dropped host** (`HOST_GRACE_MS`), and
+everyone in it sees the countdown — though not for the first five seconds,
+because a reload drops the socket for about one and announcing that would make
+a non-event look like a crisis.
+
+When it runs out, a room with people still in it drops its host token and
+offers itself: whoever presses **Take over the room** becomes the host, and
+everyone is told who did. That is the difference from the badge this replaced —
+the handover still exists, but somebody chooses it and everybody sees it. A
+room with nobody in it closes instead.
+
+The grace window is **lobby only**. Mid-game a missing host owns nothing, and a
+seat that has stopped playing is already the shot clock's problem; tearing down
+a game in progress because a phone slept would be far worse than the thing this
+prevents.
+
+**Rooms do not last forever.** A room with nobody connected is closed after ten
+minutes (`EMPTY_ROOM_REAP_MS`) in any phase — an abandoned lobby, a game
+everyone walked away from, a finished match nobody came back to.
+
+**A closed room leaves a tombstone.** Addressing a Durable Object is what
+creates it, so a room that simply deleted itself would be rebuilt as a fresh
+empty lobby by the next client to redial its code — handing that client the
+room. Instead the record is wiped down to the fact that it closed; `hello` is
+refused, the socket closes with `CLOSE_ROOM_CLOSED` (4004), and the client
+treats that as final: it does not redial, and it forgets its seat token and
+host key. The tombstone itself is purged after a day (`TOMBSTONE_TTL_MS`),
+which is well past anybody still having the code in front of them.
+
+**The menu offers a way back.** The lobby records which room it is in on the
+same tick that refreshes the seat claim, so somebody who closed the tab and
+reopened the app — with no invite link and no code in hand — gets a "Rejoin
+room XXXX" button. It is only a pointer: the seat token and host key were
+already stored per code, and whether either still means anything is the room's
+answer to give.
 
 ## The secret
 

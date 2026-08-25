@@ -91,9 +91,18 @@ export default {
     if (url.pathname === '/api/rooms' && request.method === 'POST') {
       if (await overLimit(env.ROOM_CREATE_LIMIT, callerKey(request))) return tooManyRequests();
       const code = generateRoomCode((n) => crypto.getRandomValues(new Uint8Array(n)));
-      // The DO is created lazily on first connect; handing back the code is
-      // the whole of "creating" a room.
-      return json({ code });
+      // Creating the room now, rather than lazily on first connect, is what
+      // lets the host be the person who OPENED it: the object mints a
+      // `hostKey` here and binds the host to whoever presents it, so a slow
+      // socket cannot hand the room to a friend who clicked the link first.
+      const stub = env.ROOMS.get(env.ROOMS.idFromName(code));
+      const claim = new URL(request.url);
+      claim.pathname = `/api/rooms/${code}/host-key`;
+      claim.searchParams.set('code', code);
+      const res = await stub.fetch(new Request(claim, { method: 'POST' }));
+      if (!res.ok) return json({ error: 'Could not open a room' }, 500);
+      const { hostKey } = (await res.json()) as { hostKey: string };
+      return json({ code, hostKey });
     }
 
     const match = ROOM_PATH.exec(url.pathname);

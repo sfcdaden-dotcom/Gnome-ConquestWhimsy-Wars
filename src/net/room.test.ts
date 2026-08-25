@@ -18,12 +18,16 @@ import type { PersistedRoom, RoomConnection, RoomHost } from './room';
 import { Room, generateRoomCode } from './room';
 import {
   CLOSE_RATE_LIMITED,
+  CLOSE_ROOM_CLOSED,
   CLOSE_SEAT_TAKEN_OVER,
   CLOSE_TOO_MANY_CONNECTIONS,
   CONTROL_BUDGET_MS,
+  EMPTY_ROOM_REAP_MS,
+  HOST_GRACE_MS,
   ROOM_CODE_ALPHABET,
   SHOT_CLOCK_MS,
   TAKEOVER_AFTER_TIMEOUTS,
+  TOMBSTONE_TTL_MS,
   TAKEOVER_DIFFICULTY,
 } from './protocol';
 import type { ClientMessage, ServerMessage } from './protocol';
@@ -70,10 +74,20 @@ class FakeConn implements RoomConnection {
   }
 }
 
-function makeHost(): RoomHost & { stored: PersistedRoom | null; alarms: number[]; clock: number } {
+function makeHost(): RoomHost & {
+  stored: PersistedRoom | null;
+  closed: boolean;
+  purged: boolean;
+  alarms: number[];
+  clock: number;
+} {
   let counter = 1;
   const h = {
     stored: null as PersistedRoom | null,
+    /** Set when the room wiped itself: see `RoomStore.close`. */
+    closed: false,
+    /** Set when even the tombstone went: see `RoomStore.purge`. */
+    purged: false,
     alarms: [] as number[],
     /** Wall clock, movable so the shot clock can be driven without waiting. */
     clock: 1_000_000,
@@ -83,6 +97,14 @@ function makeHost(): RoomHost & { stored: PersistedRoom | null; alarms: number[]
       },
       async save(room: PersistedRoom) {
         h.stored = structuredClone(room) as PersistedRoom;
+      },
+      async close(room: PersistedRoom) {
+        h.stored = structuredClone(room) as PersistedRoom;
+        h.closed = true;
+      },
+      async purge() {
+        h.stored = null;
+        h.purged = true;
       },
     },
     randomBytes(n: number) {
@@ -324,7 +346,11 @@ describe('a room seats the people in it', () => {
     expect(stranger.last('welcome')?.you.seat).toBeNull();
   });
 
-  it('hands the lobby to someone who is still here when the host leaves', async () => {
+  // The host used to be a loan that moved to whoever was present, which read
+  // as the start button teleporting between players — and left both ends of a
+  // two-player room waiting for each other. It is static now: it moves only
+  // when somebody explicitly takes the room over.
+  it('keeps the room with the host when they disconnect', async () => {
     const { room } = await lobby(['human', 'human']);
     const c1 = new FakeConn('c1');
     await room.hello(c1, { ...HELLO });
@@ -332,24 +358,20 @@ describe('a room seats the people in it', () => {
 
     await room.disconnect('c0');
 
-    expect(c1.last('welcome')?.you.isHost).toBe(true);
-    await room.handle('c1', { t: 'configure', seats: [{ index: 0, controller: 'cpu' }] });
+    // The guest is not quietly promoted, and cannot deal in the host's place.
+    expect(c1.last('welcome')?.you.isHost).toBe(false);
     await room.handle('c1', { t: 'start' });
-    expect(room.phase).toBe('playing');
+    expect(c1.last('error')?.code).toBe('NOT_HOST');
+    expect(room.phase).toBe('lobby');
   });
 
-  // The handover above is a loan. Reloading the page is the obvious way for a
-  // host to check whether anyone has arrived, and it must not cost them the
-  // start button — otherwise both ends sit waiting for a host who is watching
-  // the same "waiting for the host" line.
-  it('gives the lobby back to the host when they return from a refresh', async () => {
+  it('is still the host after a refresh', async () => {
     const { room, c0 } = await lobby(['human', 'human']);
     const hostToken = c0.last('welcome')!.you.token;
     const c1 = new FakeConn('c1');
     await room.hello(c1, { ...HELLO });
 
     await room.disconnect('c0');
-    expect(c1.last('welcome')?.you.isHost).toBe(true);
 
     // The refreshed page: a new socket presenting the same token.
     const again = new FakeConn('c0-again');
@@ -361,16 +383,62 @@ describe('a room seats the people in it', () => {
     expect(room.phase).toBe('playing');
   });
 
-  it('leaves the lobby with whoever is here while the host is away', async () => {
-    const { room } = await lobby(['human', 'human']);
-    const c1 = new FakeConn('c1');
-    await room.hello(c1, { ...HELLO });
-    await room.disconnect('c0');
+  it('binds the host to whoever holds the room key, not to whoever dials first', async () => {
+    const host = makeHost();
+    const room = await Room.open(host, 'ABC123');
+    const hostKey = await room.hostKeyForCreate();
 
-    // Nobody is coming back: c1 can still set the table up and deal.
-    await room.handle('c1', { t: 'configure', seats: [{ index: 0, controller: 'cpu' }] });
-    await room.handle('c1', { t: 'start' });
-    expect(room.phase).toBe('playing');
+    // The friend clicks the invite link before the host's own socket lands.
+    const friend = new FakeConn('friend');
+    await room.hello(friend, { ...HELLO });
+    expect(friend.last('welcome')?.you.isHost).toBe(false);
+
+    const opener = new FakeConn('opener');
+    await room.hello(opener, { ...HELLO, hostKey });
+    expect(opener.last('welcome')?.you.isHost).toBe(true);
+  });
+
+  it('binds the host key once and ignores it afterwards', async () => {
+    const host = makeHost();
+    const room = await Room.open(host, 'ABC123');
+    const hostKey = await room.hostKeyForCreate();
+
+    const opener = new FakeConn('opener');
+    await room.hello(opener, { ...HELLO, hostKey });
+    expect(opener.last('welcome')?.you.isHost).toBe(true);
+
+    // A copy of the key — a second tab, or somebody it was pasted to — does
+    // not take the room off the person already holding it.
+    const other = new FakeConn('other');
+    await room.hello(other, { ...HELLO, hostKey });
+    expect(other.last('welcome')?.you.isHost).toBe(false);
+    expect(opener.last('welcome')?.you.isHost).toBe(true);
+  });
+
+  it('lets a host whose first dial failed present the key again', async () => {
+    const host = makeHost();
+    const room = await Room.open(host, 'ABC123');
+    const hostKey = await room.hostKeyForCreate();
+
+    // The socket dies before `hello` ever lands, then the client redials.
+    const retry = new FakeConn('retry');
+    await room.hello(retry, { ...HELLO, hostKey });
+    expect(retry.last('welcome')?.you.isHost).toBe(true);
+  });
+
+  it('makes the first connection the host in a room that has no key', async () => {
+    // Rooms persisted before `hostKey` existed, and any path that skipped the
+    // create endpoint. Still static — set once, and it does not move.
+    const host = makeHost();
+    const room = await Room.open(host, 'ABC123');
+    const first = new FakeConn('first');
+    await room.hello(first, { ...HELLO });
+    expect(first.last('welcome')?.you.isHost).toBe(true);
+
+    await room.disconnect('first');
+    const second = new FakeConn('second');
+    await room.hello(second, { ...HELLO });
+    expect(second.last('welcome')?.you.isHost).toBe(false);
   });
 
   it('leaves a host who took a CPU seat in charge of the lobby', async () => {
@@ -1153,5 +1221,322 @@ describe('rate limiting', () => {
     await woken.hello(back, { ...HELLO, token: c0.last('welcome')!.you.token });
 
     expect(back.errors()).not.toContain('RATE_LIMITED');
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+describe('a lobby whose host has gone', () => {
+  /** A lobby with a bound host (c0) and a guest (c1), both seated. */
+  async function hosted() {
+    const host = makeHost();
+    const room = await Room.open(host, 'ABC123');
+    const hostKey = await room.hostKeyForCreate();
+    const c0 = new FakeConn('c0');
+    await room.hello(c0, { ...HELLO, hostKey });
+    const c1 = new FakeConn('c1');
+    await room.hello(c1, { ...HELLO });
+    return { host, room, c0, c1, hostKey };
+  }
+
+  it('starts a countdown when the host drops, and arms the alarm for it', async () => {
+    const { host, room, c1 } = await hosted();
+    await room.disconnect('c0');
+
+    const grace = c1.last('room')!.room.hostGrace!;
+    expect(grace).not.toBeNull();
+    expect(grace.until).toBe(host.clock + HOST_GRACE_MS);
+    expect(host.alarms.at(-1)).toBe(host.clock + HOST_GRACE_MS);
+  });
+
+  it('stops the countdown when the host comes back', async () => {
+    const { room, c0, c1 } = await hosted();
+    const hostToken = c0.last('welcome')!.you.token;
+    await room.disconnect('c0');
+    expect(c1.last('room')!.room.hostGrace).not.toBeNull();
+
+    const again = new FakeConn('c0-again');
+    await room.hello(again, { ...HELLO, token: hostToken });
+
+    expect(c1.last('room')!.room.hostGrace).toBeNull();
+    expect(again.last('welcome')?.you.isHost).toBe(true);
+  });
+
+  it('does not start one when a guest drops', async () => {
+    const { room, c0 } = await hosted();
+    await room.disconnect('c1');
+    expect(c0.last('room')!.room.hostGrace).toBeNull();
+  });
+
+  // The room must not be torn down around a game in progress because
+  // somebody's phone slept: a seat that stops playing is the shot clock's
+  // problem, and there is no lobby left to own.
+  it('does not start one mid-game', async () => {
+    const { room, c1 } = await hosted();
+    await room.handle('c0', { t: 'start' });
+    expect(room.phase).toBe('playing');
+
+    await room.disconnect('c0');
+
+    expect(c1.last('room')!.room.hostGrace).toBeNull();
+    expect(c1.last('room')!.room.hasHost).toBe(true);
+  });
+
+  it('offers the room to whoever is left when the countdown runs out', async () => {
+    const { host, room, c1 } = await hosted();
+    await room.disconnect('c0');
+
+    host.clock += HOST_GRACE_MS;
+    await room.onAlarm();
+
+    // Nobody is host now, which is what puts the takeover on c1's screen.
+    expect(c1.last('room')!.room.hasHost).toBe(false);
+    expect(c1.last('room')!.room.hostGrace).toBeNull();
+    expect(host.closed).toBe(false);
+  });
+
+  it('closes the room when the countdown runs out and nobody is left', async () => {
+    const { host, room } = await hosted();
+    await room.disconnect('c1');
+    await room.disconnect('c0');
+
+    host.clock += HOST_GRACE_MS;
+    await room.onAlarm();
+
+    expect(room.isClosed).toBe(true);
+    expect(host.closed).toBe(true);
+  });
+
+  it('leaves a room standing while anybody is still in it', async () => {
+    const { host, room, c1 } = await hosted();
+    await room.disconnect('c0');
+    host.clock += HOST_GRACE_MS;
+    await room.onAlarm();
+
+    // The guest is still here, so the room is offered rather than closed.
+    expect(room.isClosed).toBe(false);
+    expect(host.closed).toBe(false);
+    expect(c1.last('roomClosed')).toBeUndefined();
+  });
+
+  it('refuses everybody once it has closed, rather than rebuilding itself', async () => {
+    const { host, room } = await hosted();
+    await room.disconnect('c1');
+    await room.disconnect('c0');
+    host.clock += HOST_GRACE_MS;
+    await room.onAlarm();
+
+    // The tombstone survives a reload of the room — which is exactly what a
+    // redial does, since addressing a Durable Object is what creates it.
+    const reopened = await Room.open(host, 'ABC123');
+    expect(reopened.isClosed).toBe(true);
+
+    const redial = new FakeConn('redial');
+    await reopened.hello(redial, { ...HELLO });
+    expect(redial.last('roomClosed')?.reason).toBe('host-left');
+    expect(redial.closed?.code).toBe(CLOSE_ROOM_CLOSED);
+    expect(redial.last('welcome')).toBeUndefined();
+  });
+
+  it('does not hand the room to whoever redials a closed code', async () => {
+    const { host, room } = await hosted();
+    await room.disconnect('c1');
+    await room.disconnect('c0');
+    host.clock += HOST_GRACE_MS;
+    await room.onAlarm();
+
+    const reopened = await Room.open(host, 'ABC123');
+    const redial = new FakeConn('redial');
+    await reopened.hello(redial, { ...HELLO });
+    expect(reopened.snapshot().hasHost).toBe(false);
+    expect(redial.last('welcome')?.you.isHost).toBeUndefined();
+  });
+  it('lets somebody still in the room take it over once the host is gone', async () => {
+    const { host, room, c1 } = await hosted();
+    await room.disconnect('c0');
+    host.clock += HOST_GRACE_MS;
+    await room.onAlarm();
+
+    await room.handle('c1', { t: 'takeOverRoom' });
+
+    expect(c1.last('welcome')?.you.isHost).toBe(true);
+    expect(c1.last('room')!.room.hasHost).toBe(true);
+    // Announced by name — the old handover was silent, which is most of why
+    // it was confusing.
+    expect(c1.last('roomTakenOver')?.name).toBe('Thistle');
+
+    await room.handle('c1', { t: 'configure', seats: [{ index: 0, controller: 'cpu' }] });
+    await room.handle('c1', { t: 'start' });
+    expect(room.phase).toBe('playing');
+  });
+
+  it('refuses a takeover while the room still has a host', async () => {
+    const { room, c1 } = await hosted();
+    await room.handle('c1', { t: 'takeOverRoom' });
+    expect(c1.errors()).toContain('HAS_HOST');
+    expect(c1.last('welcome')?.you.isHost).toBe(false);
+  });
+
+  it('refuses a takeover during the grace window', async () => {
+    // The host is merely disconnected. A room is never taken off somebody who
+    // might still be coming back.
+    const { room, c1 } = await hosted();
+    await room.disconnect('c0');
+    await room.handle('c1', { t: 'takeOverRoom' });
+    expect(c1.errors()).toContain('HAS_HOST');
+  });
+
+  it('does not let the original host silently reclaim the room', async () => {
+    const { host, room, c0, c1, hostKey } = await hosted();
+    const oldToken = c0.last('welcome')!.you.token;
+    await room.disconnect('c0');
+    host.clock += HOST_GRACE_MS;
+    await room.onAlarm();
+    await room.handle('c1', { t: 'takeOverRoom' });
+
+    // Back with both credentials, and neither one takes the room back.
+    const returning = new FakeConn('c0-back');
+    await room.hello(returning, { ...HELLO, token: oldToken, hostKey });
+
+    expect(returning.last('welcome')?.you.isHost).toBe(false);
+    expect(c1.last('welcome')?.you.isHost).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+describe('a room nobody is in', () => {
+  async function hosted() {
+    const host = makeHost();
+    const room = await Room.open(host, 'ABC123');
+    const hostKey = await room.hostKeyForCreate();
+    const c0 = new FakeConn('c0');
+    await room.hello(c0, { ...HELLO, hostKey });
+    const c1 = new FakeConn('c1');
+    await room.hello(c1, { ...HELLO });
+    return { host, room, c0, c1, hostKey };
+  }
+
+  // In a LOBBY the host's 60s grace lands long before the ten-minute reap, so
+  // an empty lobby closes as 'host-left'. The reaper is what catches every
+  // other phase, where no grace window applies at all.
+  it('closes an empty lobby by the host grace, not the reaper', async () => {
+    const { host, room } = await hosted();
+    await room.disconnect('c0');
+    await room.disconnect('c1');
+
+    host.clock += HOST_GRACE_MS;
+    await room.onAlarm();
+
+    expect(room.isClosed).toBe(true);
+    expect(host.stored?.closed?.reason).toBe('host-left');
+  });
+
+  it('closes a room everyone walked away from', async () => {
+    const { host, room } = await hosted();
+    await room.handle('c0', { t: 'start' });
+    await room.disconnect('c0');
+    await room.disconnect('c1');
+
+    host.clock += EMPTY_ROOM_REAP_MS;
+    await room.onAlarm();
+
+    expect(room.isClosed).toBe(true);
+    expect(host.stored?.closed?.reason).toBe('abandoned');
+  });
+
+  it('is not closed while somebody is still in it', async () => {
+    const { host, room } = await hosted();
+    await room.disconnect('c0');
+
+    host.clock += EMPTY_ROOM_REAP_MS * 2;
+    await room.onAlarm();
+
+    expect(room.isClosed).toBe(false);
+  });
+
+  it('stops counting when somebody comes back', async () => {
+    const { host, room } = await hosted();
+    await room.disconnect('c0');
+    await room.disconnect('c1');
+    expect(host.stored?.reapAt).not.toBeNull();
+
+    const back = new FakeConn('back');
+    await room.hello(back, { ...HELLO });
+    expect(host.stored?.reapAt).toBeNull();
+
+    host.clock += EMPTY_ROOM_REAP_MS;
+    await room.onAlarm();
+    expect(room.isClosed).toBe(false);
+  });
+
+  it('purges the tombstone once nobody could still be holding the code', async () => {
+    const { host, room } = await hosted();
+    await room.handle('c0', { t: 'start' });
+    await room.disconnect('c0');
+    await room.disconnect('c1');
+    host.clock += EMPTY_ROOM_REAP_MS;
+    await room.onAlarm();
+    expect(room.isClosed).toBe(true);
+    expect(host.purged).toBe(false);
+
+    // Still a tombstone a day later minus a beat...
+    host.clock += TOMBSTONE_TTL_MS - 1000;
+    await room.onAlarm();
+    expect(host.purged).toBe(false);
+
+    host.clock += 1000;
+    await room.onAlarm();
+    expect(host.purged).toBe(true);
+    expect(host.stored).toBeNull();
+  });
+
+  it('keeps refusing clients for as long as the tombstone stands', async () => {
+    const { host, room } = await hosted();
+    await room.handle('c0', { t: 'start' });
+    await room.disconnect('c0');
+    await room.disconnect('c1');
+    host.clock += EMPTY_ROOM_REAP_MS;
+    await room.onAlarm();
+
+    const late = new FakeConn('late');
+    await room.hello(late, { ...HELLO });
+    expect(late.last('roomClosed')?.reason).toBe('abandoned');
+    expect(late.closed?.code).toBe(CLOSE_ROOM_CLOSED);
+  });
+  it('leaves nothing replayable in a tombstone', async () => {
+    const { host, room } = await hosted();
+    await room.handle('c0', { t: 'start' });
+    await room.disconnect('c0');
+    await room.disconnect('c1');
+    host.clock += EMPTY_ROOM_REAP_MS;
+    await room.onAlarm();
+
+    // `Room.open` rebuilds a game from `config` + `seed`; a tombstone that
+    // kept them would replay itself into a live state on every load.
+    expect(host.stored?.config).toBeNull();
+    expect(host.stored?.seed).toBeNull();
+    expect(host.stored?.actions).toEqual([]);
+    const reopened = await Room.open(host, 'ABC123');
+    expect(reopened.gameState).toBeNull();
+  });
+
+  it('reuses a tombstoned code when the server draws it again', async () => {
+    const { host, room } = await hosted();
+    await room.handle('c0', { t: 'start' });
+    await room.disconnect('c0');
+    await room.disconnect('c1');
+    host.clock += EMPTY_ROOM_REAP_MS;
+    await room.onAlarm();
+
+    // The tombstone stops a CLIENT rebuilding a room from a stale code. A
+    // fresh create is the server choosing the code, and gets a working room.
+    const reopened = await Room.open(host, 'ABC123');
+    const hostKey = await reopened.hostKeyForCreate();
+    const opener = new FakeConn('opener');
+    await reopened.hello(opener, { ...HELLO, hostKey });
+
+    expect(reopened.isClosed).toBe(false);
+    expect(opener.last('welcome')?.you.isHost).toBe(true);
   });
 });

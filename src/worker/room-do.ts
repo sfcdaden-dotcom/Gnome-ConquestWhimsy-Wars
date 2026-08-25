@@ -71,6 +71,24 @@ export class RoomDurableObject implements DurableObject {
           [`${ACTIONS_PREFIX}${String(chunkIndex).padStart(6, '0')}`]: actions.slice(start, start + ACTIONS_PER_CHUNK),
         });
       },
+      /**
+       * Everything goes, and the tombstone is written back on its own. The
+       * action chunks are the bulk of a finished room and `save` cannot remove
+       * them — it only ever rewrites the chunk it is filling — so a closing
+       * room has to be wiped rather than overwritten.
+       */
+      async close(room: PersistedRoom): Promise<void> {
+        const { actions: _actions, ...meta } = room;
+        await storage.deleteAll();
+        await storage.put(META_KEY, meta);
+      },
+      /**
+       * The tombstone's own end. `deleteAll` also drops the alarm, so a purged
+       * room goes quiet for good rather than waking to find nothing to do.
+       */
+      async purge(): Promise<void> {
+        await storage.deleteAll();
+      },
     };
   }
 
@@ -133,6 +151,14 @@ export class RoomDurableObject implements DurableObject {
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
     const code = url.searchParams.get('code') ?? '';
+
+    // Minting the host credential. Reachable only from the Worker's own
+    // `POST /api/rooms` — the public route regex does not match this path, so
+    // no client can ask a room for its host key.
+    if (url.pathname.endsWith('/host-key') && request.method === 'POST') {
+      const room = await this.roomFor(code);
+      return Response.json({ hostKey: await room.hostKeyForCreate() });
+    }
 
     if (request.headers.get('Upgrade') !== 'websocket') {
       const room = await this.roomFor(code);

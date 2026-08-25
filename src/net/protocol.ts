@@ -59,6 +59,14 @@ export const CLOSE_RATE_LIMITED = 4001;
 /** The room is already holding as many connections as it will hold. */
 export const CLOSE_TOO_MANY_CONNECTIONS = 4003;
 
+/**
+ * The room no longer exists. A client must NOT redial: addressing a room is
+ * what CREATES it, so a redial would quietly build a fresh empty lobby at the
+ * same code — with the redialer as its host — rather than failing. The room
+ * leaves a tombstone behind for the same reason.
+ */
+export const CLOSE_ROOM_CLOSED = 4004;
+
 // ---------------------------------------------------------------------------
 // The shot clock
 // ---------------------------------------------------------------------------
@@ -99,6 +107,62 @@ export const TAKEOVER_AFTER_TIMEOUTS = 3;
 /** The difficulty a taken-over seat is played at. */
 export const TAKEOVER_DIFFICULTY: AiDifficulty = 'easy';
 
+// ---------------------------------------------------------------------------
+// The host's grace window
+// ---------------------------------------------------------------------------
+
+/**
+ * How long a lobby waits for a host who has dropped.
+ *
+ * The host is static (see room.ts), so a lobby whose host has gone cannot
+ * start — and without a limit it would sit there forever. When this expires
+ * the room either hands itself to somebody still in it or, if nobody is, shuts
+ * down.
+ *
+ * Lobby only. Mid-game a missing host is a non-event: there is no lobby left
+ * to own, and a seat that has stopped playing is already the shot clock's
+ * problem. Tearing down a game in progress because somebody's phone slept
+ * would be far worse than the thing this prevents.
+ */
+export const HOST_GRACE_MS = 60_000;
+
+/**
+ * How long the host must be gone before anyone is TOLD they are gone.
+ *
+ * A reload drops the socket for about a second, and the most ordinary thing a
+ * waiting host does is reload. Announcing that every time would make a
+ * non-event look like a crisis. The clock runs from the actual disconnect;
+ * only the announcement waits.
+ */
+export const HOST_ABSENCE_BANNER_MS = 5_000;
+
+/**
+ * How long a room with nobody in it is kept before it is closed.
+ *
+ * Nothing used to collect abandoned rooms at all: a lobby somebody opened and
+ * wandered off from, or a finished game everyone closed, sat in Durable Object
+ * storage indefinitely. Long enough that a whole table reconnecting after a
+ * network blip finds its game where it left it; short enough that a room is
+ * not a permanent object.
+ */
+export const EMPTY_ROOM_REAP_MS = 10 * 60_000;
+
+/**
+ * How long a closed room's tombstone is kept.
+ *
+ * The tombstone exists so a redial cannot rebuild a closed room from nothing
+ * (see CLOSE_ROOM_CLOSED), which only matters while somebody might still have
+ * the code in front of them. A day is far past that, and keeping them forever
+ * would be the same slow leak the reaper is here to stop.
+ */
+export const TOMBSTONE_TTL_MS = 24 * 60 * 60 * 1000;
+
+/** The countdown on a lobby whose host has dropped. `now` is the server's clock. */
+export interface HostGrace {
+  until: number;
+  now: number;
+}
+
 /**
  * The live clock as a client sees it. `now` is the SERVER's wall clock at the
  * moment the frame was built: a client that renders `deadline - now` as a
@@ -134,8 +198,19 @@ export interface RoomSnapshot {
   code: string;
   phase: RoomPhase;
   seats: SeatInfo[];
-  /** Seat that owns the lobby settings and the start button. */
+  /**
+   * Seat that owns the lobby settings and the start button, or null when the
+   * host holds no seat — which happens both when they are spectating and when
+   * there is no host at all. `hasHost` is what tells those two apart.
+   */
   hostSeat: number | null;
+  /** Is anybody the host right now? False only between a host leaving and a takeover. */
+  hasHost: boolean;
+  /**
+   * Set while a lobby is waiting out a dropped host. Null at every other time,
+   * including mid-game. When it runs out the room is handed over or closed.
+   */
+  hostGrace: HostGrace | null;
   boardSize: number;
   gardenPreset: GardenPreset;
   /**
@@ -157,11 +232,23 @@ export type ClientMessage =
    * player presents the `token` it was given, which is what restores its seat
    * (and its hand) after a refresh, a tunnel, or the room hibernating.
    */
-  | { t: 'hello'; protocol: number; token?: string; name?: string }
+  /**
+   * `hostKey` is the credential `POST /api/rooms` handed whoever opened the
+   * room. It binds the host ONCE, to the token of the connection that first
+   * presents it, and is ignored ever after — the host does not move because
+   * somebody reloaded. See `Room.hello`.
+   */
+  | { t: 'hello'; protocol: number; token?: string; name?: string; hostKey?: string }
   /** Host only: lobby settings. Rejected once the game has started. */
   | { t: 'configure'; playerCount?: 2 | 4; boardSize?: number; gardenPreset?: GardenPreset; seats?: SeatConfig[] }
   /** Host only: deal the cards. The room picks the seed; no client ever does. */
   | { t: 'start' }
+  /**
+   * Claim a room whose host is gone. Refused unless the room actually has no
+   * host — this is the deliberate, visible handover that replaced the silent
+   * one, not a way to take a room off somebody who is still in it.
+   */
+  | { t: 'takeOverRoom' }
   /** A game action. `action.player` must be this connection's seat. */
   | { t: 'action'; action: Action }
   | { t: 'ping' };
@@ -208,8 +295,26 @@ export type ServerMessage =
    * verifySeal / replayMatch.
    */
   | { t: 'revealed'; seal: GameSeal; record: MatchRecord }
+  /**
+   * Somebody claimed a room whose host had gone. Announced to everyone by
+   * name: the old handover was silent, which is most of why it was confusing.
+   */
+  | { t: 'roomTakenOver'; seat: number | null; name: string | null }
+  /**
+   * The room is gone and is not coming back. Sent immediately before the
+   * socket is closed with `CLOSE_ROOM_CLOSED`, so the client can say what
+   * happened instead of showing a generic disconnect.
+   */
+  | { t: 'roomClosed'; reason: RoomClosedReason }
   | { t: 'error'; code: RoomErrorCode; message: string }
   | { t: 'pong' };
+
+/** Why a room shut down. */
+export type RoomClosedReason =
+  /** The lobby's host never came back and nobody took the room over. */
+  | 'host-left'
+  /** Nobody has been connected for long enough that the room was reaped. */
+  | 'abandoned';
 
 export type RoomErrorCode =
   | 'PROTOCOL' // unparseable, unknown, or wrong-version message
@@ -218,6 +323,7 @@ export type RoomErrorCode =
   | 'WRONG_PHASE' // right message, wrong moment (start twice, act in a lobby)
   | 'ROOM_FULL' // the room will not hold another connection
   | 'BAD_CONFIG' // lobby settings the engine would reject
+  | 'HAS_HOST' // a takeover attempt on a room that still has a host
   | 'ILLEGAL_ACTION' // the engine said no
   | 'RATE_LIMITED'; // sending faster than the room will serve (see ratelimit.ts)
 
@@ -229,6 +335,7 @@ export function parseClientMessage(raw: unknown): ClientMessage | null {
     case 'hello':
     case 'configure':
     case 'start':
+    case 'takeOverRoom':
     case 'action':
     case 'ping':
       return raw as ClientMessage;

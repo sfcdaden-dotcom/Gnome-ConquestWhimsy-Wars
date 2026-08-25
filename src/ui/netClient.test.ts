@@ -6,6 +6,8 @@ import {
   encodeClientMessage,
   NAME_KEY,
   parseServerMessage,
+  recentRoom,
+  RECENT_ROOM_TTL_MS,
   reconnectDelayMs,
   roomCodeFromSearch,
   roomHref,
@@ -13,6 +15,7 @@ import {
   tabId,
   tokenStore,
   type SeatStores,
+  type Slot,
 } from './netClient';
 
 describe('roomSocketUrl', () => {
@@ -223,5 +226,57 @@ describe('framing', () => {
     expect(parseServerMessage(JSON.stringify('a string'))).toBeNull();
     expect(parseServerMessage(JSON.stringify({ no: 't' }))).toBeNull();
     expect(parseServerMessage(new ArrayBuffer(4))).toBeNull();
+  });
+});
+
+describe('the way back into a room you were recently in', () => {
+  function slot(): Slot & { data: Map<string, string> } {
+    const data = new Map<string, string>();
+    return {
+      data,
+      getItem: (k: string) => data.get(k) ?? null,
+      setItem: (k: string, v: string) => void data.set(k, v),
+      removeItem: (k: string) => void data.delete(k),
+    };
+  }
+
+  it('offers the room back', () => {
+    const local = slot();
+    recentRoom.save(local, 'ABC123', 1000);
+    expect(recentRoom.load(local, 2000)).toEqual({ code: 'ABC123', seen: 1000 });
+  });
+
+  it('forgets a breadcrumb older than the window', () => {
+    const local = slot();
+    recentRoom.save(local, 'ABC123', 1000);
+    expect(recentRoom.load(local, 1000 + RECENT_ROOM_TTL_MS + 1)).toBeNull();
+  });
+
+  it('keeps only the latest room', () => {
+    const local = slot();
+    recentRoom.save(local, 'ABC123', 1000);
+    recentRoom.save(local, 'XYZ789', 2000);
+    expect(recentRoom.load(local, 2000)?.code).toBe('XYZ789');
+  });
+
+  it('drops the breadcrumb when that room closes', () => {
+    const local = slot();
+    recentRoom.save(local, 'ABC123', 1000);
+    recentRoom.forget(local, 'ABC123');
+    expect(recentRoom.load(local, 1000)).toBeNull();
+  });
+
+  it('leaves a newer breadcrumb alone when an older room closes', () => {
+    const local = slot();
+    recentRoom.save(local, 'ABC123', 1000);
+    recentRoom.save(local, 'XYZ789', 2000);
+    recentRoom.forget(local, 'ABC123');
+    expect(recentRoom.load(local, 2000)?.code).toBe('XYZ789');
+  });
+
+  it('survives junk in storage', () => {
+    const local = slot();
+    local.setItem('ww:room:recent', 'not json');
+    expect(recentRoom.load(local, 1000)).toBeNull();
   });
 });
