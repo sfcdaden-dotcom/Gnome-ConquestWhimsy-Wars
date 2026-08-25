@@ -412,6 +412,48 @@ test('cancelling phased targeting returns the card to the hand', async ({ page }
   await expect(page.getByTestId('play-card-plot-twist')).toBeEnabled();
 });
 
+test('"New game" asks before abandoning a game in progress', async ({ page }) => {
+  const g = new Game(page);
+  await g.startTwoPlayer(1234);
+
+  // First click arms, and changes nothing: the game is still on screen.
+  await page.getByTestId('new-game').click();
+  await expect(page.getByTestId('game-screen')).toBeVisible();
+  await expect(page.getByTestId('quit-confirm')).toBeVisible();
+
+  // Backing out returns the button, game untouched.
+  await page.getByTestId('quit-cancel').click();
+  await expect(page.getByTestId('new-game')).toBeVisible();
+  await expect(page.getByTestId('game-screen')).toBeVisible();
+
+  // Escape backs out of the armed state too.
+  await page.getByTestId('new-game').click();
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('new-game')).toBeVisible();
+
+  // Confirming leaves the game for the setup screen.
+  await page.getByTestId('new-game').click();
+  await page.getByTestId('quit-confirm').click();
+  await expect(page.getByTestId('game-screen')).toBeHidden();
+  await expect(page.getByTestId('start-game')).toBeVisible();
+});
+
+test('Escape backs out of targeting, like the Cancel button', async ({ page }) => {
+  const g = new Game(page);
+  await reachPlayablePlotTwist(g);
+  const banner = page.getByTestId('targeting-banner');
+
+  await page.getByTestId('play-card-plot-twist').click();
+  await expect(banner).toBeVisible();
+
+  // Same retreat as the Cancel button, without hunting for it.
+  await page.keyboard.press('Escape');
+  await g.ready();
+  await expect(banner).toBeHidden();
+  await expect(page.getByTestId('play-card-plot-twist')).toBeEnabled();
+  expect(await g.decision()).not.toBe('cardTargeting');
+});
+
 // ---------------------------------------------------------------------------
 // The True Random mode (the shipping default)
 // ---------------------------------------------------------------------------
@@ -543,6 +585,33 @@ test('the phrase picker steps back out of a category and closes', async ({ page 
   await page.getByTestId('quickchat-close').click();
   await expect(page.getByTestId('quickchat-menu')).toBeHidden();
   await expect(page.getByTestId('quickchat-left')).toHaveText('4/4');
+});
+
+test('the game log folds into turns, with the current one open', async ({ page }) => {
+  const g = new Game(page);
+  await g.startTwoPlayer(SEED);
+  await g.completeRollOff();
+  await g.resolveHarvest('wish');
+  await page.getByTestId('chat-tab-log').click();
+
+  // Turn 1 is the current turn: its header is there and its lines are showing.
+  const turn1 = page.getByTestId('log-turn-1');
+  const lines = page.locator('[data-testid="game-log"] .log-line');
+  await expect(turn1).toHaveAttribute('aria-expanded', 'true');
+  expect(await lines.count()).toBeGreaterThan(0);
+
+  // The roll-off before it is folded away by default.
+  await expect(page.getByTestId('log-turn-earlier')).toHaveAttribute('aria-expanded', 'false');
+
+  // Folding the current turn leaves headers only.
+  await turn1.click();
+  await expect(turn1).toHaveAttribute('aria-expanded', 'false');
+  await expect(lines).toHaveCount(0);
+
+  // And it opens again on a second click.
+  await turn1.click();
+  await expect(turn1).toHaveAttribute('aria-expanded', 'true');
+  expect(await lines.count()).toBeGreaterThan(0);
 });
 
 test('chat and game log share one window, and unread chat is badged', async ({ page }) => {

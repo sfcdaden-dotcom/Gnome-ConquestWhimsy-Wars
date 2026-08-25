@@ -139,6 +139,7 @@ export {
   getCurseDef,
   isCurseId,
   deckHasCards,
+  whyCannotPlayNow,
 } from './cards';
 export type { WhimsyCardDef, CurseCardDef, CardTiming, TargetStep, TargetingContext } from './cards';
 

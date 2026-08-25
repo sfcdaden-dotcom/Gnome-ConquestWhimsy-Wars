@@ -3,7 +3,7 @@
  * (live respond panel + finished-fight step-through overlay).
  */
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import type { CardId, GameEvent, GameState, PlayerId } from '../engine';
 import {
@@ -19,12 +19,15 @@ import {
   cardName,
   describeEvent,
   dieFace,
+  playHint,
   playerColor,
   pname,
   posStr,
   sideName,
 } from './meta';
 import { GardenIcon, UnitIcon } from './art';
+import type { LogTurn } from './gameLog';
+import { groupByTurn, isPinnedToBottom, logLines } from './gameLog';
 
 // ---------------------------------------------------------------------------
 // Player panels
@@ -101,23 +104,81 @@ export function PlayerPanels({ state, takenOverSeats = [] }: { state: GameState;
  */
 export function GameLogView({ state }: { state: GameState }) {
   const ref = useRef<HTMLDivElement>(null);
-  const count = state.events.length;
+  // Whether the reader is watching the tail. Kept in a ref, not state: it is
+  // read by the scroll effect and never rendered, and a scroll handler that
+  // re-rendered the log on every wheel tick would be its own papercut.
+  const pinned = useRef(true);
+  /**
+   * Turns the reader has explicitly opened or shut, by turn key. Everything
+   * absent from this map follows the default — the current turn open, the rest
+   * collapsed — which is what makes the log follow play on its own: when a new
+   * turn starts it becomes the open one and the finished turn folds away,
+   * without touching anything the reader chose for themselves.
+   */
+  const [overrides, setOverrides] = useState<ReadonlyMap<number, boolean>>(new Map());
+
+  const turns = groupByTurn(logLines(state));
+  const currentKey = turns.length > 0 ? turns[turns.length - 1].key : null;
+  const isOpen = (t: LogTurn) => overrides.get(t.key) ?? t.key === currentKey;
+
   useEffect(() => {
     const el = ref.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [count]);
+    // Follow the tail only for someone already reading it — scroll back to
+    // check what a fight did and the next event no longer snatches the view.
+    if (el && pinned.current) el.scrollTop = el.scrollHeight;
+  }, [state.eventCount]);
 
-  const start = Math.max(0, count - 250);
   return (
-    <div className="game-log" ref={ref} aria-label="Game log" data-testid="game-log">
-      {state.events.slice(start).map((ev, i) => (
-        <div key={start + i} className={`log-line log-${ev.type}`}>
-          {describeEvent(state, ev)}
-        </div>
-      ))}
-      {count === 0 && <div className="log-line muted">The garden awaits…</div>}
+    <div
+      className="game-log"
+      ref={ref}
+      aria-label="Game log"
+      data-testid="game-log"
+      onScroll={(e) => {
+        pinned.current = isPinnedToBottom(e.currentTarget);
+      }}
+    >
+      {turns.map((t) => {
+        const open = isOpen(t);
+        return (
+          <div key={t.key} className="log-turn" data-open={open ? 'true' : 'false'}>
+            <button
+              type="button"
+              className="log-turn-head"
+              aria-expanded={open}
+              data-testid={`log-turn-${t.turnNumber ?? 'earlier'}`}
+              onClick={() =>
+                setOverrides((m) => {
+                  const next = new Map(m);
+                  next.set(t.key, !open);
+                  return next;
+                })
+              }
+            >
+              <span className="log-caret" aria-hidden="true">
+                {open ? '▾' : '▸'}
+              </span>
+              <span className="log-turn-title">{turnTitle(state, t)}</span>
+              {!open && <span className="log-turn-count">{t.lines.length}</span>}
+            </button>
+            {open &&
+              t.lines.map(({ key, ev }) => (
+                <div key={key} className={`log-line log-${ev.type}`}>
+                  {describeEvent(state, ev)}
+                </div>
+              ))}
+          </div>
+        );
+      })}
+      {turns.length === 0 && <div className="log-line muted">The garden awaits…</div>}
     </div>
   );
+}
+
+/** "Turn 3: Red", or a label for the lines that precede the window's first turn. */
+function turnTitle(state: GameState, t: LogTurn): string {
+  if (t.turnNumber === null) return t.matchStart ? 'Roll-off' : 'Earlier';
+  return `Turn ${t.turnNumber}: ${t.player === null ? '' : pname(state, t.player)}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -131,10 +192,16 @@ export interface HandPanelProps {
   /** Card ids playable right now via a normal playCard action. */
   playable: ReadonlySet<CardId>;
   onPlay: (cardId: CardId) => void;
-  disabled: boolean;
+  /**
+   * Why the whole hand is inert (hand-off pending, a fight replaying, the game
+   * over), or null when it is live. A sentence rather than a boolean: it is
+   * shown on every card, and "no legal targets" would be a misleading thing to
+   * say about a card whose owner is not even looking at the screen yet.
+   */
+  blocked: string | null;
 }
 
-export function HandPanel({ state, seat, playable, onPlay, disabled }: HandPanelProps) {
+export function HandPanel({ state, seat, playable, onPlay, blocked }: HandPanelProps) {
   if (seat === null) {
     return (
       <div className="hand-panel">
@@ -158,6 +225,11 @@ export function HandPanel({ state, seat, playable, onPlay, disabled }: HandPanel
         <div className="hand-cards" data-testid="hand-cards">
           {p.hand.map((cardId, i) => {
             const def = getCardDef(cardId);
+            // `playable` (the engine's own enumeration) decides the button;
+            // the hint only explains it, and is asked for only when there is
+            // something to explain, since the reason costs a target search.
+            const live = blocked === null && playable.has(cardId);
+            const hint = live ? null : playHint(state, seat, cardId, blocked);
             return (
               <div key={`${cardId}-${i}`} className={`card ${def?.timing ?? 'unknown'}`}>
                 <div className="card-head">
@@ -168,12 +240,17 @@ export function HandPanel({ state, seat, playable, onPlay, disabled }: HandPanel
                 <button
                   type="button"
                   className="btn small"
-                  disabled={disabled || !playable.has(cardId)}
+                  disabled={!live}
                   data-testid={`play-card-${cardId}`}
                   onClick={() => onPlay(cardId)}
                 >
                   Play
                 </button>
+                {hint && (
+                  <span className="card-why" data-testid={`card-why-${cardId}`}>
+                    {hint}
+                  </span>
+                )}
               </div>
             );
           })}
@@ -278,7 +355,12 @@ function FightSideBadge({
 }
 
 // ---------------------------------------------------------------------------
-// Fight: finished-fight step-through overlay
+// Fight: finished-fight step-through
+//
+// It used to be a modal overlay — dimmed backdrop, blur, centred over
+// everything — for what is a replay of dice that have already been rolled.
+// Nothing about it needs an answer, so it no longer takes the screen: it is a
+// card beside the board, and the board stays visible and readable underneath.
 // ---------------------------------------------------------------------------
 
 export interface FightPlaybackProps {
@@ -287,7 +369,7 @@ export interface FightPlaybackProps {
   onSkip: () => void;
 }
 
-export function FightPlaybackOverlay({ state, playback, onSkip }: FightPlaybackProps) {
+export function FightPlaybackCard({ state, playback, onSkip }: FightPlaybackProps) {
   const shownEvents = playback.events.slice(0, playback.shown);
   // Header describes the most recent fight in the shown window.
   let header = '⚔️ Fight!';
@@ -300,27 +382,27 @@ export function FightPlaybackOverlay({ state, playback, onSkip }: FightPlaybackP
     if (ev.type === 'fightRolled') lastRoll = ev;
   }
   return (
-    <div className="overlay" role="dialog" aria-label="Fight">
-      <div className="overlay-card fight-overlay">
-        <div className="fight-header">{header}</div>
-        {lastRoll && (
-          <div className="big-dice" key={shownEvents.length}>
-            <span className="die">{dieFace(lastRoll.rolls[0])}</span>
-            <span className="vs">vs</span>
-            <span className="die">{dieFace(lastRoll.rolls[1])}</span>
-          </div>
-        )}
-        <div className="fight-steps">
-          {shownEvents.map((ev, i) => (
-            <div key={i} className={`log-line${i === shownEvents.length - 1 ? ' latest' : ''}`}>
-              {describeEvent(state, ev)}
-            </div>
-          ))}
+    /* Not a dialog: it interrupts nothing, so it announces itself politely and
+       leaves focus where the player left it. */
+    <div className="fight-playback" role="status" aria-label="Fight" data-testid="fight-playback">
+      <div className="fight-header">{header}</div>
+      {lastRoll && (
+        <div className="big-dice" key={shownEvents.length}>
+          <span className="die">{dieFace(lastRoll.rolls[0])}</span>
+          <span className="vs">vs</span>
+          <span className="die">{dieFace(lastRoll.rolls[1])}</span>
         </div>
-        <button type="button" className="btn" data-testid="skip-playback" onClick={onSkip}>
-          Skip ⏭
-        </button>
+      )}
+      <div className="fight-steps">
+        {shownEvents.map((ev, i) => (
+          <div key={i} className={`log-line${i === shownEvents.length - 1 ? ' latest' : ''}`}>
+            {describeEvent(state, ev)}
+          </div>
+        ))}
       </div>
+      <button type="button" className="btn small" data-testid="skip-playback" onClick={onSkip}>
+        Skip ⏭
+      </button>
     </div>
   );
 }

@@ -15,7 +15,7 @@ import type { Action, CardId, CardTarget, GameState, PendingDecision, PlayerId, 
 import { gardenAt, getLegalActionIntents, getPendingDecisionOptions, posKey } from '../engine';
 import { Board } from './Board';
 import { DecisionPanel } from './DecisionPanel';
-import { FightPanel, FightPlaybackOverlay, HandPanel, PlayerPanels } from './panels';
+import { FightPanel, FightPlaybackCard, HandPanel, PlayerPanels } from './panels';
 import { ChatPanel, QuickChatFeed } from './QuickChat';
 import { GARDEN_META, cardName, cardText, decisionLabel, playerColor, pname } from './meta';
 import { GardenIcon, UnitIcon } from './art';
@@ -57,6 +57,9 @@ export function GameScreen({ game: g, onPlayAgain, onQuit }: GameScreenProps) {
   // After the game ends, "Review match" dismisses the end overlay so the board
   // and full game log stay on screen; "Results" brings the overlay back.
   const [reviewing, setReviewing] = useState(false);
+  // "New game" abandons a game in progress, so it asks first: armed here,
+  // confirmed by the second click.
+  const [quitArmed, setQuitArmed] = useState(false);
 
   // Card plays are enumerated WITHOUT targets — dispatching a targeted play
   // opens a `cardTargeting` decision, and the engine then hands back one step's
@@ -112,6 +115,20 @@ export function GameScreen({ game: g, onPlayAgain, onQuit }: GameScreenProps) {
 
   const decision = state.pendingDecision;
 
+  /**
+   * Why the whole hand is inert, or null when it is live. The hand panel shows
+   * this on each card, so it says what is in the way rather than leaving five
+   * greyed-out buttons to be interpreted.
+   */
+  const handBlocked =
+    state.status === 'finished'
+      ? 'The game is over.'
+      : needsPass
+        ? 'Pass the device first — the hand is hidden until then.'
+        : playback
+          ? 'Wait for the fight to finish.'
+          : null;
+
   /** Everything the pure routing rules in `interaction.ts` read. */
   const ctx: InteractionContext = {
     state,
@@ -148,6 +165,41 @@ export function GameScreen({ game: g, onPlayAgain, onQuit }: GameScreenProps) {
         : { type: 'playCard', player, cardId },
     );
   }
+
+  /**
+   * Escape backs out one level, most recent first: a fight replay still
+   * stepping, an armed "New game", an in-progress card targeting (the card
+   * never left the hand, so cancelling is always safe), an open plant submenu,
+   * then a selected gnome. Every one of those was previously escapable only by
+   * finding its own button.
+   *
+   * It listens on the document rather than a container because clicking the
+   * board leaves focus on <body>, and Escape is precisely the key people press
+   * without looking at where focus went. Anything nested that owns Escape —
+   * the action menu while focused, the quick-chat picker while open — consumes
+   * the event before it reaches here.
+   */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      if (playback) {
+        g.skipPlayback();
+      } else if (quitArmed) {
+        setQuitArmed(false);
+      } else if (interactive && decision?.kind === 'cardTargeting' && decision.player === playerToAct) {
+        if (!dispatch({ type: 'cancelTargeting', player: decision.player })) setSel(NO_SEL);
+      } else if (submenu !== null) {
+        setSubmenu(null);
+      } else if (sel.kind === 'unit') {
+        setSel(NO_SEL);
+      } else {
+        return;
+      }
+      e.preventDefault();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [playback, g, quitArmed, interactive, decision, playerToAct, submenu, sel.kind, dispatch]);
 
   // --- board click routing -----------------------------------------------------
 
@@ -318,9 +370,37 @@ export function GameScreen({ game: g, onPlayAgain, onQuit }: GameScreenProps) {
             🏁 Results
           </button>
         )}
-        <button type="button" className="btn small" onClick={onQuit}>
-          New game
-        </button>
+        {/* One click used to throw a game in progress away. Now it arms, and
+            the second click confirms — a finished game still goes in one. */}
+        {quitArmed ? (
+          <span className="quit-confirm">
+            <button
+              type="button"
+              className="btn small warn"
+              data-testid="quit-confirm"
+              onClick={onQuit}
+            >
+              Abandon game
+            </button>
+            <button
+              type="button"
+              className="btn small"
+              data-testid="quit-cancel"
+              onClick={() => setQuitArmed(false)}
+            >
+              Keep playing
+            </button>
+          </span>
+        ) : (
+          <button
+            type="button"
+            className="btn small"
+            data-testid="new-game"
+            onClick={() => (state.status === 'finished' ? onQuit() : setQuitArmed(true))}
+          >
+            New game
+          </button>
+        )}
       </header>
 
       <div className="main">
@@ -337,6 +417,11 @@ export function GameScreen({ game: g, onPlayAgain, onQuit }: GameScreenProps) {
             onCellClick={onCellClick}
           />
           <QuickChatFeed state={state} bubbles={g.chatBubbles} />
+          {/* The dice replay, beside the board rather than over it. Hidden once
+              the game ends, where the end overlay is the thing to read. */}
+          {playback && state.status !== 'finished' && (
+            <FightPlaybackCard state={state} playback={playback} onSkip={g.skipPlayback} />
+          )}
           {/* Stable-height slot: the bar appearing/disappearing must not
               reflow the board. Targeting replaces the action bar. */}
           <div className="board-footer">
@@ -409,7 +494,7 @@ export function GameScreen({ game: g, onPlayAgain, onQuit }: GameScreenProps) {
             seat={handSeat}
             playable={handPlayable}
             onPlay={(cardId) => handSeat !== null && startCardPlay(cardId, false, handSeat)}
-            disabled={needsPass || !!playback || state.status === 'finished'}
+            blocked={handBlocked}
           />
           {/* Chat + game log share one window (tabs), and it is last in the
               column so the phrase picker opens upward over the transcript.
@@ -426,7 +511,10 @@ export function GameScreen({ game: g, onPlayAgain, onQuit }: GameScreenProps) {
         </aside>
       </div>
 
-      {/* Overlays (priority: end > fight playback > pass interstitial) */}
+      {/* Overlays (priority: end > pass interstitial). The fight replay is no
+          longer among them — it sits beside the board and covers nothing — but
+          it still holds the pass interstitial back, so a hand-off cannot hide
+          the fight that just decided the turn. */}
       {state.status === 'finished' && !reviewing ? (
         <EndOverlay
           state={state}
@@ -434,17 +522,24 @@ export function GameScreen({ game: g, onPlayAgain, onQuit }: GameScreenProps) {
           onQuit={onQuit}
           onReview={() => setReviewing(true)}
         />
-      ) : playback ? (
-        <FightPlaybackOverlay state={state} playback={playback} onSkip={g.skipPlayback} />
-      ) : needsPass && playerToAct !== null ? (
+      ) : needsPass && !playback && playerToAct !== null ? (
         <PassOverlay state={state} seat={playerToAct} onConfirm={g.confirmPass} />
       ) : null}
 
+      {/* Click one away rather than waiting out its timer — a rejected action
+          leaves a red bar over the board, and "I have read it" is a click. */}
       <div className="toasts">
         {g.toasts.map((t) => (
-          <div key={t.id} className={`toast ${t.kind}`}>
+          <button
+            key={t.id}
+            type="button"
+            className={`toast ${t.kind}`}
+            title="Dismiss"
+            data-testid={`toast-${t.id}`}
+            onClick={() => g.dismissToast(t.id)}
+          >
             {t.text}
-          </div>
+          </button>
         ))}
       </div>
     </div>

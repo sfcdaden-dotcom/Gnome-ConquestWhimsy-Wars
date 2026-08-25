@@ -3,8 +3,20 @@
  * Pure functions over engine data — no rule logic lives here.
  */
 
-import type { Action, CardTarget, FightSide, GameEvent, GameState, GardenType, Pos, QuickChatId } from '../engine';
-import { getCardDef, getCurseDef, getQuickChatPhrase, nameSaltOf } from '../engine';
+import type {
+  Action,
+  CardId,
+  CardTarget,
+  CardTargets,
+  FightSide,
+  GameEvent,
+  GameState,
+  GardenType,
+  PlayerId,
+  Pos,
+  QuickChatId,
+} from '../engine';
+import { getCardDef, getCurseDef, getQuickChatPhrase, nameSaltOf, whyCannotPlayNow } from '../engine';
 import type { UnitEventRef } from './gnomeNames';
 import { gnomeName, unitNameFromEvent, unitNameLive } from './gnomeNames';
 
@@ -12,9 +24,10 @@ import { gnomeName, unitNameFromEvent, unitNameLive } from './gnomeNames';
 // Player + garden presentation
 // ---------------------------------------------------------------------------
 
-/** Seat colors: red, blue, gold, purple (clockwise). */
+/** Seat colors: red, blue, yellow, purple (clockwise). Named in
+ * `PLAYER_COLOR_NAMES`, which is also what an untouched seat is called. */
 export const PLAYER_COLORS = ['#d8504d', '#3f7ad8', '#c9930a', '#9256cf'];
-export const PLAYER_COLOR_NAMES = ['Red', 'Blue', 'Gold', 'Purple'];
+export const PLAYER_COLOR_NAMES = ['Red', 'Blue', 'Yellow', 'Purple'];
 
 export function playerColor(id: number): string {
   return PLAYER_COLORS[id % PLAYER_COLORS.length];
@@ -107,6 +120,38 @@ export function cardName(id: string): string {
 /** Rules text of a card or curse, for tooltips. Empty when the id is unknown. */
 export function cardText(id: string): string {
   return getCardDef(id)?.text ?? getCurseDef(id)?.text ?? '';
+}
+
+/**
+ * Why a card in the revealed hand cannot be played right now, as a sentence,
+ * or null when it can.
+ *
+ * A greyed-out Play button used to be the whole explanation, and the reasons
+ * are not guessable: a Ritual held during someone else's turn and a Sudden
+ * with nothing legal to point at look identical in the hand. The engine
+ * already computes the reason for its own legality check — this only dresses
+ * it as a sentence.
+ *
+ * `blocked` is the screen-level reason nothing at all is playable (a hot-seat
+ * hand-off, a fight replaying); it wins, because "no legal targets" is a
+ * confusing thing to say about a card whose owner is not even looking yet.
+ */
+export function playHint(
+  state: GameState,
+  seat: PlayerId,
+  cardId: CardId,
+  blocked: string | null = null,
+): string | null {
+  if (blocked) return sentence(blocked);
+  const why = whyCannotPlayNow(state, seat, cardId);
+  return why === null ? null : sentence(why);
+}
+
+/** Capitalized, full-stopped. The engine writes reasons as clause fragments. */
+function sentence(text: string): string {
+  if (text === '') return text;
+  const capped = text[0].toUpperCase() + text.slice(1);
+  return /[.!?]$/.test(capped) ? capped : `${capped}.`;
 }
 
 export function sideName(state: GameState, side: FightSide): string {
@@ -213,7 +258,9 @@ export function describeEvent(state: GameState, ev: GameEvent): string {
     case 'destructionPrevented':
       return `🛡️ ${who(state, ev)} is saved (Gnomebody Dies)!`;
     case 'gnomesMarried':
-      return `💍 ${gnomeName(nameSaltOf(state), ev.unitA)} and ${gnomeName(nameSaltOf(state), ev.unitB)} are married — till death do them join.`;
+      // Titled off the event's own pair order, which is the order the engine
+      // stores the marriage in — so the line agrees with every later label.
+      return `💍 Mr ${gnomeName(nameSaltOf(state), ev.unitA)} and Mrs ${gnomeName(nameSaltOf(state), ev.unitB)} are married — till death do them join.`;
     case 'unitTeleported':
       return `${who(state, ev)} moves ${posStr(ev.from)} → ${posStr(ev.to)} (${cardName(ev.cardId)}).`;
     case 'spacesSwapped':
@@ -332,6 +379,36 @@ export function describeAction(state: GameState, a: Action): string {
       return rest ? `${raw.type} (${rest})` : raw.type;
     }
   }
+}
+
+/**
+ * What a card on the stack is pointed at, one phrase per target, in the order
+ * the caster picked them.
+ *
+ * Written for the response window: a card is announced before it resolves, and
+ * "Blue played Rocket-Propelled Gnome" is only half the news — whether to spend
+ * a Nope-Gnome on it depends entirely on *whose* gnome is strapped to the
+ * rocket. The targets are already public (the card stack is not redacted; see
+ * view.ts), so this only surfaces what the responder is entitled to see.
+ *
+ * Empty for a card that takes no targets.
+ */
+export function describeCardTargets(state: GameState, targets: CardTargets | undefined): string[] {
+  if (!targets) return [];
+  const out: string[] = [];
+  for (const unitId of targets.units ?? []) {
+    const u = state.units[unitId];
+    out.push(
+      u
+        ? `${unitNameLive(state, unitId)} (${pname(state, u.owner)}) at ${posStr(u.pos)}`
+        : unitNameLive(state, unitId),
+    );
+  }
+  for (const pos of targets.spaces ?? []) out.push(posStr(pos));
+  for (const p of targets.players ?? []) out.push(pname(state, p));
+  for (const cardId of targets.cards ?? []) out.push(cardName(cardId));
+  if (targets.gardenType) out.push(GARDEN_META[targets.gardenType].label);
+  return out;
 }
 
 function describeTarget(state: GameState, target: CardTarget): string {

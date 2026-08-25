@@ -864,6 +864,27 @@ h2 {
   color: var(--text);
 }
 
+/* Response window: the rules text and targets of the card being answered. */
+.card-effect {
+  color: var(--muted);
+  font-style: italic;
+  margin-top: 4px;
+}
+.respond-targets {
+  margin-top: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: baseline;
+}
+.respond-target {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1px 6px;
+  font-weight: 600;
+}
+
 .player-panels {
   display: flex;
   flex-direction: column;
@@ -1054,6 +1075,14 @@ h2 {
   color: var(--muted);
   margin: 3px 0 5px;
 }
+/* Why a card's Play button is greyed out — shown, not left to be guessed. */
+.card-why {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.72rem;
+  color: var(--muted);
+  font-style: italic;
+}
 .deck-info {
   font-size: 0.72rem;
   color: var(--muted);
@@ -1074,13 +1103,47 @@ h2 {
 .log-line {
   padding: 1px 0;
 }
+
+/* Turns fold: the header is the whole click target, the lines sit under it. */
+.log-turn + .log-turn {
+  margin-top: 2px;
+}
+.log-turn-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  width: 100%;
+  padding: 2px 0;
+  background: none;
+  border: none;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+.log-turn-head:hover .log-turn-title {
+  text-decoration: underline;
+}
+.log-caret {
+  width: 0.8em;
+  flex: none;
+  color: var(--muted);
+}
+.log-turn-title {
+  flex: 1;
+}
+.log-turn-count {
+  flex: none;
+  color: var(--muted);
+  font-weight: 400;
+  font-size: 0.72rem;
+}
+.log-turn[data-open='true'] .log-line {
+  padding-left: calc(0.8em + 6px);
+}
 .log-line.latest {
   font-weight: 700;
-}
-.log-turnStarted {
-  font-weight: 700;
-  margin-top: 4px;
-  color: var(--accent);
 }
 .log-fightStarted,
 .log-playerEliminated,
@@ -1201,12 +1264,31 @@ h2 {
   font-size: 3rem;
 }
 
-.fight-overlay {
-  min-width: min(460px, 92vw);
+/* The fight replay: a card at the board's top-right corner, over nothing that
+   matters. No backdrop, no dimming — the board stays readable while the dice
+   land, which is the whole point of watching them. */
+.fight-playback {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 30;
+  width: min(240px, 42%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  padding: 10px 12px;
+  text-align: center;
+  animation: toast-in 0.2s ease;
 }
 .fight-header {
-  font-weight: 800;
-  font-size: 1.1rem;
+  font-weight: 700;
+  font-size: 0.86rem;
+  line-height: 1.25;
 }
 .big-dice {
   display: flex;
@@ -1215,7 +1297,7 @@ h2 {
   font-size: 1rem;
 }
 .big-dice .die {
-  font-size: 3.2rem;
+  font-size: 2.2rem;
   line-height: 1;
   animation: dice-in 0.35s ease;
 }
@@ -1230,7 +1312,7 @@ h2 {
   }
 }
 .fight-steps {
-  max-height: 180px;
+  max-height: 120px;
   overflow-y: auto;
   text-align: left;
   width: 100%;
@@ -1238,6 +1320,13 @@ h2 {
   background: var(--panel-2);
   border-radius: 10px;
   padding: 6px 10px;
+}
+
+/* The two-step "New game": armed, then confirmed. */
+.quit-confirm {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
 }
 
 .toasts {
@@ -1252,6 +1341,13 @@ h2 {
   pointer-events: none;
 }
 .toast {
+  /* .toasts is click-through; each toast takes its own clicks back so it can
+     be dismissed without blocking the board underneath. */
+  pointer-events: auto;
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+  font: inherit;
   background: var(--panel);
   border: 1px solid var(--border);
   border-left: 5px solid var(--accent);
@@ -1507,6 +1603,12 @@ h2 {
   }
   .left-col > * {
     flex: 1 1 220px;
+  }
+  /* Stacked, the board already fills the width — a corner card would sit on
+     top of it, so the replay goes under the board instead of beside it. */
+  .fight-playback {
+    position: static;
+    width: min(100%, 320px);
   }
 }
 

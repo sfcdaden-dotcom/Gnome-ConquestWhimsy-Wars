@@ -61,7 +61,7 @@ What the art has to survive: square and transparent, 128–256px (they render at
 14–24px in a board cell, ~40px in a token — anything fiddly turns to mush at
 that size; non-square is allowed but letterboxes, since the CSS uses
 `object-fit: contain`). **Unit art** sits on a disc filled with its seat's
-colour — red, blue, gold or purple — so it needs a light outline or halo to
+colour — red, blue, yellow or purple — so it needs a light outline or halo to
 stay legible on all four. **Garden art** appears at two very different scales:
 tucked into a cell's top-left corner during play, and filling the whole cell in
 the setup preview and the preset editor.

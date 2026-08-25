@@ -146,9 +146,44 @@ export function unitNameFromEvent(state: GameState, ref: UnitEventRef): string {
 }
 
 /**
+ * "Mr" or "Mrs" for a gnome currently married by Gnomio & Juliet, else null.
+ *
+ * Which of the two gets which is the order the card married them in: the first
+ * gnome chosen is Mr, the second Mrs. Arbitrary, but it is the only ordering
+ * the table shares — `marriages` is public state, so every client reads the
+ * same pair in the same order and nobody sees a different couple.
+ *
+ * A gnome can be married more than once (nothing stops a second Gnomio &
+ * Juliet from marrying an already-married gnome, and the death cascade follows
+ * every link). The first marriage that names it wins, so its title does not
+ * flip when a later wedding happens elsewhere.
+ *
+ * This is a LIVE fact, which is why it is not in `unitNameFromEvent`: a log
+ * line records what was true when it happened, and a marriage that has since
+ * dissolved — or one made after the line was written — must not rewrite it.
+ */
+export function marriageTitle(state: GameState, unitId: UnitId): 'Mr' | 'Mrs' | null {
+  for (const [a, b] of state.marriages) {
+    if (a === unitId) return 'Mr';
+    if (b === unitId) return 'Mrs';
+  }
+  return null;
+}
+
+/** `name` with the gnome's marriage title in front, when it has one. */
+export function withMarriageTitle(state: GameState, unitId: UnitId, name: string): string {
+  const title = marriageTitle(state, unitId);
+  return title ? `${title} ${name}` : name;
+}
+
+/**
  * Name a unit that is on the board RIGHT NOW — tooltips, selection chips, and
  * labels for pending decisions, all of which reference live units by
  * definition.
+ *
+ * Married gnomes are titled here rather than in the derivation itself: the
+ * name is a pure function of (salt, id) and stays that way, while the title
+ * comes off live state and changes when they are wed.
  *
  * Degrades rather than throwing: an id with no live unit still yields a gnome
  * name, so a race or a stale reference can never render `undefined`. Use
@@ -156,6 +191,10 @@ export function unitNameFromEvent(state: GameState, ref: UnitEventRef): string {
  */
 export function unitNameLive(state: GameState, unitId: UnitId): string {
   const u = state.units[unitId];
-  if (!u) return gnomeName(nameSaltOf(state), unitId);
-  return unitNameFromEvent(state, { unitId, player: u.owner, unitKind: u.kind });
+  if (!u) return withMarriageTitle(state, unitId, gnomeName(nameSaltOf(state), unitId));
+  return withMarriageTitle(
+    state,
+    unitId,
+    unitNameFromEvent(state, { unitId, player: u.owner, unitKind: u.kind }),
+  );
 }

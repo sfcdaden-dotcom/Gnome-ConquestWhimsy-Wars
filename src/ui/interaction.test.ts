@@ -318,9 +318,50 @@ describe('computeHighlights', () => {
     });
   });
 
+  it('marks what a card being responded to is aimed at', () => {
+    // Blue rocketed one of Red's gnomes; Red is in the response window and
+    // needs to see which gnome before deciding whether to Nope it.
+    const base = withStack(['u1', 'u2'], HOME);
+    const state = mutate(base, (d) => {
+      d.units.u2.pos = { ...AWAY };
+      d.cardStack = [
+        { player: 1, cardId: 'rocket-propelled-gnome', targets: { units: ['u2'] }, cancelled: false },
+      ];
+    });
+    const decision = {
+      kind: 'cardResponse',
+      player: 0,
+      respondingToCard: 'rocket-propelled-gnome',
+      respondingToPlayer: 1,
+      stackIndex: 0,
+      playableCards: ['nope-gnome'],
+    } as Extract<PendingDecision, { kind: 'cardResponse' }>;
+    // 'picked' — the caster's choices, shown but not clickable.
+    expect(Object.fromEntries(computeHighlights(ctxOf({ state, decision })))).toEqual({
+      '1,3': 'picked',
+    });
+  });
+
+  it('marks nothing for a responded card that takes no targets', () => {
+    const state = mutate(withStack(['u1']), (d) => {
+      d.cardStack = [{ player: 1, cardId: 'gnome-birthday-party', cancelled: false }];
+    });
+    const decision = {
+      kind: 'cardResponse',
+      player: 0,
+      respondingToCard: 'gnome-birthday-party',
+      respondingToPlayer: 1,
+      stackIndex: 0,
+      playableCards: [],
+    } as Extract<PendingDecision, { kind: 'cardResponse' }>;
+    expect(computeHighlights(ctxOf({ state, decision })).size).toBe(0);
+  });
+
   /**
    * The two must not drift: anything highlighted has to be clickable, and
-   * anything clickable has to be highlighted. A click that lights up but does
+   * anything clickable has to be highlighted. (One documented exception, not
+   * exercised here: a `cardResponse` marks the responded card's targets purely
+   * to be read — the decision is answered from the panel, not the board.) A click that lights up but does
    * nothing (or vice versa) is exactly the class of bug this extraction exists
    * to make testable.
    */

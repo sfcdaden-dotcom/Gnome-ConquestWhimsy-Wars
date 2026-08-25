@@ -25,6 +25,7 @@
 import type {
   Action,
   CardTarget,
+  CardTargets,
   GameState,
   PendingDecision,
   PlantableGardenType,
@@ -214,6 +215,21 @@ export function computeHighlights(ctx: InteractionContext): Map<string, Highligh
     return map;
   }
 
+  if (decision?.kind === 'cardResponse') {
+    // Show what the card being responded to is aimed at. The stack is public
+    // state, so this reveals nothing the responder could not already read —
+    // it just puts it where the decision is being made.
+    //
+    // 'picked', not 'target': these cells are the CASTER's choices, already
+    // made, and nothing here is clickable. It is the one informational
+    // highlight on the board, which is why it borrows the marker that already
+    // means "chosen" rather than the one that means "choose one of these".
+    for (const pos of targetedSpaces(state, state.cardStack[decision.stackIndex]?.targets)) {
+      map.set(posKey(pos), 'picked');
+    }
+    return map;
+  }
+
   if (decision) {
     if (decision.kind === 'slide' || decision.kind === 'tunnel' || decision.kind === 'snailMove') {
       for (const o of decision.options) map.set(posKey(o), 'decision');
@@ -234,6 +250,22 @@ export function computeHighlights(ctx: InteractionContext): Map<string, Highligh
     }
   }
   return map;
+}
+
+/**
+ * The spaces a card on the stack points at — every target that has one. Unit
+ * targets resolve through the unit's CURRENT position, which is the point: a
+ * responder wants to see where the rocket is aimed now.
+ */
+export function targetedSpaces(state: GameState, targets: CardTargets | undefined): Pos[] {
+  const out: Pos[] = [];
+  if (!targets) return out;
+  for (const unitId of targets.units ?? []) {
+    const u = state.units[unitId];
+    if (u) out.push(u.pos);
+  }
+  for (const pos of targets.spaces ?? []) out.push(pos);
+  return out;
 }
 
 // ---------------------------------------------------------------------------
