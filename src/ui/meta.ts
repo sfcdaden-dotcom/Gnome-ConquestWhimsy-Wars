@@ -3,8 +3,19 @@
  * Pure functions over engine data — no rule logic lives here.
  */
 
-import type { Action, CardTarget, FightSide, GameEvent, GameState, GardenType, Pos, QuickChatId } from '../engine';
-import { getCardDef, getCurseDef, getQuickChatPhrase, nameSaltOf } from '../engine';
+import type {
+  Action,
+  CardId,
+  CardTarget,
+  FightSide,
+  GameEvent,
+  GameState,
+  GardenType,
+  PlayerId,
+  Pos,
+  QuickChatId,
+} from '../engine';
+import { getCardDef, getCurseDef, getQuickChatPhrase, nameSaltOf, whyCannotPlayNow } from '../engine';
 import type { UnitEventRef } from './gnomeNames';
 import { gnomeName, unitNameFromEvent, unitNameLive } from './gnomeNames';
 
@@ -107,6 +118,38 @@ export function cardName(id: string): string {
 /** Rules text of a card or curse, for tooltips. Empty when the id is unknown. */
 export function cardText(id: string): string {
   return getCardDef(id)?.text ?? getCurseDef(id)?.text ?? '';
+}
+
+/**
+ * Why a card in the revealed hand cannot be played right now, as a sentence,
+ * or null when it can.
+ *
+ * A greyed-out Play button used to be the whole explanation, and the reasons
+ * are not guessable: a Ritual held during someone else's turn and a Sudden
+ * with nothing legal to point at look identical in the hand. The engine
+ * already computes the reason for its own legality check — this only dresses
+ * it as a sentence.
+ *
+ * `blocked` is the screen-level reason nothing at all is playable (a hot-seat
+ * hand-off, a fight replaying); it wins, because "no legal targets" is a
+ * confusing thing to say about a card whose owner is not even looking yet.
+ */
+export function playHint(
+  state: GameState,
+  seat: PlayerId,
+  cardId: CardId,
+  blocked: string | null = null,
+): string | null {
+  if (blocked) return sentence(blocked);
+  const why = whyCannotPlayNow(state, seat, cardId);
+  return why === null ? null : sentence(why);
+}
+
+/** Capitalized, full-stopped. The engine writes reasons as clause fragments. */
+function sentence(text: string): string {
+  if (text === '') return text;
+  const capped = text[0].toUpperCase() + text.slice(1);
+  return /[.!?]$/.test(capped) ? capped : `${capped}.`;
 }
 
 export function sideName(state: GameState, side: FightSide): string {

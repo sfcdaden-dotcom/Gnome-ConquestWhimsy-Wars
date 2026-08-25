@@ -112,6 +112,20 @@ export function GameScreen({ game: g, onPlayAgain, onQuit }: GameScreenProps) {
 
   const decision = state.pendingDecision;
 
+  /**
+   * Why the whole hand is inert, or null when it is live. The hand panel shows
+   * this on each card, so it says what is in the way rather than leaving five
+   * greyed-out buttons to be interpreted.
+   */
+  const handBlocked =
+    state.status === 'finished'
+      ? 'The game is over.'
+      : needsPass
+        ? 'Pass the device first — the hand is hidden until then.'
+        : playback
+          ? 'Wait for the fight to finish.'
+          : null;
+
   /** Everything the pure routing rules in `interaction.ts` read. */
   const ctx: InteractionContext = {
     state,
@@ -439,7 +453,7 @@ export function GameScreen({ game: g, onPlayAgain, onQuit }: GameScreenProps) {
             seat={handSeat}
             playable={handPlayable}
             onPlay={(cardId) => handSeat !== null && startCardPlay(cardId, false, handSeat)}
-            disabled={needsPass || !!playback || state.status === 'finished'}
+            blocked={handBlocked}
           />
           {/* Chat + game log share one window (tabs), and it is last in the
               column so the phrase picker opens upward over the transcript.

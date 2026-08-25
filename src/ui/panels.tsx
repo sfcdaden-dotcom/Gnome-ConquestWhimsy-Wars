@@ -19,6 +19,7 @@ import {
   cardName,
   describeEvent,
   dieFace,
+  playHint,
   playerColor,
   pname,
   posStr,
@@ -146,10 +147,16 @@ export interface HandPanelProps {
   /** Card ids playable right now via a normal playCard action. */
   playable: ReadonlySet<CardId>;
   onPlay: (cardId: CardId) => void;
-  disabled: boolean;
+  /**
+   * Why the whole hand is inert (hand-off pending, a fight replaying, the game
+   * over), or null when it is live. A sentence rather than a boolean: it is
+   * shown on every card, and "no legal targets" would be a misleading thing to
+   * say about a card whose owner is not even looking at the screen yet.
+   */
+  blocked: string | null;
 }
 
-export function HandPanel({ state, seat, playable, onPlay, disabled }: HandPanelProps) {
+export function HandPanel({ state, seat, playable, onPlay, blocked }: HandPanelProps) {
   if (seat === null) {
     return (
       <div className="hand-panel">
@@ -173,6 +180,11 @@ export function HandPanel({ state, seat, playable, onPlay, disabled }: HandPanel
         <div className="hand-cards" data-testid="hand-cards">
           {p.hand.map((cardId, i) => {
             const def = getCardDef(cardId);
+            // `playable` (the engine's own enumeration) decides the button;
+            // the hint only explains it, and is asked for only when there is
+            // something to explain, since the reason costs a target search.
+            const live = blocked === null && playable.has(cardId);
+            const hint = live ? null : playHint(state, seat, cardId, blocked);
             return (
               <div key={`${cardId}-${i}`} className={`card ${def?.timing ?? 'unknown'}`}>
                 <div className="card-head">
@@ -183,12 +195,17 @@ export function HandPanel({ state, seat, playable, onPlay, disabled }: HandPanel
                 <button
                   type="button"
                   className="btn small"
-                  disabled={disabled || !playable.has(cardId)}
+                  disabled={!live}
                   data-testid={`play-card-${cardId}`}
                   onClick={() => onPlay(cardId)}
                 >
                   Play
                 </button>
+                {hint && (
+                  <span className="card-why" data-testid={`card-why-${cardId}`}>
+                    {hint}
+                  </span>
+                )}
               </div>
             );
           })}

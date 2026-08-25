@@ -1054,6 +1054,14 @@ h2 {
   color: var(--muted);
   margin: 3px 0 5px;
 }
+/* Why a card's Play button is greyed out — shown, not left to be guessed. */
+.card-why {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.72rem;
+  color: var(--muted);
+  font-style: italic;
+}
 .deck-info {
   font-size: 0.72rem;
   color: var(--muted);
