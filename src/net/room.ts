@@ -77,7 +77,9 @@ import {
   CLOSE_SEAT_TAKEN_OVER,
   CLOSE_TOO_MANY_CONNECTIONS,
   CONTROL_BUDGET_MS,
+  EMPTY_ROOM_REAP_MS,
   HOST_GRACE_MS,
+  TOMBSTONE_TTL_MS,
   PROTOCOL_VERSION,
   ROOM_CODE_ALPHABET,
   ROOM_CODE_LENGTH,
@@ -147,6 +149,14 @@ export interface PersistedRoom {
    */
   graceUntil: number | null;
   /**
+   * The room's next lifecycle deadline, in two phases. While the room is open
+   * it is when an empty room gets closed (EMPTY_ROOM_REAP_MS, set when the
+   * last connection leaves and cleared when anybody arrives). Once it has
+   * closed it is when the tombstone is purged (TOMBSTONE_TTL_MS). The two
+   * cannot overlap, so they share the field.
+   */
+  reapAt: number | null;
+  /**
    * Set when the room has shut down. The record is kept, emptied, as a
    * tombstone: addressing a Durable Object is what creates it, so a room that
    * merely deleted itself would be rebuilt as a fresh empty lobby by the next
@@ -190,6 +200,11 @@ export interface RoomStore {
    * of its storage actually gone, not orphaned.
    */
   close(room: PersistedRoom): Promise<void>;
+  /**
+   * Remove even the tombstone. After this the code addresses nothing again —
+   * which is fine once no client can still be holding it (TOMBSTONE_TTL_MS).
+   */
+  purge(): Promise<void>;
 }
 
 export interface RoomHost {
@@ -208,7 +223,7 @@ export interface RoomHost {
 const DEFAULT_CPU_DELAY_MS = 700;
 
 /** What the room's single alarm can be waiting for. See `Room.deadlines`. */
-type DeadlineKind = 'cpu' | 'clock' | 'grace';
+type DeadlineKind = 'cpu' | 'clock' | 'grace' | 'reap';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -344,12 +359,14 @@ export class Room {
         actions: [],
         clock: null,
         graceUntil: null,
+        reapAt: null,
       },
     );
     // A room stored before the shot clock existed has no `clock` field, and
     // one stored before the grace window has no `graceUntil`.
     room.data.clock ??= null;
     room.data.graceUntil ??= null;
+    room.data.reapAt ??= null;
     if (stored && stored.config && stored.seed !== null) room.hydrate();
     return room;
   }
@@ -452,8 +469,10 @@ export class Room {
 
     this.conns.set(conn.id, { conn, token, seat, announced: null });
     this.bindHost(token, message.hostKey);
-    // The host walking back in is what stops the countdown.
+    // The host walking back in is what stops the countdown, and any arrival
+    // at all means the room is not abandoned.
     await this.syncGrace();
+    this.syncReap();
     await this.save();
 
     this.announceIdentities();
@@ -610,6 +629,8 @@ export class Room {
     this.meters.delete(connId);
     if (this.data.phase === 'lobby') this.seatSpectators();
     await this.syncGrace();
+    this.syncReap();
+    await this.arm();
     await this.save();
     this.announceIdentities();
     this.broadcastRoom();
@@ -997,6 +1018,7 @@ export class Room {
     const clock = this.expiryAt();
     if (clock !== null) out.push({ kind: 'clock', at: clock });
     if (this.data.graceUntil !== null) out.push({ kind: 'grace', at: this.data.graceUntil });
+    if (this.data.reapAt !== null) out.push({ kind: 'reap', at: this.data.reapAt });
     return out;
   }
 
@@ -1014,14 +1036,43 @@ export class Room {
    */
   async onAlarm(): Promise<void> {
     const now = this.host.now();
-    // The lobby's deadlines go first: they can close the room, after which
+
+    // A closed room has exactly one thing left to do.
+    if (this.isClosed) {
+      if (this.data.reapAt !== null && now >= this.data.reapAt) await this.host.store.purge();
+      return;
+    }
+
+    // The lifecycle deadlines go first: they can close the room, after which
     // there is nothing left for the game timers to do.
     if (this.data.graceUntil !== null && now >= this.data.graceUntil) {
       await this.graceExpired();
       if (this.isClosed) return;
     }
+    if (this.data.reapAt !== null && now >= this.data.reapAt && this.conns.size === 0) {
+      return await this.close('abandoned');
+    }
+
     await this.runGameTimers();
     await this.arm();
+  }
+
+  /**
+   * Start or stop the countdown on an empty room.
+   *
+   * Nothing collected abandoned rooms before this: a lobby somebody opened and
+   * wandered off from, or a finished game everyone closed, stayed in storage
+   * for good. Every phase is reaped, including a game in progress — if every
+   * player has been gone for ten minutes there is nobody left for the shot
+   * clock to play around.
+   */
+  private syncReap(): void {
+    if (this.isClosed) return;
+    if (this.conns.size === 0) {
+      this.data.reapAt ??= this.host.now() + EMPTY_ROOM_REAP_MS;
+    } else {
+      this.data.reapAt = null;
+    }
   }
 
   // --- the host's grace window ---------------------------------------------
@@ -1086,8 +1137,12 @@ export class Room {
    * that client the room. `hello` refuses a closed room instead.
    */
   private async close(reason: RoomClosedReason): Promise<void> {
-    this.data.closed = { at: this.host.now(), reason };
+    const now = this.host.now();
+    this.data.closed = { at: now, reason };
     this.data.graceUntil = null;
+    // The tombstone is only useful while somebody might still have the code in
+    // front of them; after that it is the same slow leak as never reaping.
+    this.data.reapAt = now + TOMBSTONE_TTL_MS;
     this.data.clock = null;
     this.cpuWakeAt = null;
     // Nothing about a closed room is worth keeping but the fact that it closed.
@@ -1108,6 +1163,7 @@ export class Room {
     }
     this.conns.clear();
     this.meters.clear();
+    await this.arm();
   }
 
   /** True once the room has shut down; it will not accept anybody again. */

@@ -15,6 +15,12 @@
  * Nothing here re-implements game rules or hides information: the lobby edits
  * are requests the room can refuse (a non-host's `configure` comes back as an
  * error toast), and the board is `GameScreen` fed the networked session.
+ *
+ * WHO IS WAITING FOR WHOM. The lobby says one thing about the room's state and
+ * says it to everybody — see `lobbyStatus.ts`. The host gets the start button
+ * under that sentence and nobody else does; a room whose host has gone gets a
+ * countdown and then a takeover button. What no screen does any more is tell
+ * one player to wait for another while telling that player the same thing.
  */
 
 import { useEffect, useState } from 'react';

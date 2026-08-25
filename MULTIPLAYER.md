@@ -133,6 +133,42 @@ The key stays usable only while the room has no host — so a failed first dial
 can retry, and a host who lost their seat token can come back — and a takeover
 clears it for good.
 
+**A lobby waits sixty seconds for a dropped host** (`HOST_GRACE_MS`), and
+everyone in it sees the countdown — though not for the first five seconds,
+because a reload drops the socket for about one and announcing that would make
+a non-event look like a crisis.
+
+When it runs out, a room with people still in it drops its host token and
+offers itself: whoever presses **Take over the room** becomes the host, and
+everyone is told who did. That is the difference from the badge this replaced —
+the handover still exists, but somebody chooses it and everybody sees it. A
+room with nobody in it closes instead.
+
+The grace window is **lobby only**. Mid-game a missing host owns nothing, and a
+seat that has stopped playing is already the shot clock's problem; tearing down
+a game in progress because a phone slept would be far worse than the thing this
+prevents.
+
+**Rooms do not last forever.** A room with nobody connected is closed after ten
+minutes (`EMPTY_ROOM_REAP_MS`) in any phase — an abandoned lobby, a game
+everyone walked away from, a finished match nobody came back to.
+
+**A closed room leaves a tombstone.** Addressing a Durable Object is what
+creates it, so a room that simply deleted itself would be rebuilt as a fresh
+empty lobby by the next client to redial its code — handing that client the
+room. Instead the record is wiped down to the fact that it closed; `hello` is
+refused, the socket closes with `CLOSE_ROOM_CLOSED` (4004), and the client
+treats that as final: it does not redial, and it forgets its seat token and
+host key. The tombstone itself is purged after a day (`TOMBSTONE_TTL_MS`),
+which is well past anybody still having the code in front of them.
+
+**The menu offers a way back.** The lobby records which room it is in on the
+same tick that refreshes the seat claim, so somebody who closed the tab and
+reopened the app — with no invite link and no code in hand — gets a "Rejoin
+room XXXX" button. It is only a pointer: the seat token and host key were
+already stored per code, and whether either still means anything is the room's
+answer to give.
+
 ## The secret
 
 The room draws the map seed and the deck secret. **No client is ever offered a

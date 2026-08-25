@@ -81,9 +81,13 @@ export class RoomDurableObject implements DurableObject {
         const { actions: _actions, ...meta } = room;
         await storage.deleteAll();
         await storage.put(META_KEY, meta);
-        // Nothing is waiting on a closed room; a pending alarm would only wake
-        // it up to find that out.
-        await storage.deleteAlarm();
+      },
+      /**
+       * The tombstone's own end. `deleteAll` also drops the alarm, so a purged
+       * room goes quiet for good rather than waking to find nothing to do.
+       */
+      async purge(): Promise<void> {
+        await storage.deleteAll();
       },
     };
   }

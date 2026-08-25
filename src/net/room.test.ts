@@ -22,10 +22,12 @@ import {
   CLOSE_SEAT_TAKEN_OVER,
   CLOSE_TOO_MANY_CONNECTIONS,
   CONTROL_BUDGET_MS,
+  EMPTY_ROOM_REAP_MS,
   HOST_GRACE_MS,
   ROOM_CODE_ALPHABET,
   SHOT_CLOCK_MS,
   TAKEOVER_AFTER_TIMEOUTS,
+  TOMBSTONE_TTL_MS,
   TAKEOVER_DIFFICULTY,
 } from './protocol';
 import type { ClientMessage, ServerMessage } from './protocol';
@@ -75,6 +77,7 @@ class FakeConn implements RoomConnection {
 function makeHost(): RoomHost & {
   stored: PersistedRoom | null;
   closed: boolean;
+  purged: boolean;
   alarms: number[];
   clock: number;
 } {
@@ -83,6 +86,8 @@ function makeHost(): RoomHost & {
     stored: null as PersistedRoom | null,
     /** Set when the room wiped itself: see `RoomStore.close`. */
     closed: false,
+    /** Set when even the tombstone went: see `RoomStore.purge`. */
+    purged: false,
     alarms: [] as number[],
     /** Wall clock, movable so the shot clock can be driven without waiting. */
     clock: 1_000_000,
@@ -96,6 +101,10 @@ function makeHost(): RoomHost & {
       async close(room: PersistedRoom) {
         h.stored = structuredClone(room) as PersistedRoom;
         h.closed = true;
+      },
+      async purge() {
+        h.stored = null;
+        h.purged = true;
       },
     },
     randomBytes(n: number) {
@@ -1391,5 +1400,108 @@ describe('a lobby whose host has gone', () => {
 
     expect(returning.last('welcome')?.you.isHost).toBe(false);
     expect(c1.last('welcome')?.you.isHost).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+describe('a room nobody is in', () => {
+  async function hosted() {
+    const host = makeHost();
+    const room = await Room.open(host, 'ABC123');
+    const hostKey = await room.hostKeyForCreate();
+    const c0 = new FakeConn('c0');
+    await room.hello(c0, { ...HELLO, hostKey });
+    const c1 = new FakeConn('c1');
+    await room.hello(c1, { ...HELLO });
+    return { host, room, c0, c1, hostKey };
+  }
+
+  // In a LOBBY the host's 60s grace lands long before the ten-minute reap, so
+  // an empty lobby closes as 'host-left'. The reaper is what catches every
+  // other phase, where no grace window applies at all.
+  it('closes an empty lobby by the host grace, not the reaper', async () => {
+    const { host, room } = await hosted();
+    await room.disconnect('c0');
+    await room.disconnect('c1');
+
+    host.clock += HOST_GRACE_MS;
+    await room.onAlarm();
+
+    expect(room.isClosed).toBe(true);
+    expect(host.stored?.closed?.reason).toBe('host-left');
+  });
+
+  it('closes a room everyone walked away from', async () => {
+    const { host, room } = await hosted();
+    await room.handle('c0', { t: 'start' });
+    await room.disconnect('c0');
+    await room.disconnect('c1');
+
+    host.clock += EMPTY_ROOM_REAP_MS;
+    await room.onAlarm();
+
+    expect(room.isClosed).toBe(true);
+    expect(host.stored?.closed?.reason).toBe('abandoned');
+  });
+
+  it('is not closed while somebody is still in it', async () => {
+    const { host, room } = await hosted();
+    await room.disconnect('c0');
+
+    host.clock += EMPTY_ROOM_REAP_MS * 2;
+    await room.onAlarm();
+
+    expect(room.isClosed).toBe(false);
+  });
+
+  it('stops counting when somebody comes back', async () => {
+    const { host, room } = await hosted();
+    await room.disconnect('c0');
+    await room.disconnect('c1');
+    expect(host.stored?.reapAt).not.toBeNull();
+
+    const back = new FakeConn('back');
+    await room.hello(back, { ...HELLO });
+    expect(host.stored?.reapAt).toBeNull();
+
+    host.clock += EMPTY_ROOM_REAP_MS;
+    await room.onAlarm();
+    expect(room.isClosed).toBe(false);
+  });
+
+  it('purges the tombstone once nobody could still be holding the code', async () => {
+    const { host, room } = await hosted();
+    await room.handle('c0', { t: 'start' });
+    await room.disconnect('c0');
+    await room.disconnect('c1');
+    host.clock += EMPTY_ROOM_REAP_MS;
+    await room.onAlarm();
+    expect(room.isClosed).toBe(true);
+    expect(host.purged).toBe(false);
+
+    // Still a tombstone a day later minus a beat...
+    host.clock += TOMBSTONE_TTL_MS - 1000;
+    await room.onAlarm();
+    expect(host.purged).toBe(false);
+
+    host.clock += 1000;
+    await room.onAlarm();
+    expect(host.purged).toBe(true);
+    expect(host.stored).toBeNull();
+  });
+
+  it('keeps refusing clients for as long as the tombstone stands', async () => {
+    const { host, room } = await hosted();
+    await room.handle('c0', { t: 'start' });
+    await room.disconnect('c0');
+    await room.disconnect('c1');
+    host.clock += EMPTY_ROOM_REAP_MS;
+    await room.onAlarm();
+
+    const late = new FakeConn('late');
+    await room.hello(late, { ...HELLO });
+    expect(late.last('roomClosed')?.reason).toBe('abandoned');
+    expect(late.closed?.code).toBe(CLOSE_ROOM_CLOSED);
   });
 });

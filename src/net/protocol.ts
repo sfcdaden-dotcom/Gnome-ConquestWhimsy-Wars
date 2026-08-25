@@ -136,6 +136,27 @@ export const HOST_GRACE_MS = 60_000;
  */
 export const HOST_ABSENCE_BANNER_MS = 5_000;
 
+/**
+ * How long a room with nobody in it is kept before it is closed.
+ *
+ * Nothing used to collect abandoned rooms at all: a lobby somebody opened and
+ * wandered off from, or a finished game everyone closed, sat in Durable Object
+ * storage indefinitely. Long enough that a whole table reconnecting after a
+ * network blip finds its game where it left it; short enough that a room is
+ * not a permanent object.
+ */
+export const EMPTY_ROOM_REAP_MS = 10 * 60_000;
+
+/**
+ * How long a closed room's tombstone is kept.
+ *
+ * The tombstone exists so a redial cannot rebuild a closed room from nothing
+ * (see CLOSE_ROOM_CLOSED), which only matters while somebody might still have
+ * the code in front of them. A day is far past that, and keeping them forever
+ * would be the same slow leak the reaper is here to stop.
+ */
+export const TOMBSTONE_TTL_MS = 24 * 60 * 60 * 1000;
+
 /** The countdown on a lobby whose host has dropped. `now` is the server's clock. */
 export interface HostGrace {
   until: number;
