@@ -26,16 +26,6 @@ handful of things anyone actually needs to do.
 
 ### P2
 
-- **The seed is still a secret worth protecting — server side (Milestone 11).**
-  Per-seat redaction (`view.ts`) and deck sealing (`sealHiddenState`) landed
-  2026-07-29 and closed the broadcast and layout leaks. One hole is left, and
-  it belongs to the room server rather than the engine: **who picks the seed.**
-  Today the client passes it to `createGame`, and the setup screen even lets a
-  player type one. A client that knows the seed knows the deck order and every
-  future die roll, redaction or no redaction. The room server must generate the
-  secret (`crypto.getRandomValues`) and never send it, and the multiplayer
-  setup UI must not offer a seed field at all.
-
 - **The deck is hidden from inspection, not cryptographically (Milestone 11).**
   Mulberry32's state is 32 bits. Dice rolls are public events, so enough
   observed rolls narrow `rngState` to a searchable set — 2^32 candidate states
@@ -80,6 +70,19 @@ handful of things anyone actually needs to do.
   Playing one legal action clears the count; chat and rejected actions do not.
   The player keeps their place in the room as a spectator. Local hot-seat games
   run no clock at all, deliberately: there is nobody to grief but yourself.
+
+- **Board size above 7×7 has never had a visual pass (Milestone 5).** The
+  tokens and art scale via container-query units × `--n` (2026-07-16), so 9×9+
+  renders proportionally in principle, and `e2e/advanced-settings.spec.ts`
+  proves a 9×9 board reaches the preview and the game with 81 cells. What has
+  not happened is anyone *looking* at it: the panel, log, chat and action-bar
+  layout around a board that wide, and whether a 13×13 cell's garden icon and
+  unit token are still legible at the size the clamps leave them.
+
+  Recorded at P3 until 2026-08-25 as "do a visual pass before exposing board
+  size in the setup UI". That precondition has now been passed rather than
+  met — the advanced setup panel (2026-08-25) offers 5/7/9/11/13 — so this is
+  P2: it is shipped-and-unverified rather than a gate on unshipped work.
 
 ### P3
 
@@ -183,11 +186,6 @@ handful of things anyone actually needs to do.
   events (which needs a trigger table, and a rule that it still says nothing
   informative).
 
-- **Board size > 7 UI.** Tokens/emoji scale via container-query units × `--n`
-  (2026-07-16), so 9×9+ renders proportionally — but it has only been eyeballed
-  at 7×7; do a visual pass on 9×9/11×11 before exposing board size in the setup
-  UI.
-
 - **`GameLog` keys.** Log lines key by window index; with the 1000-event
   rolling window, React keys shift after trim. Cosmetic (append-mostly), fix
   when touching the log UI.
@@ -212,6 +210,24 @@ handful of things anyone actually needs to do.
 ## Resolved
 
 Newest first. Kept for the reasoning, not as a to-do list.
+
+### 2026-08-25 — Backlog audit
+
+- **The seed is still a secret worth protecting — server side (Milestone 11).**
+  Carried as P2 after the 2026-07-29 redaction and sealing work, on the grounds
+  that the client still picked the seed and the setup screen offered a field
+  for it. Both halves were in fact closed by the room work of the same day, and
+  the entry simply outlived them. `Room.start` (`src/net/room.ts`) draws the map
+  seed from `host.randomBytes(4)` and the deck secret from `createSeal()`
+  itself, publishing only the commitment at start and the secret at game end;
+  the online screen offers no seed field and says so in copy ("The room picks
+  the map and shuffles the deck itself"). The seed field that does exist lives
+  in the local advanced setup panel, where full information is the point — a
+  hot-seat table has no hidden state to protect from itself.
+
+  What remains of the original concern is a *separate* item, still open under
+  [Active debt](#active-debt) at P2: the deck is hidden from inspection, not cryptographically, because mulberry32's
+  state is 32 bits. That one is unaffected by who picks the seed.
 
 ### 2026-07-30 — Engine/UI structural refactor
 
