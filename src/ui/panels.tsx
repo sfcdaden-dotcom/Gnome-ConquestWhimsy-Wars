@@ -3,7 +3,7 @@
  * (live respond panel + finished-fight step-through overlay).
  */
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import type { CardId, GameEvent, GameState, PlayerId } from '../engine';
 import {
@@ -26,7 +26,8 @@ import {
   sideName,
 } from './meta';
 import { GardenIcon, UnitIcon } from './art';
-import { isPinnedToBottom, logLines } from './gameLog';
+import type { LogTurn } from './gameLog';
+import { groupByTurn, isPinnedToBottom, logLines } from './gameLog';
 
 // ---------------------------------------------------------------------------
 // Player panels
@@ -107,8 +108,19 @@ export function GameLogView({ state }: { state: GameState }) {
   // read by the scroll effect and never rendered, and a scroll handler that
   // re-rendered the log on every wheel tick would be its own papercut.
   const pinned = useRef(true);
+  /**
+   * Turns the reader has explicitly opened or shut, by turn key. Everything
+   * absent from this map follows the default — the current turn open, the rest
+   * collapsed — which is what makes the log follow play on its own: when a new
+   * turn starts it becomes the open one and the finished turn folds away,
+   * without touching anything the reader chose for themselves.
+   */
+  const [overrides, setOverrides] = useState<ReadonlyMap<number, boolean>>(new Map());
 
-  const lines = logLines(state);
+  const turns = groupByTurn(logLines(state));
+  const currentKey = turns.length > 0 ? turns[turns.length - 1].key : null;
+  const isOpen = (t: LogTurn) => overrides.get(t.key) ?? t.key === currentKey;
+
   useEffect(() => {
     const el = ref.current;
     // Follow the tail only for someone already reading it — scroll back to
@@ -126,14 +138,47 @@ export function GameLogView({ state }: { state: GameState }) {
         pinned.current = isPinnedToBottom(e.currentTarget);
       }}
     >
-      {lines.map(({ key, ev }) => (
-        <div key={key} className={`log-line log-${ev.type}`}>
-          {describeEvent(state, ev)}
-        </div>
-      ))}
-      {lines.length === 0 && <div className="log-line muted">The garden awaits…</div>}
+      {turns.map((t) => {
+        const open = isOpen(t);
+        return (
+          <div key={t.key} className="log-turn" data-open={open ? 'true' : 'false'}>
+            <button
+              type="button"
+              className="log-turn-head"
+              aria-expanded={open}
+              data-testid={`log-turn-${t.turnNumber ?? 'earlier'}`}
+              onClick={() =>
+                setOverrides((m) => {
+                  const next = new Map(m);
+                  next.set(t.key, !open);
+                  return next;
+                })
+              }
+            >
+              <span className="log-caret" aria-hidden="true">
+                {open ? '▾' : '▸'}
+              </span>
+              <span className="log-turn-title">{turnTitle(state, t)}</span>
+              {!open && <span className="log-turn-count">{t.lines.length}</span>}
+            </button>
+            {open &&
+              t.lines.map(({ key, ev }) => (
+                <div key={key} className={`log-line log-${ev.type}`}>
+                  {describeEvent(state, ev)}
+                </div>
+              ))}
+          </div>
+        );
+      })}
+      {turns.length === 0 && <div className="log-line muted">The garden awaits…</div>}
     </div>
   );
+}
+
+/** "Turn 3: Red", or a label for the lines that precede the window's first turn. */
+function turnTitle(state: GameState, t: LogTurn): string {
+  if (t.turnNumber === null) return t.matchStart ? 'Roll-off' : 'Earlier';
+  return `Turn ${t.turnNumber}: ${t.player === null ? '' : pname(state, t.player)}`;
 }
 
 // ---------------------------------------------------------------------------

@@ -587,6 +587,33 @@ test('the phrase picker steps back out of a category and closes', async ({ page 
   await expect(page.getByTestId('quickchat-left')).toHaveText('4/4');
 });
 
+test('the game log folds into turns, with the current one open', async ({ page }) => {
+  const g = new Game(page);
+  await g.startTwoPlayer(SEED);
+  await g.completeRollOff();
+  await g.resolveHarvest('wish');
+  await page.getByTestId('chat-tab-log').click();
+
+  // Turn 1 is the current turn: its header is there and its lines are showing.
+  const turn1 = page.getByTestId('log-turn-1');
+  const lines = page.locator('[data-testid="game-log"] .log-line');
+  await expect(turn1).toHaveAttribute('aria-expanded', 'true');
+  expect(await lines.count()).toBeGreaterThan(0);
+
+  // The roll-off before it is folded away by default.
+  await expect(page.getByTestId('log-turn-earlier')).toHaveAttribute('aria-expanded', 'false');
+
+  // Folding the current turn leaves headers only.
+  await turn1.click();
+  await expect(turn1).toHaveAttribute('aria-expanded', 'false');
+  await expect(lines).toHaveCount(0);
+
+  // And it opens again on a second click.
+  await turn1.click();
+  await expect(turn1).toHaveAttribute('aria-expanded', 'true');
+  expect(await lines.count()).toBeGreaterThan(0);
+});
+
 test('chat and game log share one window, and unread chat is badged', async ({ page }) => {
   const g = new Game(page);
   await g.startTwoPlayer(SEED);

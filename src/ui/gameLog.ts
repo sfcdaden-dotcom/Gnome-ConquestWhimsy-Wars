@@ -8,7 +8,7 @@
  * measured against a list that shifts underneath it.
  */
 
-import type { GameEvent, GameState } from '../engine';
+import type { GameEvent, GameState, PlayerId } from '../engine';
 
 /** How many of the most recent events the log renders. */
 export const LOG_WINDOW = 250;
@@ -35,6 +35,67 @@ export function logLines(state: GameState): LogLine[] {
     out.push({ key: firstOrdinal + i, ev: state.events[i] });
   }
   return out;
+}
+
+/**
+ * One turn's worth of log, as the log renders it: a header and the lines
+ * underneath.
+ *
+ * A turn is the unit players actually think in ("what did Blue do last turn?"),
+ * and an uncollapsed log buries it — a single turn with a fight in it can run
+ * twenty lines, so three turns of history means scrolling past sixty to find
+ * the one that mattered.
+ */
+export interface LogTurn {
+  /** Stable across renders: the turn number, or -1 for the headerless group. */
+  key: number;
+  /** Null for lines that precede the first turn in the window. */
+  turnNumber: number | null;
+  /** Whose turn it is; null alongside a null `turnNumber`. */
+  player: PlayerId | null;
+  /**
+   * True when this group starts at the very first event of the match — so the
+   * headerless group can be labelled "Roll-off" rather than "Earlier". After
+   * the window slides, a headerless group is genuinely the tail of a turn
+   * whose header was trimmed away, and "Roll-off" would be a lie.
+   */
+  matchStart: boolean;
+  lines: LogLine[];
+}
+
+/**
+ * Split the log into turns. The `turnStarted` event becomes the group's header
+ * rather than one of its lines — it reads as "— Turn 3: Red —" either way, and
+ * duplicating it under its own heading is noise.
+ *
+ * A group is emitted even when a turn produced no lines of its own, so an
+ * empty turn is still visible as having happened.
+ */
+export function groupByTurn(lines: readonly LogLine[]): LogTurn[] {
+  const groups: LogTurn[] = [];
+  for (const line of lines) {
+    if (line.ev.type === 'turnStarted') {
+      groups.push({
+        key: line.ev.turnNumber,
+        turnNumber: line.ev.turnNumber,
+        player: line.ev.player,
+        matchStart: false,
+        lines: [],
+      });
+      continue;
+    }
+    if (groups.length === 0) {
+      groups.push({
+        key: -1,
+        turnNumber: null,
+        player: null,
+        matchStart: line.key === 0,
+        lines: [],
+      });
+    }
+    groups[groups.length - 1].lines.push(line);
+  }
+  return groups;
 }
 
 /** What `isPinnedToBottom` needs from a scroller — an element supplies all three. */

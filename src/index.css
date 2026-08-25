@@ -1103,13 +1103,47 @@ h2 {
 .log-line {
   padding: 1px 0;
 }
+
+/* Turns fold: the header is the whole click target, the lines sit under it. */
+.log-turn + .log-turn {
+  margin-top: 2px;
+}
+.log-turn-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  width: 100%;
+  padding: 2px 0;
+  background: none;
+  border: none;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+.log-turn-head:hover .log-turn-title {
+  text-decoration: underline;
+}
+.log-caret {
+  width: 0.8em;
+  flex: none;
+  color: var(--muted);
+}
+.log-turn-title {
+  flex: 1;
+}
+.log-turn-count {
+  flex: none;
+  color: var(--muted);
+  font-weight: 400;
+  font-size: 0.72rem;
+}
+.log-turn[data-open='true'] .log-line {
+  padding-left: calc(0.8em + 6px);
+}
 .log-line.latest {
   font-weight: 700;
-}
-.log-turnStarted {
-  font-weight: 700;
-  margin-top: 4px;
-  color: var(--accent);
 }
 .log-fightStarted,
 .log-playerEliminated,
