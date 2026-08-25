@@ -1724,6 +1724,17 @@ h2 {
   font-weight: 600;
 }
 
+/* The dropped-host countdown. Deliberately loud: it is the one thing in the
+   lobby that is running out. */
+.lobby-grace {
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--warn);
+  background: color-mix(in srgb, var(--warn) 12%, transparent);
+  text-align: center;
+  font-size: 0.95em;
+}
+
 /* ------------------------------------------------------------------ */
 /* Rules screen                                                        */
 /* ------------------------------------------------------------------ */

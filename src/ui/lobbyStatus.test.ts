@@ -22,6 +22,7 @@ function room(over: Partial<RoomSnapshot> = {}): RoomSnapshot {
     seats: [seat(0), seat(1)],
     hostSeat: 0,
     hasHost: true,
+    hostGrace: null,
     boardSize: 7,
     gardenPreset: 'random',
     commitment: null,

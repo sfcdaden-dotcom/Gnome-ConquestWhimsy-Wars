@@ -71,6 +71,20 @@ export class RoomDurableObject implements DurableObject {
           [`${ACTIONS_PREFIX}${String(chunkIndex).padStart(6, '0')}`]: actions.slice(start, start + ACTIONS_PER_CHUNK),
         });
       },
+      /**
+       * Everything goes, and the tombstone is written back on its own. The
+       * action chunks are the bulk of a finished room and `save` cannot remove
+       * them — it only ever rewrites the chunk it is filling — so a closing
+       * room has to be wiped rather than overwritten.
+       */
+      async close(room: PersistedRoom): Promise<void> {
+        const { actions: _actions, ...meta } = room;
+        await storage.deleteAll();
+        await storage.put(META_KEY, meta);
+        // Nothing is waiting on a closed room; a pending alarm would only wake
+        // it up to find that out.
+        await storage.deleteAlarm();
+      },
     };
   }
 

@@ -18,9 +18,11 @@ import type { PersistedRoom, RoomConnection, RoomHost } from './room';
 import { Room, generateRoomCode } from './room';
 import {
   CLOSE_RATE_LIMITED,
+  CLOSE_ROOM_CLOSED,
   CLOSE_SEAT_TAKEN_OVER,
   CLOSE_TOO_MANY_CONNECTIONS,
   CONTROL_BUDGET_MS,
+  HOST_GRACE_MS,
   ROOM_CODE_ALPHABET,
   SHOT_CLOCK_MS,
   TAKEOVER_AFTER_TIMEOUTS,
@@ -70,10 +72,17 @@ class FakeConn implements RoomConnection {
   }
 }
 
-function makeHost(): RoomHost & { stored: PersistedRoom | null; alarms: number[]; clock: number } {
+function makeHost(): RoomHost & {
+  stored: PersistedRoom | null;
+  closed: boolean;
+  alarms: number[];
+  clock: number;
+} {
   let counter = 1;
   const h = {
     stored: null as PersistedRoom | null,
+    /** Set when the room wiped itself: see `RoomStore.close`. */
+    closed: false,
     alarms: [] as number[],
     /** Wall clock, movable so the shot clock can be driven without waiting. */
     clock: 1_000_000,
@@ -83,6 +92,10 @@ function makeHost(): RoomHost & { stored: PersistedRoom | null; alarms: number[]
       },
       async save(room: PersistedRoom) {
         h.stored = structuredClone(room) as PersistedRoom;
+      },
+      async close(room: PersistedRoom) {
+        h.stored = structuredClone(room) as PersistedRoom;
+        h.closed = true;
       },
     },
     randomBytes(n: number) {
@@ -1199,5 +1212,134 @@ describe('rate limiting', () => {
     await woken.hello(back, { ...HELLO, token: c0.last('welcome')!.you.token });
 
     expect(back.errors()).not.toContain('RATE_LIMITED');
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+describe('a lobby whose host has gone', () => {
+  /** A lobby with a bound host (c0) and a guest (c1), both seated. */
+  async function hosted() {
+    const host = makeHost();
+    const room = await Room.open(host, 'ABC123');
+    const hostKey = await room.hostKeyForCreate();
+    const c0 = new FakeConn('c0');
+    await room.hello(c0, { ...HELLO, hostKey });
+    const c1 = new FakeConn('c1');
+    await room.hello(c1, { ...HELLO });
+    return { host, room, c0, c1, hostKey };
+  }
+
+  it('starts a countdown when the host drops, and arms the alarm for it', async () => {
+    const { host, room, c1 } = await hosted();
+    await room.disconnect('c0');
+
+    const grace = c1.last('room')!.room.hostGrace!;
+    expect(grace).not.toBeNull();
+    expect(grace.until).toBe(host.clock + HOST_GRACE_MS);
+    expect(host.alarms.at(-1)).toBe(host.clock + HOST_GRACE_MS);
+  });
+
+  it('stops the countdown when the host comes back', async () => {
+    const { room, c0, c1 } = await hosted();
+    const hostToken = c0.last('welcome')!.you.token;
+    await room.disconnect('c0');
+    expect(c1.last('room')!.room.hostGrace).not.toBeNull();
+
+    const again = new FakeConn('c0-again');
+    await room.hello(again, { ...HELLO, token: hostToken });
+
+    expect(c1.last('room')!.room.hostGrace).toBeNull();
+    expect(again.last('welcome')?.you.isHost).toBe(true);
+  });
+
+  it('does not start one when a guest drops', async () => {
+    const { room, c0 } = await hosted();
+    await room.disconnect('c1');
+    expect(c0.last('room')!.room.hostGrace).toBeNull();
+  });
+
+  // The room must not be torn down around a game in progress because
+  // somebody's phone slept: a seat that stops playing is the shot clock's
+  // problem, and there is no lobby left to own.
+  it('does not start one mid-game', async () => {
+    const { room, c1 } = await hosted();
+    await room.handle('c0', { t: 'start' });
+    expect(room.phase).toBe('playing');
+
+    await room.disconnect('c0');
+
+    expect(c1.last('room')!.room.hostGrace).toBeNull();
+    expect(c1.last('room')!.room.hasHost).toBe(true);
+  });
+
+  it('offers the room to whoever is left when the countdown runs out', async () => {
+    const { host, room, c1 } = await hosted();
+    await room.disconnect('c0');
+
+    host.clock += HOST_GRACE_MS;
+    await room.onAlarm();
+
+    // Nobody is host now, which is what puts the takeover on c1's screen.
+    expect(c1.last('room')!.room.hasHost).toBe(false);
+    expect(c1.last('room')!.room.hostGrace).toBeNull();
+    expect(host.closed).toBe(false);
+  });
+
+  it('closes the room when the countdown runs out and nobody is left', async () => {
+    const { host, room } = await hosted();
+    await room.disconnect('c1');
+    await room.disconnect('c0');
+
+    host.clock += HOST_GRACE_MS;
+    await room.onAlarm();
+
+    expect(room.isClosed).toBe(true);
+    expect(host.closed).toBe(true);
+  });
+
+  it('leaves a room standing while anybody is still in it', async () => {
+    const { host, room, c1 } = await hosted();
+    await room.disconnect('c0');
+    host.clock += HOST_GRACE_MS;
+    await room.onAlarm();
+
+    // The guest is still here, so the room is offered rather than closed.
+    expect(room.isClosed).toBe(false);
+    expect(host.closed).toBe(false);
+    expect(c1.last('roomClosed')).toBeUndefined();
+  });
+
+  it('refuses everybody once it has closed, rather than rebuilding itself', async () => {
+    const { host, room } = await hosted();
+    await room.disconnect('c1');
+    await room.disconnect('c0');
+    host.clock += HOST_GRACE_MS;
+    await room.onAlarm();
+
+    // The tombstone survives a reload of the room — which is exactly what a
+    // redial does, since addressing a Durable Object is what creates it.
+    const reopened = await Room.open(host, 'ABC123');
+    expect(reopened.isClosed).toBe(true);
+
+    const redial = new FakeConn('redial');
+    await reopened.hello(redial, { ...HELLO });
+    expect(redial.last('roomClosed')?.reason).toBe('host-left');
+    expect(redial.closed?.code).toBe(CLOSE_ROOM_CLOSED);
+    expect(redial.last('welcome')).toBeUndefined();
+  });
+
+  it('does not hand the room to whoever redials a closed code', async () => {
+    const { host, room } = await hosted();
+    await room.disconnect('c1');
+    await room.disconnect('c0');
+    host.clock += HOST_GRACE_MS;
+    await room.onAlarm();
+
+    const reopened = await Room.open(host, 'ABC123');
+    const redial = new FakeConn('redial');
+    await reopened.hello(redial, { ...HELLO });
+    expect(reopened.snapshot().hasHost).toBe(false);
+    expect(redial.last('welcome')?.you.isHost).toBeUndefined();
   });
 });

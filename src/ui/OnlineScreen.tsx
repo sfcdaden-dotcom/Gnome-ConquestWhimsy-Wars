@@ -24,6 +24,8 @@ import { GameScreen } from './GameScreen';
 import { useNetGame } from './useNetGame';
 import { hostKeyStore, NAME_KEY, roomCodeFromSearch, roomHref } from './netClient';
 import { ROOM_CODE_LENGTH } from '../net/protocol';
+import type { RoomClosedReason } from '../net/protocol';
+import { HostGraceBanner } from './HostGraceBanner';
 import { playerColor } from './meta';
 import { blockerAction, blockerText, canStart, lobbyBlocker } from './lobbyStatus';
 
@@ -202,6 +204,12 @@ function OnlineMenu({
 function RoomView({ code, name, onLeave }: { code: string; name: string; onLeave: () => void }) {
   const net = useNetGame(code, name);
 
+  // A closed room is not a lobby with a problem — there is nothing left to
+  // render and nothing to reconnect to.
+  if (net.status === 'closed') {
+    return <RoomClosed code={code} reason={net.closedReason} onLeave={onLeave} />;
+  }
+
   if (net.status === 'playing' || (net.status === 'finished' && net.game)) {
     // No "play again": a room's next game is the host's call, not a button
     // that would silently re-deal for everyone.
@@ -209,6 +217,35 @@ function RoomView({ code, name, onLeave }: { code: string; name: string; onLeave
   }
 
   return <Lobby net={net} code={code} onLeave={onLeave} />;
+}
+
+function RoomClosed({
+  code,
+  reason,
+  onLeave,
+}: {
+  code: string;
+  reason: RoomClosedReason | null;
+  onLeave: () => void;
+}) {
+  return (
+    <div className="home-screen" data-testid="room-closed">
+      <div className="home-card">
+        <h1 className="home-title">Room {code} is closed</h1>
+        <p className="home-tagline">
+          {reason === 'host-left'
+            ? 'The host left and nobody took the room over, so it shut down.'
+            : 'Nobody had been in this room for a while, so it shut down.'}
+        </p>
+        <p className="muted small">
+          Rooms only last as long as somebody is in them. Host a new one and share the code again.
+        </p>
+        <button type="button" className="btn accent big" data-testid="room-closed-back" onClick={onLeave}>
+          ← Back to the menu
+        </button>
+      </div>
+    </div>
+  );
 }
 
 function Lobby({
@@ -238,6 +275,13 @@ function Lobby({
     <div className="home-screen" data-testid="room-lobby">
       <div className="home-card lobby-card">
         <h1 className="home-title">Room {code}</h1>
+
+        {room?.hostGrace && (
+          <HostGraceBanner
+            grace={room.hostGrace}
+            hostName={room.hostSeat === null ? null : (room.seats[room.hostSeat]?.name ?? null)}
+          />
+        )}
 
         {status === 'taken-over' ? (
           <div className="form-error" role="alert" data-testid="lobby-taken-over">

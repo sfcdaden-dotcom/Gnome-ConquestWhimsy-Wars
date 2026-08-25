@@ -62,6 +62,7 @@ import {
 } from '../engine';
 import type {
   ClientMessage,
+  RoomClosedReason,
   RoomErrorCode,
   RoomPhase,
   RoomSnapshot,
@@ -72,9 +73,11 @@ import type {
 } from './protocol';
 import {
   CLOSE_RATE_LIMITED,
+  CLOSE_ROOM_CLOSED,
   CLOSE_SEAT_TAKEN_OVER,
   CLOSE_TOO_MANY_CONNECTIONS,
   CONTROL_BUDGET_MS,
+  HOST_GRACE_MS,
   PROTOCOL_VERSION,
   ROOM_CODE_ALPHABET,
   ROOM_CODE_LENGTH,
@@ -138,6 +141,19 @@ export interface PersistedRoom {
   actions: Action[];
   /** The running shot clock, or null when no human seat is on it. */
   clock: RoomClock | null;
+  /**
+   * When the lobby stops waiting for a dropped host. Null whenever the host is
+   * connected, and always null outside the lobby — see HOST_GRACE_MS.
+   */
+  graceUntil: number | null;
+  /**
+   * Set when the room has shut down. The record is kept, emptied, as a
+   * tombstone: addressing a Durable Object is what creates it, so a room that
+   * merely deleted itself would be rebuilt as a fresh empty lobby by the next
+   * client that redialled its code. The tombstone is what makes a closed room
+   * stay closed.
+   */
+  closed?: { at: number; reason: RoomClosedReason };
 }
 
 /**
@@ -167,6 +183,13 @@ export interface PersistedSeat {
 export interface RoomStore {
   load(): Promise<PersistedRoom | null>;
   save(room: PersistedRoom): Promise<void>;
+  /**
+   * Drop everything this room stored and leave only `room` behind. Separate
+   * from `save` because a room's actions are written in chunks: overwriting
+   * the record does not remove the chunks, and a closing room wants the bulk
+   * of its storage actually gone, not orphaned.
+   */
+  close(room: PersistedRoom): Promise<void>;
 }
 
 export interface RoomHost {
@@ -185,7 +208,7 @@ export interface RoomHost {
 const DEFAULT_CPU_DELAY_MS = 700;
 
 /** What the room's single alarm can be waiting for. See `Room.deadlines`. */
-type DeadlineKind = 'cpu' | 'clock';
+type DeadlineKind = 'cpu' | 'clock' | 'grace';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -320,10 +343,13 @@ export class Room {
         config: null,
         actions: [],
         clock: null,
+        graceUntil: null,
       },
     );
-    // A room stored before the shot clock existed has no `clock` field.
+    // A room stored before the shot clock existed has no `clock` field, and
+    // one stored before the grace window has no `graceUntil`.
     room.data.clock ??= null;
+    room.data.graceUntil ??= null;
     if (stored && stored.config && stored.seed !== null) room.hydrate();
     return room;
   }
@@ -358,6 +384,14 @@ export class Room {
         message: `Unsupported protocol ${message.protocol}; this room speaks ${PROTOCOL_VERSION}`,
       });
       conn.close(1002, 'protocol');
+      return;
+    }
+
+    // A tombstoned room takes nobody in — including the client whose redial
+    // brought this Durable Object back into memory in the first place.
+    if (this.isClosed) {
+      conn.send({ t: 'roomClosed', reason: this.data.closed!.reason });
+      conn.close(CLOSE_ROOM_CLOSED, 'room closed');
       return;
     }
 
@@ -418,6 +452,8 @@ export class Room {
 
     this.conns.set(conn.id, { conn, token, seat, announced: null });
     this.bindHost(token, message.hostKey);
+    // The host walking back in is what stops the countdown.
+    await this.syncGrace();
     await this.save();
 
     this.announceIdentities();
@@ -573,6 +609,7 @@ export class Room {
     this.conns.delete(connId);
     this.meters.delete(connId);
     if (this.data.phase === 'lobby') this.seatSpectators();
+    await this.syncGrace();
     await this.save();
     this.announceIdentities();
     this.broadcastRoom();
@@ -927,6 +964,7 @@ export class Room {
     if (this.cpuWakeAt !== null) out.push({ kind: 'cpu', at: this.cpuWakeAt });
     const clock = this.expiryAt();
     if (clock !== null) out.push({ kind: 'clock', at: clock });
+    if (this.data.graceUntil !== null) out.push({ kind: 'grace', at: this.data.graceUntil });
     return out;
   }
 
@@ -943,8 +981,106 @@ export class Room {
    * still pending is re-armed.
    */
   async onAlarm(): Promise<void> {
+    const now = this.host.now();
+    // The lobby's deadlines go first: they can close the room, after which
+    // there is nothing left for the game timers to do.
+    if (this.data.graceUntil !== null && now >= this.data.graceUntil) {
+      await this.graceExpired();
+      if (this.isClosed) return;
+    }
     await this.runGameTimers();
     await this.arm();
+  }
+
+  // --- the host's grace window ---------------------------------------------
+
+  /** Is the host connected right now? */
+  private hostIsHere(): boolean {
+    const token = this.data.hostToken;
+    if (token === null) return false;
+    for (const c of this.conns.values()) if (c.token === token) return true;
+    return false;
+  }
+
+  /**
+   * Start or stop the countdown on a dropped host, and arm the alarm for it.
+   *
+   * Called wherever the answer to "is the host here?" can have changed. Lobby
+   * only: mid-game there is no lobby to own, and a game must not be torn down
+   * because somebody's phone slept — the shot clock already handles a seat
+   * that has stopped playing.
+   */
+  private async syncGrace(): Promise<void> {
+    const wanted =
+      this.data.phase === 'lobby' && this.data.hostToken !== null && !this.hostIsHere();
+    if (wanted && this.data.graceUntil === null) {
+      this.data.graceUntil = this.host.now() + HOST_GRACE_MS;
+      await this.arm();
+    } else if (!wanted && this.data.graceUntil !== null) {
+      this.data.graceUntil = null;
+    }
+  }
+
+  /**
+   * The lobby waited out its host.
+   *
+   * Somebody still here gets the room offered to them — `hostToken` goes null,
+   * which is what puts the takeover button on their screen. Nobody here means
+   * nobody is coming, so the room shuts down rather than sitting in storage
+   * forever waiting for a player who has closed the tab.
+   *
+   * The host key is cleared either way: from here on the room is somebody
+   * else's to claim, and the original host returns as an ordinary player.
+   */
+  private async graceExpired(): Promise<void> {
+    this.data.graceUntil = null;
+    if (this.hostIsHere()) return; // came back in the last beat
+    if (this.conns.size === 0) return await this.close('host-left');
+
+    this.data.hostToken = null;
+    this.data.hostKey = null;
+    await this.save();
+    this.announceIdentities();
+    this.broadcastRoom();
+  }
+
+  /**
+   * Shut the room down for good: tell everyone, hang up, and leave a tombstone
+   * where the record was.
+   *
+   * The tombstone is not optional. Addressing a Durable Object is what brings
+   * it into existence, so a room that simply deleted itself would be recreated
+   * as a fresh empty lobby by the next client to redial its code — handing
+   * that client the room. `hello` refuses a closed room instead.
+   */
+  private async close(reason: RoomClosedReason): Promise<void> {
+    this.data.closed = { at: this.host.now(), reason };
+    this.data.graceUntil = null;
+    this.data.clock = null;
+    this.cpuWakeAt = null;
+    // Nothing about a closed room is worth keeping but the fact that it closed.
+    this.data.actions = [];
+    this.data.tokens = {};
+    this.data.hostToken = null;
+    this.data.hostKey = null;
+    this.state = null;
+    await this.host.store.close(this.data);
+
+    // Every path that closes a room today reaches it with nobody connected —
+    // both the grace expiry and the reaper require an empty room. This is here
+    // so that stays a property of those rules rather than an assumption baked
+    // into the teardown: a close with an audience tells them why.
+    for (const c of this.conns.values()) {
+      c.conn.send({ t: 'roomClosed', reason });
+      c.conn.close(CLOSE_ROOM_CLOSED, 'room closed');
+    }
+    this.conns.clear();
+    this.meters.clear();
+  }
+
+  /** True once the room has shut down; it will not accept anybody again. */
+  get isClosed(): boolean {
+    return this.data.closed !== undefined;
   }
 
   /**
@@ -1139,6 +1275,10 @@ export class Room {
       seats,
       hostSeat: this.hostSeat(),
       hasHost: this.data.hostToken !== null,
+      hostGrace:
+        this.data.graceUntil === null
+          ? null
+          : { until: this.data.graceUntil, now: this.host.now() },
       boardSize: this.data.boardSize,
       gardenPreset: this.data.gardenPreset,
       // The commitment, never the secret — that waits for `revealed`.

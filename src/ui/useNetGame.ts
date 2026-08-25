@@ -31,7 +31,13 @@ import { getPlayerToAct } from '../engine';
 import type { GameSeal, MatchRecord } from '../engine';
 import { verifySeal } from '../net/commitment';
 import type { ClientMessage, RoomSnapshot, SeatConfig } from '../net/protocol';
-import { CLOSE_RATE_LIMITED, CLOSE_SEAT_TAKEN_OVER, PROTOCOL_VERSION } from '../net/protocol';
+import {
+  CLOSE_RATE_LIMITED,
+  CLOSE_ROOM_CLOSED,
+  CLOSE_SEAT_TAKEN_OVER,
+  PROTOCOL_VERSION,
+} from '../net/protocol';
+import type { RoomClosedReason } from '../net/protocol';
 import type { GameSession } from './useGame';
 import { addedEvents, useChatBubbles, useFightPlayback, useToasts } from './sessionFx';
 import {
@@ -64,7 +70,8 @@ export type NetStatus =
   | 'lobby'
   | 'playing'
   | 'finished'
-  | 'taken-over'; // another tab holds the seat; we stay down deliberately
+  | 'taken-over' // another tab holds the seat; we stay down deliberately
+  | 'closed'; // the room is gone; we stay down because there is nothing to dial
 
 export interface NetGame {
   status: NetStatus;
@@ -75,6 +82,8 @@ export interface NetGame {
   game: GameSession | null;
   /** Game-over proof: the revealed seal + record (see commitment.ts). */
   revealed: { seal: GameSeal; record: MatchRecord } | null;
+  /** Why the room shut down, once it has. */
+  closedReason: RoomClosedReason | null;
   /** Host lobby controls (server-rejected for anyone else). */
   configure: (config: Omit<Extract<ClientMessage, { t: 'configure' }>, 't'>) => void;
   start: () => void;
@@ -90,6 +99,7 @@ export function useNetGame(code: string, name: string): NetGame {
   const [view, setView] = useState<PlayerView | null>(null);
   const [revealed, setRevealed] = useState<{ seal: GameSeal; record: MatchRecord } | null>(null);
   const [takenOver, setTakenOver] = useState(false);
+  const [closedReason, setClosedReason] = useState<RoomClosedReason | null>(null);
   const [shotClock, setShotClock] = useState<{ seat: PlayerId; deadlineAt: number } | null>(null);
   // Bumped to force a fresh dial (see `rejoin`); the socket effect keys on it.
   const [dial, setDial] = useState(0);
@@ -184,6 +194,14 @@ export function useNetGame(code: string, name: string): NetGame {
           case 'revealed':
             setRevealed({ seal: msg.seal, record: msg.record });
             return;
+          case 'roomClosed':
+            // Nothing to come back to: drop the seat token and the host key so
+            // a later visit to this code arrives as a stranger rather than
+            // presenting credentials for a room that no longer exists.
+            setClosedReason(msg.reason);
+            tokenStore.forget(seatStores, code);
+            hostKeyStore.forget(localStorage, code);
+            return;
           case 'error':
             pushToast(msg.message, 'error');
             return;
@@ -198,6 +216,12 @@ export function useNetGame(code: string, name: string): NetGame {
         if (e.code === CLOSE_SEAT_TAKEN_OVER) {
           setTakenOver(true);
           return; // deliberate: re-dialing would fight the newer tab forever
+        }
+        if (e.code === CLOSE_ROOM_CLOSED) {
+          // Never redial: addressing a room is what CREATES it, so a redial
+          // would build a fresh empty lobby at this code and hand it to us.
+          setClosedReason((was) => was ?? 'abandoned');
+          return;
         }
         if (e.code === CLOSE_RATE_LIMITED) {
           pushToast('⚠ The room closed the connection for sending too fast. Reconnecting shortly…', 'error');
@@ -331,17 +355,19 @@ export function useNetGame(code: string, name: string): NetGame {
   );
   const start = useCallback(() => send({ t: 'start' }), [send]);
 
-  const status: NetStatus = takenOver
-    ? 'taken-over'
-    : !you
-      ? 'connecting'
-      : room?.phase === 'playing' && game
-        ? 'playing'
-        : room?.phase === 'finished'
-          ? 'finished'
-          : 'lobby';
+  const status: NetStatus = closedReason
+    ? 'closed'
+    : takenOver
+      ? 'taken-over'
+      : !you
+        ? 'connecting'
+        : room?.phase === 'playing' && game
+          ? 'playing'
+          : room?.phase === 'finished'
+            ? 'finished'
+            : 'lobby';
 
-  return { status, room, you, game, revealed, configure, start, rejoin, toasts };
+  return { status, room, you, game, revealed, closedReason, configure, start, rejoin, toasts };
 }
 
 // Re-exported so screens can type seat edits without reaching into protocol.

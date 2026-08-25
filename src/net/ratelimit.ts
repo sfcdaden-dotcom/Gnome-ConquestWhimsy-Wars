@@ -109,12 +109,16 @@ export class TokenBucket {
  *  - `hello` re-settles identity, reseats spectators, writes storage and
  *    broadcasts. A legitimate client sends exactly one per connection, so the
  *    price is set to make repeats pointless rather than to leave room for them.
+ *  - `takeOverRoom` rewrites who owns the room and broadcasts it. Priced like
+ *    `start`: it is a once-per-room button, and the room refuses it outright
+ *    unless there is genuinely no host, so repeats are pure waste.
  */
 export const MESSAGE_COST: Record<ClientMessage['t'], number> = {
   ping: 1,
   action: 2,
   configure: 4,
   start: 10,
+  takeOverRoom: 10,
   hello: 10,
 };
 
