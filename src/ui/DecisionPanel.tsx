@@ -8,7 +8,7 @@
 import type { ReactNode } from 'react';
 import type { Action, CardId, GameState, PendingDecision, PlayerId } from '../engine';
 import { MAX_ENTRY_EFFECT_HOPS } from '../engine';
-import { GARDEN_META, cardName, describeAction, pname, posStr } from './meta';
+import { GARDEN_META, cardName, cardText, describeCardTargets, describeAction, pname, posStr } from './meta';
 import { GardenIcon, UnitIcon } from './art';
 
 export interface DecisionPanelProps {
@@ -186,13 +186,29 @@ export function DecisionPanel({ state, decision, legal, interactive, act, onResp
       // Rendered by the FightPanel; nothing here.
       return null;
 
-    case 'cardResponse':
+    case 'cardResponse': {
+      // The card is on the stack, not yet resolved — and the stack is public,
+      // so what it is pointed at can be shown. Deciding whether to Nope a card
+      // without knowing whose gnome it names is guesswork.
+      const pending = state.cardStack[decision.stackIndex];
+      const targets = describeCardTargets(state, pending?.targets);
       return (
         <Panel title={`✋ ${who}: respond to ${cardName(decision.respondingToCard)}?`}>
           <div className="small muted">
             {pname(state, decision.respondingToPlayer)} played <b>{cardName(decision.respondingToCard)}</b>.
             Play Sudden Magic in response, or pass.
           </div>
+          <div className="small card-effect">{cardText(decision.respondingToCard)}</div>
+          {targets.length > 0 && (
+            <div className="small respond-targets" data-testid="respond-targets">
+              🎯 {targets.length === 1 ? 'Target' : 'Targets'}:{' '}
+              {targets.map((t, i) => (
+                <span key={i} className="respond-target">
+                  {t}
+                </span>
+              ))}
+            </div>
+          )}
           <div className="btn-row">
             <button type="button" className="btn" data-testid="respond-pass" onClick={() => act({ type: 'respondPass', player: decision.player })}>
               Pass
@@ -211,6 +227,7 @@ export function DecisionPanel({ state, decision, legal, interactive, act, onResp
           </div>
         </Panel>
       );
+    }
 
     case 'sacrificeGnome':
       return (

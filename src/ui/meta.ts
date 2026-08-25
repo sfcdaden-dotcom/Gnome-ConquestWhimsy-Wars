@@ -7,6 +7,7 @@ import type {
   Action,
   CardId,
   CardTarget,
+  CardTargets,
   FightSide,
   GameEvent,
   GameState,
@@ -377,6 +378,36 @@ export function describeAction(state: GameState, a: Action): string {
       return rest ? `${raw.type} (${rest})` : raw.type;
     }
   }
+}
+
+/**
+ * What a card on the stack is pointed at, one phrase per target, in the order
+ * the caster picked them.
+ *
+ * Written for the response window: a card is announced before it resolves, and
+ * "Blue played Rocket-Propelled Gnome" is only half the news — whether to spend
+ * a Nope-Gnome on it depends entirely on *whose* gnome is strapped to the
+ * rocket. The targets are already public (the card stack is not redacted; see
+ * view.ts), so this only surfaces what the responder is entitled to see.
+ *
+ * Empty for a card that takes no targets.
+ */
+export function describeCardTargets(state: GameState, targets: CardTargets | undefined): string[] {
+  if (!targets) return [];
+  const out: string[] = [];
+  for (const unitId of targets.units ?? []) {
+    const u = state.units[unitId];
+    out.push(
+      u
+        ? `${unitNameLive(state, unitId)} (${pname(state, u.owner)}) at ${posStr(u.pos)}`
+        : unitNameLive(state, unitId),
+    );
+  }
+  for (const pos of targets.spaces ?? []) out.push(posStr(pos));
+  for (const p of targets.players ?? []) out.push(pname(state, p));
+  for (const cardId of targets.cards ?? []) out.push(cardName(cardId));
+  if (targets.gardenType) out.push(GARDEN_META[targets.gardenType].label);
+  return out;
 }
 
 function describeTarget(state: GameState, target: CardTarget): string {

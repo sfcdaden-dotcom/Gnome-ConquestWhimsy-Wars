@@ -864,6 +864,27 @@ h2 {
   color: var(--text);
 }
 
+/* Response window: the rules text and targets of the card being answered. */
+.card-effect {
+  color: var(--muted);
+  font-style: italic;
+  margin-top: 4px;
+}
+.respond-targets {
+  margin-top: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: baseline;
+}
+.respond-target {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1px 6px;
+  font-weight: 600;
+}
+
 .player-panels {
   display: flex;
   flex-direction: column;
