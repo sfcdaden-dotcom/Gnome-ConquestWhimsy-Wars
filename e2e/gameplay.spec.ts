@@ -412,6 +412,32 @@ test('cancelling phased targeting returns the card to the hand', async ({ page }
   await expect(page.getByTestId('play-card-plot-twist')).toBeEnabled();
 });
 
+test('"New game" asks before abandoning a game in progress', async ({ page }) => {
+  const g = new Game(page);
+  await g.startTwoPlayer(1234);
+
+  // First click arms, and changes nothing: the game is still on screen.
+  await page.getByTestId('new-game').click();
+  await expect(page.getByTestId('game-screen')).toBeVisible();
+  await expect(page.getByTestId('quit-confirm')).toBeVisible();
+
+  // Backing out returns the button, game untouched.
+  await page.getByTestId('quit-cancel').click();
+  await expect(page.getByTestId('new-game')).toBeVisible();
+  await expect(page.getByTestId('game-screen')).toBeVisible();
+
+  // Escape backs out of the armed state too.
+  await page.getByTestId('new-game').click();
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('new-game')).toBeVisible();
+
+  // Confirming leaves the game for the setup screen.
+  await page.getByTestId('new-game').click();
+  await page.getByTestId('quit-confirm').click();
+  await expect(page.getByTestId('game-screen')).toBeHidden();
+  await expect(page.getByTestId('start-game')).toBeVisible();
+});
+
 test('Escape backs out of targeting, like the Cancel button', async ({ page }) => {
   const g = new Game(page);
   await reachPlayablePlotTwist(g);

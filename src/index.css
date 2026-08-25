@@ -1248,6 +1248,13 @@ h2 {
   padding: 6px 10px;
 }
 
+/* The two-step "New game": armed, then confirmed. */
+.quit-confirm {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+
 .toasts {
   position: fixed;
   bottom: 14px;

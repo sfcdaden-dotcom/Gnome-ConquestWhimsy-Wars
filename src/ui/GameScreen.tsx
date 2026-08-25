@@ -57,6 +57,9 @@ export function GameScreen({ game: g, onPlayAgain, onQuit }: GameScreenProps) {
   // After the game ends, "Review match" dismisses the end overlay so the board
   // and full game log stay on screen; "Results" brings the overlay back.
   const [reviewing, setReviewing] = useState(false);
+  // "New game" abandons a game in progress, so it asks first: armed here,
+  // confirmed by the second click.
+  const [quitArmed, setQuitArmed] = useState(false);
 
   // Card plays are enumerated WITHOUT targets — dispatching a targeted play
   // opens a `cardTargeting` decision, and the engine then hands back one step's
@@ -164,10 +167,10 @@ export function GameScreen({ game: g, onPlayAgain, onQuit }: GameScreenProps) {
   }
 
   /**
-   * Escape backs out one level, innermost first: an in-progress card targeting
-   * is cancelled (the card never left the hand, so this is always safe), then
-   * an open plant submenu, then a selected gnome. Every one of those was
-   * previously escapable only by finding and clicking its own small button.
+   * Escape backs out one level, most recent first: an armed "New game", then
+   * an in-progress card targeting (the card never left the hand, so cancelling
+   * is always safe), then an open plant submenu, then a selected gnome. Every
+   * one of those was previously escapable only by finding its own button.
    *
    * It listens on the document rather than a container because clicking the
    * board leaves focus on <body>, and Escape is precisely the key people press
@@ -178,7 +181,9 @@ export function GameScreen({ game: g, onPlayAgain, onQuit }: GameScreenProps) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
-      if (interactive && decision?.kind === 'cardTargeting' && decision.player === playerToAct) {
+      if (quitArmed) {
+        setQuitArmed(false);
+      } else if (interactive && decision?.kind === 'cardTargeting' && decision.player === playerToAct) {
         if (!dispatch({ type: 'cancelTargeting', player: decision.player })) setSel(NO_SEL);
       } else if (submenu !== null) {
         setSubmenu(null);
@@ -191,7 +196,7 @@ export function GameScreen({ game: g, onPlayAgain, onQuit }: GameScreenProps) {
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [interactive, decision, playerToAct, submenu, sel.kind, dispatch]);
+  }, [quitArmed, interactive, decision, playerToAct, submenu, sel.kind, dispatch]);
 
   // --- board click routing -----------------------------------------------------
 
@@ -362,9 +367,37 @@ export function GameScreen({ game: g, onPlayAgain, onQuit }: GameScreenProps) {
             🏁 Results
           </button>
         )}
-        <button type="button" className="btn small" onClick={onQuit}>
-          New game
-        </button>
+        {/* One click used to throw a game in progress away. Now it arms, and
+            the second click confirms — a finished game still goes in one. */}
+        {quitArmed ? (
+          <span className="quit-confirm">
+            <button
+              type="button"
+              className="btn small warn"
+              data-testid="quit-confirm"
+              onClick={onQuit}
+            >
+              Abandon game
+            </button>
+            <button
+              type="button"
+              className="btn small"
+              data-testid="quit-cancel"
+              onClick={() => setQuitArmed(false)}
+            >
+              Keep playing
+            </button>
+          </span>
+        ) : (
+          <button
+            type="button"
+            className="btn small"
+            data-testid="new-game"
+            onClick={() => (state.status === 'finished' ? onQuit() : setQuitArmed(true))}
+          >
+            New game
+          </button>
+        )}
       </header>
 
       <div className="main">
