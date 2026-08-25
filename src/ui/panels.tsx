@@ -25,6 +25,7 @@ import {
   sideName,
 } from './meta';
 import { GardenIcon, UnitIcon } from './art';
+import { isPinnedToBottom, logLines } from './gameLog';
 
 // ---------------------------------------------------------------------------
 // Player panels
@@ -101,21 +102,35 @@ export function PlayerPanels({ state, takenOverSeats = [] }: { state: GameState;
  */
 export function GameLogView({ state }: { state: GameState }) {
   const ref = useRef<HTMLDivElement>(null);
-  const count = state.events.length;
+  // Whether the reader is watching the tail. Kept in a ref, not state: it is
+  // read by the scroll effect and never rendered, and a scroll handler that
+  // re-rendered the log on every wheel tick would be its own papercut.
+  const pinned = useRef(true);
+
+  const lines = logLines(state);
   useEffect(() => {
     const el = ref.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [count]);
+    // Follow the tail only for someone already reading it — scroll back to
+    // check what a fight did and the next event no longer snatches the view.
+    if (el && pinned.current) el.scrollTop = el.scrollHeight;
+  }, [state.eventCount]);
 
-  const start = Math.max(0, count - 250);
   return (
-    <div className="game-log" ref={ref} aria-label="Game log" data-testid="game-log">
-      {state.events.slice(start).map((ev, i) => (
-        <div key={start + i} className={`log-line log-${ev.type}`}>
+    <div
+      className="game-log"
+      ref={ref}
+      aria-label="Game log"
+      data-testid="game-log"
+      onScroll={(e) => {
+        pinned.current = isPinnedToBottom(e.currentTarget);
+      }}
+    >
+      {lines.map(({ key, ev }) => (
+        <div key={key} className={`log-line log-${ev.type}`}>
           {describeEvent(state, ev)}
         </div>
       ))}
-      {count === 0 && <div className="log-line muted">The garden awaits…</div>}
+      {lines.length === 0 && <div className="log-line muted">The garden awaits…</div>}
     </div>
   );
 }
