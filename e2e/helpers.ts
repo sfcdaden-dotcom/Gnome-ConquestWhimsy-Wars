@@ -22,6 +22,19 @@ export async function setSeed(page: Page, seed: number): Promise<void> {
   await expect(page.getByTestId('open-advanced')).toBeVisible();
 }
 
+/**
+ * Reveal the "Classic layouts" group in the setup screen's layout menu.
+ *
+ * The menu leads with the three generated modes (Fresh / Bare Essentials /
+ * True Random); the fixed layouts these tests pin coordinates against sit
+ * behind one toggle. Already-visible is a no-op, so callers need not track it.
+ */
+export async function showClassicPresets(page: Page): Promise<void> {
+  const group = page.getByTestId('preset-select').locator('optgroup[label="Classic layouts"]');
+  if ((await group.count()) === 0) await page.getByTestId('toggle-classic-presets').click();
+  await expect(group).toHaveCount(1);
+}
+
 export interface BoardUnit {
   pos: string; // "x,y"
   x: number;
@@ -48,6 +61,7 @@ export class Game {
     await this.page.goto('/');
     // The home screen is the entry point now; local play is one door of three.
     await this.page.getByTestId('home-local').click();
+    await showClassicPresets(this.page);
     await this.page.getByLabel('Extra-garden preset').selectOption(preset);
     await this.page.getByTestId('player-count-2').click();
     // Seat 0 is human by default; make seat 1 human too, so no CPU timer runs

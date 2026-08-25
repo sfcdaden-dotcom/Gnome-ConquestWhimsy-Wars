@@ -1,7 +1,16 @@
 /**
- * Procedural map generation for the "Random (symmetrical)" preset.
+ * Procedural map generation — the engine behind the three starting-board
+ * MODES the setup screen offers (see gardenPresets.ts):
  *
- * Everything here is a pure function of `(boardSize, seed)`: the same pair
+ *   'fresh'      Home Gardens and nothing else.
+ *   'essentials' Home Gardens, each with a Mushroom and a Dandelion Garden
+ *                next door — the two economy gardens, and no hazards.
+ *   'random'     A full map: the mode that rolls terrain as well as homes.
+ *
+ * All three share one home-placement rule and one symmetry rule, which is why
+ * they live together here; they differ only in what gets planted afterwards.
+ *
+ * Everything is a pure function of `(boardSize, seed, mode)`: the same triple
  * always yields the same map, so a game recorded as `config + seed` replays
  * byte-identically without storing the layout anywhere.
  *
@@ -14,8 +23,8 @@
  * equidistant from one another, and the 2-player seating (orbit indices 0 and
  * 2) always lands on an exactly-opposite pair.
  *
- * Placement rules (the design brief, in priority order)
- * -----------------------------------------------------
+ * Placement rules for 'random' (the design brief, in priority order)
+ * ------------------------------------------------------------------
  * HARD (never violated — a placement that would break one is simply not made):
  *   - Homes sit outside the middle 3×3 and at least `MIN_HOME_SEPARATION`
  *     apart (Chebyshev) from their rotational neighbours.
@@ -47,12 +56,29 @@ export interface RandomLayout {
   gardens: Array<{ pos: Pos; type: PlantableGardenType }>;
 }
 
+/** Which starting board to roll. See the three modes at the top of this file. */
+export type LayoutMode = 'fresh' | 'essentials' | 'random';
+
+/** Menu order: emptiest board first, fullest last. */
+export const LAYOUT_MODES: readonly LayoutMode[] = ['fresh', 'essentials', 'random'];
+
 // ---------------------------------------------------------------------------
 // Tuning
 // ---------------------------------------------------------------------------
 
-/** Smallest board the generator supports (a 5×5 minus its middle 3×3 is too cramped for random homes). */
+/** Smallest board the full 'random' mode supports (a 5×5 minus its middle 3×3 is too cramped for its terrain). */
 export const RANDOM_LAYOUT_MIN_BOARD_SIZE = 7;
+
+/**
+ * Smallest board each mode fits on. The two sparse modes plant little enough
+ * to work on a 5×5; only 'random', which wants room for several orbits of
+ * terrain between the homes and the center, needs a 7×7.
+ */
+export const LAYOUT_MODE_MIN_BOARD_SIZE: Record<LayoutMode, number> = {
+  fresh: 5,
+  essentials: 5,
+  random: RANDOM_LAYOUT_MIN_BOARD_SIZE,
+};
 
 /** Homes must be more than this Chebyshev distance from the center (1 ⇒ the middle 3×3 is off-limits). */
 const HOME_CENTER_EXCLUSION = 1;
@@ -73,6 +99,18 @@ const HAZARD_HOME_BUFFER = 2;
 const HAZARD_TYPES: ReadonlySet<PlantableGardenType> = new Set(['flytrap', 'maize', 'tunnel']);
 /** Garden-free orthogonal neighbours every home must retain. */
 const MIN_HOME_FREE_EXITS = 2;
+
+/**
+ * 'essentials' plants ON the doorstep by definition, so it keeps its own,
+ * looser exit rule: one open orthogonal step out of every home. Both gardens
+ * it plants are harmless (no entry fight, no exit tax), so a home ringed by
+ * them is a slow start, not a trap — but a home with no plain exit at all
+ * still reads as walled in, which is what this forbids.
+ */
+const ESSENTIALS_MIN_HOME_FREE_EXITS = 1;
+
+/** What 'essentials' puts beside every home: the wish garden and the gnome garden. */
+const ESSENTIAL_TYPES: readonly PlantableGardenType[] = ['mushroom', 'dandelion'];
 
 /** Orbits (×4 gardens each) rolled per map on a 7×7; larger boards get more (see `rollOrbitCount`). */
 const ORBIT_COUNT_WEIGHTS: ReadonlyArray<readonly [number, number]> = [
@@ -138,36 +176,123 @@ const RELAXATION: ReadonlyArray<{ typeCap: boolean; adjacency: boolean }> = [
 // Entry point
 // ---------------------------------------------------------------------------
 
-let cache: { boardSize: number; seed: number; layout: RandomLayout } | null = null;
+let cache: { boardSize: number; seed: number; mode: LayoutMode; layout: RandomLayout } | null = null;
 
 /**
- * Build the random symmetric map for `(boardSize, seed)`. Deterministic and
- * memoized on the last call, since `build` and `buildHomes` on the preset
- * definition each ask for the same layout.
+ * Build the symmetric starting board for `(boardSize, seed, mode)`.
+ * Deterministic and memoized on the last call, since `build` and `buildHomes`
+ * on the preset definition each ask for the same layout.
  */
-export function generateRandomLayout(boardSize: number, seed: number): RandomLayout {
-  if (!Number.isInteger(boardSize) || boardSize % 2 === 0 || boardSize < RANDOM_LAYOUT_MIN_BOARD_SIZE) {
+export function generateRandomLayout(boardSize: number, seed: number, mode: LayoutMode = 'random'): RandomLayout {
+  const minBoardSize = LAYOUT_MODE_MIN_BOARD_SIZE[mode];
+  if (!Number.isInteger(boardSize) || boardSize % 2 === 0 || boardSize < minBoardSize) {
     throw new EngineError(
       'BAD_CONFIG',
-      `The random layout needs an odd boardSize >= ${RANDOM_LAYOUT_MIN_BOARD_SIZE}, got ${boardSize}`,
+      `The "${mode}" layout needs an odd boardSize >= ${minBoardSize}, got ${boardSize}`,
     );
   }
-  if (cache && cache.boardSize === boardSize && cache.seed === seed) return cloneLayout(cache.layout);
+  if (cache && cache.boardSize === boardSize && cache.seed === seed && cache.mode === mode) {
+    return cloneLayout(cache.layout);
+  }
 
   const rng = createRng(seed ^ LAYOUT_SEED_SALT);
+  const layout =
+    mode === 'fresh' ? buildFresh(boardSize, rng) : mode === 'essentials' ? buildEssentials(boardSize, rng) : buildRandom(boardSize, rng);
+  cache = { boardSize, seed, mode, layout };
+  return cloneLayout(layout);
+}
+
+/** 'random': several whole-map attempts, the fullest one winning if none clears `MIN_GARDENS`. */
+function buildRandom(boardSize: number, rng: Rng): RandomLayout {
   let best: RandomLayout | null = null;
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     const layout = buildOnce(boardSize, rng);
-    if (layout.gardens.length >= MIN_GARDENS) {
-      best = layout;
-      break;
-    }
+    if (layout.gardens.length >= MIN_GARDENS) return layout;
     if (!best || layout.gardens.length > best.gardens.length) best = layout;
   }
+  return best!;
+}
 
-  const layout = best!;
-  cache = { boardSize, seed, layout };
-  return cloneLayout(layout);
+/** 'fresh': the home orbit, and not one thing else. */
+function buildFresh(n: number, rng: Rng): RandomLayout {
+  const c = (n - 1) / 2;
+  return { homes: pickOrbit(homeCandidates(n, c), rng, c), gardens: [] };
+}
+
+/**
+ * 'essentials': the home orbit plus one Mushroom and one Dandelion orbit, each
+ * sitting next to a home — so every seat opens on the same two economy
+ * gardens, one step away.
+ *
+ * The homes are chosen by trying candidate orbits in a shuffled order and
+ * keeping the first that can take both gardens: unlike 'random', which can
+ * simply plant less when a home orbit is awkward, this mode's whole promise is
+ * the two neighbours, so a home orbit that cannot host them is the wrong home
+ * orbit rather than a thinner map.
+ */
+function buildEssentials(n: number, rng: Rng): RandomLayout {
+  const c = (n - 1) / 2;
+  for (const cand of shuffledCopy(homeCandidates(n, c), rng)) {
+    const homes = orbitOf(cand, c);
+    const gardens = essentialGardens(n, c, homes, rng);
+    if (gardens) return { homes, gardens };
+  }
+  // Unreachable on any board the mode is offered for; a bare board still plays.
+  return buildFresh(n, rng);
+}
+
+/**
+ * The two doorstep orbits for `homes`, or null if this home orbit cannot take
+ * them. Only home[0]'s neighbours are considered: rotating one of them sweeps
+ * out the other three homes' neighbours, so one orbit serves every seat.
+ *
+ * Orthogonal neighbours are preferred and diagonal ones are the fallback,
+ * which matters on a board where a home sits in a corner: "adjacent" is still
+ * true of a diagonal, and it beats failing over to a different home orbit.
+ */
+function essentialGardens(
+  n: number,
+  c: number,
+  homes: readonly Pos[],
+  rng: Rng,
+): RandomLayout['gardens'] | null {
+  const homeKeys = new Set(homes.map(posKey));
+  const center = posKey({ x: c, y: c });
+  const usable = (cells: Pos[]) =>
+    new Set(cells.map(posKey)).size === cells.length &&
+    cells.every((p) => inBounds(n, p) && !homeKeys.has(posKey(p)) && posKey(p) !== center);
+
+  const orbitsFrom = (neighbours: Pos[]) =>
+    neighbours.map((p) => orbitOf(p, c)).filter(usable);
+
+  const orth = orbitsFrom(orthOf(n, homes[0]));
+  const options = orth.length >= ESSENTIAL_TYPES.length ? orth : [...orth, ...orbitsFrom(diagonalsOf(n, homes[0]))];
+
+  for (const pair of disjointPairs(options, rng)) {
+    const cells = pair.flat();
+    const planted = new Set(cells.map(posKey));
+    if (!exitsSurvive(n, homes, planted, ESSENTIALS_MIN_HOME_FREE_EXITS)) continue;
+    // Which of the pair grows mushrooms is itself a roll, so the two gardens
+    // are not always in the same relative spot.
+    const types = rng.int(2) === 0 ? ESSENTIAL_TYPES : [...ESSENTIAL_TYPES].reverse();
+    const gardens = pair.flatMap((orbit, i) => orbit.map((pos) => ({ pos, type: types[i] })));
+    gardens.sort((a, b) => a.pos.y - b.pos.y || a.pos.x - b.pos.x);
+    return gardens;
+  }
+  return null;
+}
+
+/** Every disjoint pair of orbits, in a shuffled order (so the choice is a roll, not the first fit). */
+function disjointPairs(orbits: readonly Pos[][], rng: Rng): Pos[][][] {
+  const pairs: Pos[][][] = [];
+  for (let i = 0; i < orbits.length; i++) {
+    for (let j = i + 1; j < orbits.length; j++) {
+      const keys = new Set(orbits[i].map(posKey));
+      if (orbits[j].some((p) => keys.has(posKey(p)))) continue;
+      pairs.push([orbits[i], orbits[j]]);
+    }
+  }
+  return shuffledCopy(pairs, rng);
 }
 
 function cloneLayout(l: RandomLayout): RandomLayout {
@@ -300,23 +425,20 @@ function orbitFits(
   return true;
 }
 
-/** Would planting this orbit leave some home with fewer than 2 open exits? */
+/** Would planting this orbit leave some home with fewer than `MIN_HOME_FREE_EXITS` open exits? */
 function homeExitsSurvive(
   n: number,
   homes: readonly Pos[],
   cells: readonly Pos[],
   gardenCells: ReadonlySet<string>,
 ): boolean {
-  const proposed = new Set(cells.map(posKey));
-  for (const home of homes) {
-    let free = 0;
-    for (const q of orthOf(n, home)) {
-      const key = posKey(q);
-      if (!gardenCells.has(key) && !proposed.has(key)) free += 1;
-    }
-    if (free < MIN_HOME_FREE_EXITS) return false;
-  }
-  return true;
+  const planted = new Set([...gardenCells, ...cells.map(posKey)]);
+  return exitsSurvive(n, homes, planted, MIN_HOME_FREE_EXITS);
+}
+
+/** Does every home still have `min` garden-free orthogonal neighbours once `planted` is on the board? */
+function exitsSurvive(n: number, homes: readonly Pos[], planted: ReadonlySet<string>, min: number): boolean {
+  return homes.every((home) => orthOf(n, home).filter((q) => !planted.has(posKey(q))).length >= min);
 }
 
 /**
@@ -373,13 +495,37 @@ function manhattanTo(a: Pos, b: Pos): number {
   return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
 }
 
+function inBounds(n: number, p: Pos): boolean {
+  return p.x >= 0 && p.y >= 0 && p.x < n && p.y < n;
+}
+
 function orthOf(n: number, p: Pos): Pos[] {
   return [
     { x: p.x, y: p.y - 1 },
     { x: p.x + 1, y: p.y },
     { x: p.x, y: p.y + 1 },
     { x: p.x - 1, y: p.y },
-  ].filter((q) => q.x >= 0 && q.y >= 0 && q.x < n && q.y < n);
+  ].filter((q) => inBounds(n, q));
+}
+
+/** The four diagonal neighbours — 'essentials' falls back to these for a cornered home. */
+function diagonalsOf(n: number, p: Pos): Pos[] {
+  return [
+    { x: p.x - 1, y: p.y - 1 },
+    { x: p.x + 1, y: p.y - 1 },
+    { x: p.x + 1, y: p.y + 1 },
+    { x: p.x - 1, y: p.y + 1 },
+  ].filter((q) => inBounds(n, q));
+}
+
+/** Fisher-Yates on a copy, off the layout RNG stream. */
+function shuffledCopy<T>(items: readonly T[], rng: Rng): T[] {
+  const out = [...items];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = rng.int(i + 1);
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
 }
 
 /** Pick from `[value, weight]` pairs with integer weights. */

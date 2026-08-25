@@ -15,18 +15,27 @@
  * Either way `setup.ts` looks presets up by id (no hardcoded switch) and
  * `SetupScreen.tsx` renders the menu straight from `GARDEN_PRESETS`.
  *
- * Most entries are fixed layouts whose positions scale with board size N,
- * center c = (N - 1) / 2 (shown for the default 7×7, so c = 3). The first
- * entry, "Random", is instead procedural: it builds both its gardens AND its
- * homes from the game seed (see randomLayout.ts), which is what `seeded` and
- * `buildHomes` on the definition below exist for.
+ * The list has two halves, and the menus show them apart:
+ *
+ *  - The three MODES (`MODE_PRESETS`) — Fresh, Bare Essentials, True Random.
+ *    Each is procedural: it builds its gardens AND its homes from the seed
+ *    (see randomLayout.ts), which is what `seeded` and `buildHomes` on the
+ *    definition below exist for. Being generated, they fit every board size,
+ *    which is why they are what setup offers first.
+ *  - The CLASSIC layouts (`CLASSIC_PRESETS`, `classic: true`) — fixed maps,
+ *    hand-written or file-backed, mostly drawn around a 7×7. They still play
+ *    and their ids still resolve (saves, replays, multiplayer); they just sit
+ *    behind a "show classic layouts" toggle instead of crowding the menu.
+ *    Hand-written ones scale with board size N, center c = (N - 1) / 2 (the
+ *    positions below are shown for a 7×7, so c = 3).
  *
  * Preset gardens are wild tiles — they come from no player's supply (see
  * `createGame`), so a layout is free to use any mix of types.
  */
 
 import type { PlantableGardenType, Pos } from './types';
-import { RANDOM_LAYOUT_MIN_BOARD_SIZE, generateRandomLayout } from './randomLayout';
+import type { LayoutMode } from './randomLayout';
+import { LAYOUT_MODE_MIN_BOARD_SIZE, generateRandomLayout } from './randomLayout';
 import { presetDefFromFile } from './presetFile';
 
 export interface GardenPresetDef {
@@ -60,25 +69,65 @@ export interface GardenPresetDef {
    * too. Always returns 4 positions in clockwise order, like `homes`.
    */
   buildHomes?: (boardSize: number, seed: number) => Pos[];
+  /**
+   * A fixed hand-drawn layout rather than one of the starting-board MODES.
+   * Every one of these still plays, and every id still resolves — they are
+   * simply folded away behind "classic layouts" in the menus, so the first
+   * thing a player sees is the three modes and their own presets rather than a
+   * list mostly drawn for one board size. See `MODE_PRESETS` / `CLASSIC_PRESETS`.
+   */
+  classic?: boolean;
 }
 
-/** Hand-written presets: the ones that scale with board size or roll from the seed. */
-const BUILT_IN_PRESETS: readonly GardenPresetDef[] = [
-  {
-    id: 'random',
-    label: 'Random (symmetrical)',
-    description:
-      'A fresh 4-fold symmetric map every game: homes land equidistant somewhere new, and the extra gardens follow fairness rules that keep hazards off your doorstep.',
-    minBoardSize: RANDOM_LAYOUT_MIN_BOARD_SIZE,
+/**
+ * A starting-board mode: the whole map, homes included, rolled from the seed.
+ * All three share one generator (randomLayout.ts) and differ only in what it
+ * plants, so they are built from one factory rather than written out three
+ * times.
+ */
+function modePreset(mode: LayoutMode, label: string, description: string): GardenPresetDef {
+  return {
+    id: mode,
+    label,
+    description,
+    minBoardSize: LAYOUT_MODE_MIN_BOARD_SIZE[mode],
     seeded: true,
-    build: (n, seed = 0) => generateRandomLayout(n, seed).gardens,
-    buildHomes: (n, seed) => generateRandomLayout(n, seed).homes,
-  },
+    build: (n, seed = 0) => generateRandomLayout(n, seed, mode).gardens,
+    buildHomes: (n, seed) => generateRandomLayout(n, seed, mode).homes,
+  };
+}
+
+/**
+ * The three modes, emptiest first. `random` keeps its old id — it is the
+ * default preset and the one every existing save, replay and room references
+ * — even though its label is now "True Random".
+ */
+const MODE_PRESET_LIST: readonly GardenPresetDef[] = [
+  modePreset(
+    'fresh',
+    'Fresh',
+    'The board starts with only Home Gardens — placed symmetrically, somewhere new each game. Every other garden is one you plant.',
+  ),
+  modePreset(
+    'essentials',
+    'Bare Essentials',
+    'A Mushroom and a Dandelion Garden sit next to every Home Garden, and nothing else. Symmetrical, and rolled fresh each game.',
+  ),
+  modePreset(
+    'random',
+    'True Random',
+    'Creates a random symmetrical starting board: homes land equidistant somewhere new, and the extra gardens follow fairness rules that keep hazards off your doorstep.',
+  ),
+];
+
+/** The fixed hand-written layouts, kept for the games and replays that use them. */
+const CLASSIC_BUILT_INS: readonly GardenPresetDef[] = [
   {
     id: 'none',
     label: 'None',
-    description: 'Homes only (+ Center Star, if enabled). The purest race.',
+    description: 'Homes only (+ Center Star, if enabled), on the standard edge midpoints. The purest race.',
     minBoardSize: 5,
+    classic: true,
     build: () => [],
   },
   {
@@ -86,6 +135,7 @@ const BUILT_IN_PRESETS: readonly GardenPresetDef[] = [
     label: 'Few (tunnels)',
     description: 'Four Tunnel Gardens in a corner ring — a mobility loop every seat can use.',
     minBoardSize: 7,
+    classic: true,
     build: (n) => tunnelCorners(n),
   },
   {
@@ -93,6 +143,7 @@ const BUILT_IN_PRESETS: readonly GardenPresetDef[] = [
     label: 'Orchard',
     description: 'Four Dandelion Gardens, one guarding each home approach. Calm, economy-focused.',
     minBoardSize: 7,
+    classic: true,
     build: (n) => midEdges(n, 'dandelion'),
   },
   {
@@ -100,6 +151,7 @@ const BUILT_IN_PRESETS: readonly GardenPresetDef[] = [
     label: 'Fortress',
     description: 'Maize Gardens tax the approaches; Mushroom Gardens behind them rebuild your army. Slow and defensive.',
     minBoardSize: 7,
+    classic: true,
     build: (n) => [...midEdges(n, 'maize'), ...innerCross(n, 'mushroom')],
   },
   {
@@ -107,6 +159,7 @@ const BUILT_IN_PRESETS: readonly GardenPresetDef[] = [
     label: 'Gauntlet',
     description: 'Slippery corners fling you inward, straight at a ring of Flytraps guarding the center. Chaotic.',
     minBoardSize: 7,
+    classic: true,
     build: (n) => [...tunnelCorners(n, 'slippery'), ...innerDiagonals(n, 'flytrap')],
   },
   {
@@ -114,6 +167,7 @@ const BUILT_IN_PRESETS: readonly GardenPresetDef[] = [
     label: 'Many',
     description: 'Tunnels, Dandelions, Mushrooms and Flytraps together (16 gardens) — a bit of everything.',
     minBoardSize: 7,
+    classic: true,
     build: (n) => [
       ...tunnelCorners(n),
       ...midEdges(n, 'dandelion'),
@@ -122,6 +176,9 @@ const BUILT_IN_PRESETS: readonly GardenPresetDef[] = [
     ],
   },
 ];
+
+/** Every hand-written preset, modes first. */
+const BUILT_IN_PRESETS: readonly GardenPresetDef[] = [...MODE_PRESET_LIST, ...CLASSIC_BUILT_INS];
 
 /**
  * Every .json under `presets/`, eagerly bundled. The glob is a build-time
@@ -161,7 +218,9 @@ function fileBackedPresets(): GardenPresetDef[] {
       if (taken.has(id)) throw new Error(`Garden preset "${path}": the id "${id}" is already taken.`);
       taken.add(id);
       try {
-        return presetDefFromFile(PRESET_FILES[path], id);
+        // A file is a fixed layout for one board size, so it lists with the
+        // other classic maps rather than with the modes.
+        return { ...presetDefFromFile(PRESET_FILES[path], id), classic: true };
       } catch (e) {
         throw new Error(`Garden preset "${path}": ${e instanceof Error ? e.message : String(e)}`);
       }
@@ -173,8 +232,14 @@ export const GARDEN_PRESETS: readonly GardenPresetDef[] = [...BUILT_IN_PRESETS, 
 
 export const DEFAULT_GARDEN_PRESET_ID = 'random';
 
-/** Id of the procedural preset (the one whose map is rolled from the seed). */
+/** Id of the fullest procedural mode (the one whose whole map is rolled from the seed). */
 export const RANDOM_GARDEN_PRESET_ID = 'random';
+
+/** The starting-board modes, in menu order — what setup offers first. */
+export const MODE_PRESETS: readonly GardenPresetDef[] = GARDEN_PRESETS.filter((p) => !p.classic);
+
+/** The fixed layouts, hand-written and file-backed alike, folded behind a toggle in the menus. */
+export const CLASSIC_PRESETS: readonly GardenPresetDef[] = GARDEN_PRESETS.filter((p) => p.classic);
 
 /** Look up a preset by id, or `undefined` if the id isn't registered. */
 export function findGardenPreset(id: string): GardenPresetDef | undefined {
