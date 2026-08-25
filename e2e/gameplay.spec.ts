@@ -412,6 +412,22 @@ test('cancelling phased targeting returns the card to the hand', async ({ page }
   await expect(page.getByTestId('play-card-plot-twist')).toBeEnabled();
 });
 
+test('Escape backs out of targeting, like the Cancel button', async ({ page }) => {
+  const g = new Game(page);
+  await reachPlayablePlotTwist(g);
+  const banner = page.getByTestId('targeting-banner');
+
+  await page.getByTestId('play-card-plot-twist').click();
+  await expect(banner).toBeVisible();
+
+  // Same retreat as the Cancel button, without hunting for it.
+  await page.keyboard.press('Escape');
+  await g.ready();
+  await expect(banner).toBeHidden();
+  await expect(page.getByTestId('play-card-plot-twist')).toBeEnabled();
+  expect(await g.decision()).not.toBe('cardTargeting');
+});
+
 // ---------------------------------------------------------------------------
 // The True Random mode (the shipping default)
 // ---------------------------------------------------------------------------

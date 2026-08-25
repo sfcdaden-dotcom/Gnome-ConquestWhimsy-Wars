@@ -149,6 +149,36 @@ export function GameScreen({ game: g, onPlayAgain, onQuit }: GameScreenProps) {
     );
   }
 
+  /**
+   * Escape backs out one level, innermost first: an in-progress card targeting
+   * is cancelled (the card never left the hand, so this is always safe), then
+   * an open plant submenu, then a selected gnome. Every one of those was
+   * previously escapable only by finding and clicking its own small button.
+   *
+   * It listens on the document rather than a container because clicking the
+   * board leaves focus on <body>, and Escape is precisely the key people press
+   * without looking at where focus went. Anything nested that owns Escape —
+   * the action menu while focused, the quick-chat picker while open — consumes
+   * the event before it reaches here.
+   */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      if (interactive && decision?.kind === 'cardTargeting' && decision.player === playerToAct) {
+        if (!dispatch({ type: 'cancelTargeting', player: decision.player })) setSel(NO_SEL);
+      } else if (submenu !== null) {
+        setSubmenu(null);
+      } else if (sel.kind === 'unit') {
+        setSel(NO_SEL);
+      } else {
+        return;
+      }
+      e.preventDefault();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [interactive, decision, playerToAct, submenu, sel.kind, dispatch]);
+
   // --- board click routing -----------------------------------------------------
 
   /** Thin adapter: the rules decide, this dispatches or moves the selection. */

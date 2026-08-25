@@ -179,20 +179,25 @@ function QuickChatComposer({
 
   // Escape steps back one level (phrases → wheel → closed); an outside click
   // closes outright.
+  //
+  // Capture phase, and the event stops here: the game screen also backs out on
+  // Escape (targeting, then a selection), and an open picker is the innermost
+  // thing on screen, so it gets the key and nothing behind it does.
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
+      e.stopPropagation();
       if (groupId !== null) setGroupId(null);
       else close();
     };
     const onDown = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) close();
     };
-    document.addEventListener('keydown', onKey);
+    document.addEventListener('keydown', onKey, true);
     document.addEventListener('mousedown', onDown);
     return () => {
-      document.removeEventListener('keydown', onKey);
+      document.removeEventListener('keydown', onKey, true);
       document.removeEventListener('mousedown', onDown);
     };
   }, [open, groupId]);
