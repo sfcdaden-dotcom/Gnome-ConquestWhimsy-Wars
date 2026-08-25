@@ -701,6 +701,8 @@ export class Room {
           return await this.configure(c, message);
         case 'start':
           return await this.start(c);
+        case 'takeOverRoom':
+          return await this.takeOverRoom(c);
         case 'action':
           return await this.act(c, message.action);
       }
@@ -711,6 +713,36 @@ export class Room {
       }
       throw err;
     }
+  }
+
+  /**
+   * Claim a room whose host is gone.
+   *
+   * This is the deliberate, visible version of the handover the room used to
+   * do behind everyone's back. Somebody presses a button, the room announces
+   * who it went to, and it is a real transfer: the previous host's key is
+   * already gone by the time this is reachable, so they come back as an
+   * ordinary player rather than silently taking the room back.
+   *
+   * Only reachable when there is genuinely no host — a room is never taken off
+   * somebody who is merely disconnected. `graceExpired` is what makes that
+   * true, sixty seconds after the host dropped.
+   */
+  private async takeOverRoom(c: ConnState): Promise<void> {
+    if (this.data.hostToken !== null) {
+      throw new RoomError('HAS_HOST', 'This room already has a host');
+    }
+    this.data.hostToken = c.token;
+    this.data.hostKey = null;
+    this.data.graceUntil = null;
+    await this.save();
+
+    const name = c.seat === null ? null : (this.data.seats[c.seat]?.name ?? null);
+    for (const conn of this.conns.values()) {
+      conn.conn.send({ t: 'roomTakenOver', seat: c.seat, name });
+    }
+    this.announceIdentities();
+    this.broadcastRoom();
   }
 
   private requireHost(c: ConnState): void {

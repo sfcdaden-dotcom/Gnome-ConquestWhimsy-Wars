@@ -46,6 +46,7 @@ import {
   encodeClientMessage,
   parseServerMessage,
   hostKeyStore,
+  recentRoom,
   reconnectDelayMs,
   roomSocketUrl,
   tokenStore,
@@ -87,6 +88,8 @@ export interface NetGame {
   /** Host lobby controls (server-rejected for anyone else). */
   configure: (config: Omit<Extract<ClientMessage, { t: 'configure' }>, 't'>) => void;
   start: () => void;
+  /** Claim a room whose host has gone. Refused unless it really has none. */
+  takeOverRoom: () => void;
   /** Give up this tab's seat and dial back in as a new player. */
   rejoin: () => void;
   /** Lobby-level toasts (the in-game ones ride on `game`). */
@@ -194,6 +197,11 @@ export function useNetGame(code: string, name: string): NetGame {
           case 'revealed':
             setRevealed({ seal: msg.seal, record: msg.record });
             return;
+          case 'roomTakenOver': {
+            const who = msg.name ?? (msg.seat === null ? 'A spectator' : seatName(msg.seat));
+            pushToast(`👑 ${who} took over the room and can start the game now.`, 'info');
+            return;
+          }
           case 'roomClosed':
             // Nothing to come back to: drop the seat token and the host key so
             // a later visit to this code arrives as a stranger rather than
@@ -201,6 +209,7 @@ export function useNetGame(code: string, name: string): NetGame {
             setClosedReason(msg.reason);
             tokenStore.forget(seatStores, code);
             hostKeyStore.forget(localStorage, code);
+            recentRoom.forget(localStorage, code);
             return;
           case 'error':
             pushToast(msg.message, 'error');
@@ -250,9 +259,15 @@ export function useNetGame(code: string, name: string): NetGame {
   // whenever we are in the room, including while re-dialling: a seat is not
   // released just because the socket blipped.
   useEffect(() => {
-    tokenStore.heartbeat(seatStores, code);
-    const beat = window.setInterval(() => tokenStore.heartbeat(seatStores, code), CLAIM_HEARTBEAT_MS);
-    return () => window.clearInterval(beat);
+    const beat = () => {
+      tokenStore.heartbeat(seatStores, code);
+      // Same tick keeps the breadcrumb fresh, so the menu can offer a way back
+      // into this room if the tab is closed and the app reopened elsewhere.
+      recentRoom.save(localStorage, code, Date.now());
+    };
+    beat();
+    const id = window.setInterval(beat, CLAIM_HEARTBEAT_MS);
+    return () => window.clearInterval(id);
   }, [code]);
 
   /** Come back as a new player, abandoning the seat this tab was holding. */
@@ -354,6 +369,7 @@ export function useNetGame(code: string, name: string): NetGame {
     [send],
   );
   const start = useCallback(() => send({ t: 'start' }), [send]);
+  const takeOverRoom = useCallback(() => send({ t: 'takeOverRoom' }), [send]);
 
   const status: NetStatus = closedReason
     ? 'closed'
@@ -367,7 +383,19 @@ export function useNetGame(code: string, name: string): NetGame {
             ? 'finished'
             : 'lobby';
 
-  return { status, room, you, game, revealed, closedReason, configure, start, rejoin, toasts };
+  return {
+    status,
+    room,
+    you,
+    game,
+    revealed,
+    closedReason,
+    configure,
+    start,
+    takeOverRoom,
+    rejoin,
+    toasts,
+  };
 }
 
 // Re-exported so screens can type seat edits without reaching into protocol.

@@ -87,7 +87,7 @@ export const CLAIM_STALE_MS = 10_000;
 /** How often a live tab refreshes its claim. Comfortably inside the stale window. */
 export const CLAIM_HEARTBEAT_MS = 3_000;
 
-type Slot = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
+export type Slot = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
 
 export interface SeatStores {
   /** Per tab, survives a reload: where this tab's live token lives. */
@@ -192,6 +192,64 @@ export const hostKeyStore = {
   },
   forget(local: Slot, code: string): void {
     local.removeItem(this.key(code));
+  },
+};
+
+/**
+ * The last room this browser was in, so the menu can offer a way back.
+ *
+ * The seat token and the host key are both keyed by room code, which is fine
+ * for getting back into a room you can still name — but a player who closed
+ * the tab and reopened the app has no code to type, and the credentials that
+ * would have let them straight back in sit there unused. This is the
+ * breadcrumb that connects the two.
+ *
+ * It is only a pointer. Whether the seat is still there, whether the room even
+ * still exists, is the room's answer to give — a stale code lands on the
+ * "this room is closed" screen, which is the right thing for it to say.
+ */
+export const RECENT_ROOM_KEY = 'ww:room:recent';
+
+/** How long a breadcrumb is worth offering. Well past any room's own lifetime. */
+export const RECENT_ROOM_TTL_MS = 2 * 60 * 60 * 1000;
+
+export interface RecentRoom {
+  code: string;
+  seen: number;
+}
+
+export const recentRoom = {
+  save(local: Slot, code: string, now: number): void {
+    local.setItem(RECENT_ROOM_KEY, JSON.stringify({ code, seen: now } satisfies RecentRoom));
+  },
+
+  /** The room to offer a way back into, or null. */
+  load(local: Slot, now: number): RecentRoom | null {
+    const raw = local.getItem(RECENT_ROOM_KEY);
+    if (!raw) return null;
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      if (typeof parsed !== 'object' || parsed === null) return null;
+      const { code, seen } = parsed as Partial<RecentRoom>;
+      if (typeof code !== 'string' || typeof seen !== 'number') return null;
+      if (now - seen > RECENT_ROOM_TTL_MS) return null;
+      return { code, seen };
+    } catch {
+      return null;
+    }
+  },
+
+  forget(local: Slot, code: string): void {
+    // Only drop the breadcrumb if it still points at this room: a later room
+    // has already replaced it, and that one is the useful one.
+    const raw = local.getItem(RECENT_ROOM_KEY);
+    if (!raw) return;
+    try {
+      const parsed = JSON.parse(raw) as Partial<RecentRoom>;
+      if (parsed.code === code) local.removeItem(RECENT_ROOM_KEY);
+    } catch {
+      local.removeItem(RECENT_ROOM_KEY);
+    }
   },
 };
 

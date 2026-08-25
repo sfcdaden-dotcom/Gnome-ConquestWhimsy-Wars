@@ -275,6 +275,11 @@ export type ServerMessage =
    */
   | { t: 'revealed'; seal: GameSeal; record: MatchRecord }
   /**
+   * Somebody claimed a room whose host had gone. Announced to everyone by
+   * name: the old handover was silent, which is most of why it was confusing.
+   */
+  | { t: 'roomTakenOver'; seat: number | null; name: string | null }
+  /**
    * The room is gone and is not coming back. Sent immediately before the
    * socket is closed with `CLOSE_ROOM_CLOSED`, so the client can say what
    * happened instead of showing a generic disconnect.

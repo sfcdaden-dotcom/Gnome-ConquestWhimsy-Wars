@@ -238,3 +238,36 @@ test('two tabs in one browser are two players, not one seat fought over', async 
 
   await ctx.close();
 });
+
+/**
+ * Closing the tab and coming back to the app — with no link and no code in
+ * hand — used to be the end of a room, even though the credentials to walk
+ * straight back in were sitting in storage the whole time.
+ */
+test('the menu offers a way back into the room you just left', async ({ browser }) => {
+  const ctx = await browser.newContext();
+  const page = await ctx.newPage();
+
+  await page.goto('/');
+  await page.getByTestId('home-online').click();
+  await page.getByTestId('online-name').fill('Ada');
+  await page.getByTestId('online-host').click();
+  await expect(page.getByTestId('room-lobby')).toBeVisible();
+  const code = (await page.getByTestId('lobby-code').textContent())!.trim();
+
+  // Back to the app with no room in the URL at all — the bookmark, not the
+  // invite link.
+  await page.goto('/');
+  await page.getByTestId('home-online').click();
+
+  const rejoin = page.getByTestId('online-rejoin');
+  await expect(rejoin).toContainText(code);
+  await rejoin.click();
+
+  // Same room, same seat, still the host.
+  await expect(page.getByTestId('room-lobby')).toBeVisible();
+  await expect(page.getByTestId('lobby-code')).toHaveText(code);
+  await expect(page.getByTestId('lobby-start')).toBeVisible();
+
+  await ctx.close();
+});

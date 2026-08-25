@@ -1342,4 +1342,54 @@ describe('a lobby whose host has gone', () => {
     expect(reopened.snapshot().hasHost).toBe(false);
     expect(redial.last('welcome')?.you.isHost).toBeUndefined();
   });
+  it('lets somebody still in the room take it over once the host is gone', async () => {
+    const { host, room, c1 } = await hosted();
+    await room.disconnect('c0');
+    host.clock += HOST_GRACE_MS;
+    await room.onAlarm();
+
+    await room.handle('c1', { t: 'takeOverRoom' });
+
+    expect(c1.last('welcome')?.you.isHost).toBe(true);
+    expect(c1.last('room')!.room.hasHost).toBe(true);
+    // Announced by name — the old handover was silent, which is most of why
+    // it was confusing.
+    expect(c1.last('roomTakenOver')?.name).toBe('Thistle');
+
+    await room.handle('c1', { t: 'configure', seats: [{ index: 0, controller: 'cpu' }] });
+    await room.handle('c1', { t: 'start' });
+    expect(room.phase).toBe('playing');
+  });
+
+  it('refuses a takeover while the room still has a host', async () => {
+    const { room, c1 } = await hosted();
+    await room.handle('c1', { t: 'takeOverRoom' });
+    expect(c1.errors()).toContain('HAS_HOST');
+    expect(c1.last('welcome')?.you.isHost).toBe(false);
+  });
+
+  it('refuses a takeover during the grace window', async () => {
+    // The host is merely disconnected. A room is never taken off somebody who
+    // might still be coming back.
+    const { room, c1 } = await hosted();
+    await room.disconnect('c0');
+    await room.handle('c1', { t: 'takeOverRoom' });
+    expect(c1.errors()).toContain('HAS_HOST');
+  });
+
+  it('does not let the original host silently reclaim the room', async () => {
+    const { host, room, c0, c1, hostKey } = await hosted();
+    const oldToken = c0.last('welcome')!.you.token;
+    await room.disconnect('c0');
+    host.clock += HOST_GRACE_MS;
+    await room.onAlarm();
+    await room.handle('c1', { t: 'takeOverRoom' });
+
+    // Back with both credentials, and neither one takes the room back.
+    const returning = new FakeConn('c0-back');
+    await room.hello(returning, { ...HELLO, token: oldToken, hostKey });
+
+    expect(returning.last('welcome')?.you.isHost).toBe(false);
+    expect(c1.last('welcome')?.you.isHost).toBe(true);
+  });
 });

@@ -22,8 +22,8 @@ import { CLASSIC_PRESETS, MODE_PRESETS } from '../engine';
 import type { AiDifficulty, GardenPreset } from '../engine';
 import { GameScreen } from './GameScreen';
 import { useNetGame } from './useNetGame';
-import { hostKeyStore, NAME_KEY, roomCodeFromSearch, roomHref } from './netClient';
-import { ROOM_CODE_LENGTH } from '../net/protocol';
+import { hostKeyStore, NAME_KEY, recentRoom, roomCodeFromSearch, roomHref } from './netClient';
+import { HOST_GRACE_MS, ROOM_CODE_LENGTH } from '../net/protocol';
 import type { RoomClosedReason } from '../net/protocol';
 import { HostGraceBanner } from './HostGraceBanner';
 import { playerColor } from './meta';
@@ -108,6 +108,10 @@ function OnlineMenu({
   }
 
   const codeReady = joinCode.trim().length === ROOM_CODE_LENGTH;
+  // A room this browser was recently in. The credentials to walk back into it
+  // are already here, keyed by code — this is the only thing that was missing,
+  // for somebody who closed the tab and came back without the link.
+  const [recent] = useState(() => recentRoom.load(localStorage, Date.now()));
 
   return (
     <div className="home-screen" data-testid="online-menu">
@@ -133,6 +137,21 @@ function OnlineMenu({
           <p className="form-error" role="alert" data-testid="online-error">
             {error}
           </p>
+        )}
+
+        {recent && (
+          <button
+            type="button"
+            className="btn big home-choice"
+            data-testid="online-rejoin"
+            onClick={() => onEnter(recent.code)}
+          >
+            <span className="home-choice-icon">↩️</span>
+            <span className="home-choice-label">Rejoin room {recent.code}</span>
+            <span className="home-choice-sub">
+              You were here recently — your seat is waiting if the room still is
+            </span>
+          </button>
         )}
 
         <div className="home-choices">
@@ -454,16 +473,37 @@ function Lobby({
                 <p className="lobby-blocker" data-testid="lobby-blocker">
                   {blockerText(blocker)}
                 </p>
-                {isHost && (
-                  <button
-                    type="button"
-                    className="btn accent big"
-                    data-testid="lobby-start"
-                    disabled={!canStart(blocker)}
-                    onClick={net.start}
-                  >
-                    🎲 Start the game
-                  </button>
+                {blocker.kind === 'hostless' ? (
+                  // The room waited out its host and nobody owns it. This is
+                  // the deliberate handover: whoever presses it becomes the
+                  // host, and everyone is told who did.
+                  <>
+                    <button
+                      type="button"
+                      className="btn accent big"
+                      data-testid="lobby-take-over"
+                      onClick={net.takeOverRoom}
+                    >
+                      👑 Take over the room
+                    </button>
+                    <p className="muted small">
+                      They waited {Math.round(HOST_GRACE_MS / 1000)} seconds and did not come back.
+                      Whoever takes the room over sets the table and starts the game; if they turn
+                      up later they join as an ordinary player.
+                    </p>
+                  </>
+                ) : (
+                  isHost && (
+                    <button
+                      type="button"
+                      className="btn accent big"
+                      data-testid="lobby-start"
+                      disabled={!canStart(blocker)}
+                      onClick={net.start}
+                    >
+                      🎲 Start the game
+                    </button>
+                  )
                 )}
                 {blockerAction(blocker, isHost) && (
                   <p className="muted small" data-testid="lobby-blocker-action">
