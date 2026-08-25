@@ -134,8 +134,14 @@ export interface RoomSnapshot {
   code: string;
   phase: RoomPhase;
   seats: SeatInfo[];
-  /** Seat that owns the lobby settings and the start button. */
+  /**
+   * Seat that owns the lobby settings and the start button, or null when the
+   * host holds no seat — which happens both when they are spectating and when
+   * there is no host at all. `hasHost` is what tells those two apart.
+   */
   hostSeat: number | null;
+  /** Is anybody the host right now? False only between a host leaving and a takeover. */
+  hasHost: boolean;
   boardSize: number;
   gardenPreset: GardenPreset;
   /**

@@ -37,8 +37,12 @@ test('two browsers meet in a room and play a networked turn', async ({ browser }
   await guest.getByTestId('online-join-go').click();
   await expect(guest.getByTestId('room-lobby')).toBeVisible();
 
-  // The guest is not the host: no start button for them.
-  await expect(guest.getByTestId('lobby-waiting')).toBeVisible();
+  // The guest is not the host: no start button for them, but the same
+  // description of what the room is waiting for.
+  await expect(guest.getByTestId('lobby-start')).toHaveCount(0);
+  await expect(guest.getByTestId('lobby-blocker')).toHaveText(
+    /Waiting for Ada to start the game/,
+  );
   await expect(host.getByTestId('lobby-start')).toBeEnabled();
   await host.getByTestId('lobby-start').click();
 
@@ -165,7 +169,7 @@ test('a host can reload the lobby while waiting, and still be the host', async (
   await expect(host.getByTestId('room-lobby')).toBeVisible();
   await expect(host.getByTestId('lobby-code')).toHaveText(code);
   await expect(host.getByTestId('lobby-start')).toBeEnabled();
-  await expect(guest.getByTestId('lobby-waiting')).toBeVisible();
+  await expect(guest.getByTestId('lobby-start')).toHaveCount(0);
 
   await host.getByTestId('lobby-start').click();
   await expect(host.getByTestId('game-screen')).toBeVisible();

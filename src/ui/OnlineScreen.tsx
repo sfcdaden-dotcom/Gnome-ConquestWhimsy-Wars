@@ -25,6 +25,7 @@ import { useNetGame } from './useNetGame';
 import { NAME_KEY, roomCodeFromSearch, roomHref } from './netClient';
 import { ROOM_CODE_LENGTH } from '../net/protocol';
 import { playerColor } from './meta';
+import { blockerAction, blockerText, canStart, lobbyBlocker } from './lobbyStatus';
 
 /** Point the address bar at the room (or at no room) without a navigation. */
 function syncUrl(code: string | null): void {
@@ -225,8 +226,9 @@ function Lobby({
     window.setTimeout(() => setCopied(null), 2000);
   }
 
-  const emptyHumanSeats =
-    room?.seats.filter((s) => s.controller === 'human' && !s.connected).map((s) => s.index + 1) ?? [];
+  // One reading of the room, shared by every screen looking at it. See
+  // lobbyStatus.ts for why this is not computed per viewer.
+  const blocker = room ? lobbyBlocker(room) : null;
 
   return (
     <div className="home-screen" data-testid="room-lobby">
@@ -398,34 +400,29 @@ function Lobby({
               </div>
             )}
 
-            {isHost && status === 'lobby' ? (
-              <>
-                <button
-                  type="button"
-                  className="btn accent big"
-                  data-testid="lobby-start"
-                  disabled={emptyHumanSeats.length > 0}
-                  onClick={net.start}
-                >
-                  {emptyHumanSeats.length > 0
-                    ? `Waiting for seat ${emptyHumanSeats.join(', ')}…`
-                    : '🎲 Start the game'}
-                </button>
-                {emptyHumanSeats.length > 0 && (
-                  <p className="muted small" data-testid="lobby-empty-hint">
-                    Every seat starts open for a person. Share the code and they'll be seated as they
-                    arrive — or switch seat {emptyHumanSeats.join(', ')} to CPU to play without them.
+            {status === 'lobby' && blocker && (
+              <div className="lobby-status">
+                {/* The same sentence on every screen in the room. */}
+                <p className="lobby-blocker" data-testid="lobby-blocker">
+                  {blockerText(blocker)}
+                </p>
+                {isHost && (
+                  <button
+                    type="button"
+                    className="btn accent big"
+                    data-testid="lobby-start"
+                    disabled={!canStart(blocker)}
+                    onClick={net.start}
+                  >
+                    🎲 Start the game
+                  </button>
+                )}
+                {blockerAction(blocker, isHost) && (
+                  <p className="muted small" data-testid="lobby-blocker-action">
+                    {blockerAction(blocker, isHost)}
                   </p>
                 )}
-              </>
-            ) : (
-              status === 'lobby' && (
-                <p className="muted" data-testid="lobby-waiting">
-                  {room.hostSeat !== null
-                    ? `Waiting for ${room.seats[room.hostSeat]?.name ?? 'the host'} to start…`
-                    : 'Waiting for the host to start…'}
-                </p>
-              )
+              </div>
             )}
           </>
         )}

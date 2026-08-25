@@ -1086,6 +1086,7 @@ export class Room {
       phase: this.data.phase,
       seats,
       hostSeat: this.hostSeat(),
+      hasHost: this.data.hostToken !== null,
       boardSize: this.data.boardSize,
       gardenPreset: this.data.gardenPreset,
       // The commitment, never the secret — that waits for `revealed`.
