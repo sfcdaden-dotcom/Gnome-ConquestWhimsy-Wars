@@ -1264,12 +1264,31 @@ h2 {
   font-size: 3rem;
 }
 
-.fight-overlay {
-  min-width: min(460px, 92vw);
+/* The fight replay: a card at the board's top-right corner, over nothing that
+   matters. No backdrop, no dimming — the board stays readable while the dice
+   land, which is the whole point of watching them. */
+.fight-playback {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 30;
+  width: min(240px, 42%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  padding: 10px 12px;
+  text-align: center;
+  animation: toast-in 0.2s ease;
 }
 .fight-header {
-  font-weight: 800;
-  font-size: 1.1rem;
+  font-weight: 700;
+  font-size: 0.86rem;
+  line-height: 1.25;
 }
 .big-dice {
   display: flex;
@@ -1278,7 +1297,7 @@ h2 {
   font-size: 1rem;
 }
 .big-dice .die {
-  font-size: 3.2rem;
+  font-size: 2.2rem;
   line-height: 1;
   animation: dice-in 0.35s ease;
 }
@@ -1293,7 +1312,7 @@ h2 {
   }
 }
 .fight-steps {
-  max-height: 180px;
+  max-height: 120px;
   overflow-y: auto;
   text-align: left;
   width: 100%;
@@ -1584,6 +1603,12 @@ h2 {
   }
   .left-col > * {
     flex: 1 1 220px;
+  }
+  /* Stacked, the board already fills the width — a corner card would sit on
+     top of it, so the replay goes under the board instead of beside it. */
+  .fight-playback {
+    position: static;
+    width: min(100%, 320px);
   }
 }
 

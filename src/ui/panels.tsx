@@ -355,7 +355,12 @@ function FightSideBadge({
 }
 
 // ---------------------------------------------------------------------------
-// Fight: finished-fight step-through overlay
+// Fight: finished-fight step-through
+//
+// It used to be a modal overlay — dimmed backdrop, blur, centred over
+// everything — for what is a replay of dice that have already been rolled.
+// Nothing about it needs an answer, so it no longer takes the screen: it is a
+// card beside the board, and the board stays visible and readable underneath.
 // ---------------------------------------------------------------------------
 
 export interface FightPlaybackProps {
@@ -364,7 +369,7 @@ export interface FightPlaybackProps {
   onSkip: () => void;
 }
 
-export function FightPlaybackOverlay({ state, playback, onSkip }: FightPlaybackProps) {
+export function FightPlaybackCard({ state, playback, onSkip }: FightPlaybackProps) {
   const shownEvents = playback.events.slice(0, playback.shown);
   // Header describes the most recent fight in the shown window.
   let header = '⚔️ Fight!';
@@ -377,27 +382,27 @@ export function FightPlaybackOverlay({ state, playback, onSkip }: FightPlaybackP
     if (ev.type === 'fightRolled') lastRoll = ev;
   }
   return (
-    <div className="overlay" role="dialog" aria-label="Fight">
-      <div className="overlay-card fight-overlay">
-        <div className="fight-header">{header}</div>
-        {lastRoll && (
-          <div className="big-dice" key={shownEvents.length}>
-            <span className="die">{dieFace(lastRoll.rolls[0])}</span>
-            <span className="vs">vs</span>
-            <span className="die">{dieFace(lastRoll.rolls[1])}</span>
-          </div>
-        )}
-        <div className="fight-steps">
-          {shownEvents.map((ev, i) => (
-            <div key={i} className={`log-line${i === shownEvents.length - 1 ? ' latest' : ''}`}>
-              {describeEvent(state, ev)}
-            </div>
-          ))}
+    /* Not a dialog: it interrupts nothing, so it announces itself politely and
+       leaves focus where the player left it. */
+    <div className="fight-playback" role="status" aria-label="Fight" data-testid="fight-playback">
+      <div className="fight-header">{header}</div>
+      {lastRoll && (
+        <div className="big-dice" key={shownEvents.length}>
+          <span className="die">{dieFace(lastRoll.rolls[0])}</span>
+          <span className="vs">vs</span>
+          <span className="die">{dieFace(lastRoll.rolls[1])}</span>
         </div>
-        <button type="button" className="btn" data-testid="skip-playback" onClick={onSkip}>
-          Skip ⏭
-        </button>
+      )}
+      <div className="fight-steps">
+        {shownEvents.map((ev, i) => (
+          <div key={i} className={`log-line${i === shownEvents.length - 1 ? ' latest' : ''}`}>
+            {describeEvent(state, ev)}
+          </div>
+        ))}
       </div>
+      <button type="button" className="btn small" data-testid="skip-playback" onClick={onSkip}>
+        Skip ⏭
+      </button>
     </div>
   );
 }

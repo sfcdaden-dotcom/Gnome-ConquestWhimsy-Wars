@@ -15,7 +15,7 @@ import type { Action, CardId, CardTarget, GameState, PendingDecision, PlayerId, 
 import { gardenAt, getLegalActionIntents, getPendingDecisionOptions, posKey } from '../engine';
 import { Board } from './Board';
 import { DecisionPanel } from './DecisionPanel';
-import { FightPanel, FightPlaybackOverlay, HandPanel, PlayerPanels } from './panels';
+import { FightPanel, FightPlaybackCard, HandPanel, PlayerPanels } from './panels';
 import { ChatPanel, QuickChatFeed } from './QuickChat';
 import { GARDEN_META, cardName, cardText, decisionLabel, playerColor, pname } from './meta';
 import { GardenIcon, UnitIcon } from './art';
@@ -167,10 +167,11 @@ export function GameScreen({ game: g, onPlayAgain, onQuit }: GameScreenProps) {
   }
 
   /**
-   * Escape backs out one level, most recent first: an armed "New game", then
-   * an in-progress card targeting (the card never left the hand, so cancelling
-   * is always safe), then an open plant submenu, then a selected gnome. Every
-   * one of those was previously escapable only by finding its own button.
+   * Escape backs out one level, most recent first: a fight replay still
+   * stepping, an armed "New game", an in-progress card targeting (the card
+   * never left the hand, so cancelling is always safe), an open plant submenu,
+   * then a selected gnome. Every one of those was previously escapable only by
+   * finding its own button.
    *
    * It listens on the document rather than a container because clicking the
    * board leaves focus on <body>, and Escape is precisely the key people press
@@ -181,7 +182,9 @@ export function GameScreen({ game: g, onPlayAgain, onQuit }: GameScreenProps) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
-      if (quitArmed) {
+      if (playback) {
+        g.skipPlayback();
+      } else if (quitArmed) {
         setQuitArmed(false);
       } else if (interactive && decision?.kind === 'cardTargeting' && decision.player === playerToAct) {
         if (!dispatch({ type: 'cancelTargeting', player: decision.player })) setSel(NO_SEL);
@@ -196,7 +199,7 @@ export function GameScreen({ game: g, onPlayAgain, onQuit }: GameScreenProps) {
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [quitArmed, interactive, decision, playerToAct, submenu, sel.kind, dispatch]);
+  }, [playback, g, quitArmed, interactive, decision, playerToAct, submenu, sel.kind, dispatch]);
 
   // --- board click routing -----------------------------------------------------
 
@@ -414,6 +417,11 @@ export function GameScreen({ game: g, onPlayAgain, onQuit }: GameScreenProps) {
             onCellClick={onCellClick}
           />
           <QuickChatFeed state={state} bubbles={g.chatBubbles} />
+          {/* The dice replay, beside the board rather than over it. Hidden once
+              the game ends, where the end overlay is the thing to read. */}
+          {playback && state.status !== 'finished' && (
+            <FightPlaybackCard state={state} playback={playback} onSkip={g.skipPlayback} />
+          )}
           {/* Stable-height slot: the bar appearing/disappearing must not
               reflow the board. Targeting replaces the action bar. */}
           <div className="board-footer">
@@ -503,7 +511,10 @@ export function GameScreen({ game: g, onPlayAgain, onQuit }: GameScreenProps) {
         </aside>
       </div>
 
-      {/* Overlays (priority: end > fight playback > pass interstitial) */}
+      {/* Overlays (priority: end > pass interstitial). The fight replay is no
+          longer among them — it sits beside the board and covers nothing — but
+          it still holds the pass interstitial back, so a hand-off cannot hide
+          the fight that just decided the turn. */}
       {state.status === 'finished' && !reviewing ? (
         <EndOverlay
           state={state}
@@ -511,9 +522,7 @@ export function GameScreen({ game: g, onPlayAgain, onQuit }: GameScreenProps) {
           onQuit={onQuit}
           onReview={() => setReviewing(true)}
         />
-      ) : playback ? (
-        <FightPlaybackOverlay state={state} playback={playback} onSkip={g.skipPlayback} />
-      ) : needsPass && playerToAct !== null ? (
+      ) : needsPass && !playback && playerToAct !== null ? (
         <PassOverlay state={state} seat={playerToAct} onConfirm={g.confirmPass} />
       ) : null}
 
