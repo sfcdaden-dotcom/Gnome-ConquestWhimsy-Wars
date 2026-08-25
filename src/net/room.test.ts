@@ -1504,4 +1504,39 @@ describe('a room nobody is in', () => {
     expect(late.last('roomClosed')?.reason).toBe('abandoned');
     expect(late.closed?.code).toBe(CLOSE_ROOM_CLOSED);
   });
+  it('leaves nothing replayable in a tombstone', async () => {
+    const { host, room } = await hosted();
+    await room.handle('c0', { t: 'start' });
+    await room.disconnect('c0');
+    await room.disconnect('c1');
+    host.clock += EMPTY_ROOM_REAP_MS;
+    await room.onAlarm();
+
+    // `Room.open` rebuilds a game from `config` + `seed`; a tombstone that
+    // kept them would replay itself into a live state on every load.
+    expect(host.stored?.config).toBeNull();
+    expect(host.stored?.seed).toBeNull();
+    expect(host.stored?.actions).toEqual([]);
+    const reopened = await Room.open(host, 'ABC123');
+    expect(reopened.gameState).toBeNull();
+  });
+
+  it('reuses a tombstoned code when the server draws it again', async () => {
+    const { host, room } = await hosted();
+    await room.handle('c0', { t: 'start' });
+    await room.disconnect('c0');
+    await room.disconnect('c1');
+    host.clock += EMPTY_ROOM_REAP_MS;
+    await room.onAlarm();
+
+    // The tombstone stops a CLIENT rebuilding a room from a stale code. A
+    // fresh create is the server choosing the code, and gets a working room.
+    const reopened = await Room.open(host, 'ABC123');
+    const hostKey = await reopened.hostKeyForCreate();
+    const opener = new FakeConn('opener');
+    await reopened.hello(opener, { ...HELLO, hostKey });
+
+    expect(reopened.isClosed).toBe(false);
+    expect(opener.last('welcome')?.you.isHost).toBe(true);
+  });
 });

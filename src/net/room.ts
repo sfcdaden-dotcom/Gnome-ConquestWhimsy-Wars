@@ -578,6 +578,15 @@ export class Room {
    * it out from under the client that already has one.
    */
   async hostKeyForCreate(): Promise<string> {
+    // A create lands on a tombstone only if `generateRoomCode` drew a closed
+    // room's code again. The server picked it, so it means to use it: the
+    // tombstone is there to stop CLIENTS rebuilding a room, not to burn the
+    // code forever.
+    if (this.isClosed) {
+      this.data.closed = undefined;
+      this.data.reapAt = null;
+      this.data.hostKey = null;
+    }
     if (this.data.hostKey === null) {
       this.data.hostKey = hex(this.host.randomBytes(16));
       await this.save();
@@ -625,6 +634,10 @@ export class Room {
    * so somebody who has been watching can take it and the game can start.
    */
   async disconnect(connId: string): Promise<void> {
+    // The transport reports a close for every socket the room hung up on, so
+    // this runs after `close` has already emptied everything. Writing here
+    // would only put an empty action chunk back beside the tombstone.
+    if (this.isClosed) return;
     this.conns.delete(connId);
     this.meters.delete(connId);
     if (this.data.phase === 'lobby') this.seatSpectators();
@@ -1145,11 +1158,17 @@ export class Room {
     this.data.reapAt = now + TOMBSTONE_TTL_MS;
     this.data.clock = null;
     this.cpuWakeAt = null;
-    // Nothing about a closed room is worth keeping but the fact that it closed.
+    // Nothing about a closed room is worth keeping but the fact that it
+    // closed. `config` and `seed` go with the rest: `Room.open` hydrates on
+    // those two, and a tombstone that still had them would replay itself into
+    // a live GameState every time it was loaded.
     this.data.actions = [];
     this.data.tokens = {};
     this.data.hostToken = null;
     this.data.hostKey = null;
+    this.data.config = null;
+    this.data.seed = null;
+    this.data.seal = null;
     this.state = null;
     await this.host.store.close(this.data);
 
