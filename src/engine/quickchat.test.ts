@@ -13,8 +13,10 @@ import {
   QUICK_CHAT_PER_TURN,
   QUICK_CHAT_MUSINGS,
   QUICK_CHAT_PHRASES,
+  QUICK_CHAT_SCHEMES,
   applyAction,
   chooseAiAction,
+  createAiMemory,
   createGame,
   getLegalActions,
   getLegalActionIntents,
@@ -22,6 +24,7 @@ import {
   isGameOver,
   quickChatsLeft,
 } from './index';
+import { CPU_SCHEME_LINES } from './ai/chatter';
 import { activePlayer, drive, newGame, toActionPhase } from './testkit';
 
 const say = (player: number, phraseId: string): Action => ({ type: 'quickChat', player, phraseId });
@@ -139,7 +142,7 @@ describe('quick chat action', () => {
 // CPU idle chatter
 // ---------------------------------------------------------------------------
 
-describe('CPU idle chatter', () => {
+describe('CPU chatter', () => {
   /** A wish-rich economy so the AI actually holds playable cards to sit on. */
   const CARD_RICH: CreateGameOptions = {
     players: [
@@ -153,9 +156,10 @@ describe('CPU idle chatter', () => {
   /** Play a full AI game, keeping the state each chat action was chosen in. */
   function playAndWatch(seed: number) {
     let state = createGame(CARD_RICH, seed);
+    const memory = createAiMemory();
     const chats: Array<{ state: GameState; action: Action }> = [];
     for (let i = 0; i < 4000 && !isGameOver(state); i++) {
-      const action = chooseAiAction(state);
+      const action = chooseAiAction(state, memory);
       if (action.type === 'quickChat') chats.push({ state, action });
       state = applyAction(state, action);
     }
@@ -165,31 +169,60 @@ describe('CPU idle chatter', () => {
   const games = [1, 2, 3, 4, 5, 6].map(playAndWatch);
   const allChats = games.flatMap((g) => g.chats);
 
-  it('happens at all (the CPU does mutter over a held card)', () => {
+  it('happens at all', () => {
     expect(allChats.length).toBeGreaterThan(0);
   });
 
-  it('only ever says rhetorical musings — never a line about the board', () => {
-    const musings = new Set(QUICK_CHAT_MUSINGS.map((p) => p.id));
+  it('says only lines from the two groups it speaks from', () => {
+    const speakable = new Set([
+      ...QUICK_CHAT_MUSINGS.map((p) => p.id),
+      ...QUICK_CHAT_SCHEMES.map((p) => p.id),
+    ]);
     for (const c of allChats) {
       expect(c.action.type).toBe('quickChat');
       if (c.action.type !== 'quickChat') continue;
-      expect(musings.has(c.action.phraseId)).toBe(true);
+      expect(speakable.has(c.action.phraseId)).toBe(true);
     }
   });
 
-  it('only mutters when it really could have played a card instead', () => {
+  it('announces its plans — the schemes are the point of the feature', () => {
+    const schemes = new Set(QUICK_CHAT_SCHEMES.map((p) => p.id));
+    const said = allChats
+      .map((c) => (c.action.type === 'quickChat' ? c.action.phraseId : ''))
+      .filter((id) => schemes.has(id));
+    expect(said.length).toBeGreaterThan(0);
+    // Across six games it should reach for more than one kind of plan.
+    expect(new Set(said).size).toBeGreaterThan(1);
+  });
+
+  it('every line the CPU can say for a plan is really in the catalogue', () => {
+    // The objective→phrase tables in ai/chatter.ts are hand-written; a typo
+    // there would silently mute the CPU rather than fail anything at runtime.
+    for (const id of CPU_SCHEME_LINES) expect(getQuickChatPhrase(id)).not.toBeNull();
+  });
+
+  it('only ever speaks on its own Action Phase, with no decision open', () => {
     for (const { state, action } of allChats) {
       const actor = action.player;
       expect(state.turn?.activePlayer).toBe(actor);
       expect(state.turn?.phase).toBe('action');
       expect(state.pendingDecision).toBeNull();
-      // The whole trigger: a Whimsy Card it can play right now, and doesn't.
-      expect(getLegalActionIntents(state, actor).some((a) => a.type === 'playCard')).toBe(true);
     }
   });
 
-  it('mutters at most once per turn per seat', () => {
+  it('only MUSES when it really could have played a card instead', () => {
+    // Schemes are announced whatever else is going on; the rhetorical filler
+    // keeps its original trigger — a playable Whimsy Card it chose not to play.
+    const musings = new Set(QUICK_CHAT_MUSINGS.map((p) => p.id));
+    for (const { state, action } of allChats) {
+      if (action.type !== 'quickChat' || !musings.has(action.phraseId)) continue;
+      expect(getLegalActionIntents(state, action.player).some((a) => a.type === 'playCard')).toBe(
+        true,
+      );
+    }
+  });
+
+  it('speaks at most once per turn per seat', () => {
     for (const { state, action } of allChats) {
       expect(state.players[action.player].quickChatsThisTurn).toBe(0);
     }

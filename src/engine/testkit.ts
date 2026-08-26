@@ -8,7 +8,8 @@
 
 import { expect } from 'vitest';
 import type { CreateGameOptions, GameState, Garden, GardenType, PlayerId, Pos } from './index';
-import { applyAction, chooseAiAction, createGame, isGameOver, posKey } from './index';
+import type { Action } from './index';
+import { applyAction, chooseAiAction, createAiMemory, createGame, isGameOver, posKey } from './index';
 
 /**
  * A game on a BARE board by default (`gardenPreset: 'none'`), so hand-crafted
@@ -25,6 +26,32 @@ export function newGame(
     controller: 'cpu' as const,
   }));
   return createGame({ players, gardenPreset: 'none', ...extra }, seed);
+}
+
+/**
+ * The CPU's next BOARD action for a hand-crafted scenario — what it decides to
+ * do, with any quick chat it says first skipped over.
+ *
+ * Two reasons to prefer this to `chooseAiAction(state)` in a scenario test:
+ *
+ *  - The CPU announces a plan it has just adopted (see `ai/chatter.ts`), so on
+ *    a board it is meeting for the first time its first action is usually a
+ *    line of chat, not a move. Chat costs the turn nothing and the move follows
+ *    immediately; a test asking "what does it DO here" means the move.
+ *  - It uses a FRESH plan store, so the CPU comes to this board with no
+ *    intentions carried in from whatever test ran before it. `chooseAiAction`
+ *    with no store shares a module-level one (see `ai/memory.ts`), which would
+ *    otherwise make a scenario's result depend on file order.
+ */
+export function aiAction(state: GameState): Action {
+  const memory = createAiMemory();
+  let s = state;
+  for (let i = 0; i < 4; i++) {
+    const action = chooseAiAction(s, memory);
+    if (action.type !== 'quickChat') return action;
+    s = applyAction(s, action);
+  }
+  throw new Error('AI chatted four times without acting');
 }
 
 /** Drive the game with the AI until `stop(state)`, game over, or maxActions. */

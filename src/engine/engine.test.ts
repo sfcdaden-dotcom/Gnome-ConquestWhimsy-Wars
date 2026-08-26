@@ -18,6 +18,7 @@ import {
   applyAction,
   checkInvariants as checkStateInvariants,
   chooseAiAction,
+  createAiMemory,
   createGame,
   getLegalActions,
   isGameOver,
@@ -25,6 +26,7 @@ import {
 } from './index';
 import {
   activePlayer,
+  aiAction,
   drive,
   mutate,
   newGame,
@@ -213,9 +215,10 @@ describe('turn lifecycle', () => {
 
   it('applyAction never mutates its input', () => {
     let s = newGame(19, { gardenPreset: 'few' });
+    const memory = createAiMemory();
     for (let i = 0; i < 30 && !isGameOver(s); i++) {
       const snapshot = JSON.stringify(s);
-      const next = applyAction(s, chooseAiAction(s));
+      const next = applyAction(s, chooseAiAction(s, memory));
       expect(JSON.stringify(s)).toBe(snapshot);
       expect(next).not.toBe(s);
       s = next;
@@ -775,7 +778,7 @@ describe('AI policies', () => {
         hops: 0,
       };
     });
-    expect(chooseAiAction(s)).toEqual({ type: 'declineEffect', player: me });
+    expect(aiAction(s)).toEqual({ type: 'declineEffect', player: me });
   });
 
   it('plants Maize near home once Dandelion/Mushroom are unavailable (garden variety)', () => {
@@ -790,7 +793,7 @@ describe('AI policies', () => {
       d.players[me].wishes = 5;
       d.units[g.unitId].movedOnTurn = d.turn!.number; // no move competes with the plant
     });
-    expect(chooseAiAction(s)).toEqual({ type: 'plant', player: me, pos, gardenType: 'maize' });
+    expect(aiAction(s)).toEqual({ type: 'plant', player: me, pos, gardenType: 'maize' });
   });
 
   it('plants a Tunnel only once one already exists on the board (garden variety)', () => {
@@ -809,7 +812,7 @@ describe('AI policies', () => {
       d.players[me].wishes = 5;
       d.units[g.unitId].movedOnTurn = d.turn!.number;
     });
-    expect(chooseAiAction(s)).toEqual({ type: 'plant', player: me, pos, gardenType: 'tunnel' });
+    expect(aiAction(s)).toEqual({ type: 'plant', player: me, pos, gardenType: 'tunnel' });
   });
 
   it('spreads out instead of balling a gnome onto an already-stacked square', () => {
@@ -848,7 +851,7 @@ describe('AI policies', () => {
       for (const id of [g1.unitId, g2.unitId, g3.unitId]) d.units[id].movedOnTurn = t; // spent
       d.units[m.unitId].movedOnTurn = null; // fresh mover
     });
-    expect(chooseAiAction(s)).toEqual({ type: 'endTurn', player: me });
+    expect(aiAction(s)).toEqual({ type: 'endTurn', player: me });
   });
 
   it('does not plant an economy garden far from home (no abandoned-garden trail)', () => {
@@ -866,7 +869,7 @@ describe('AI policies', () => {
     s = g.state;
     // manhattan(far, home) must exceed the cluster radius for this to be meaningful.
     expect(Math.abs(far.x - home.x) + Math.abs(far.y - home.y)).toBeGreaterThan(3);
-    expect(chooseAiAction(s).type).not.toBe('plant');
+    expect(aiAction(s).type).not.toBe('plant');
   });
 
   it('plants an economy garden near home to seed the cluster', () => {
@@ -889,7 +892,7 @@ describe('AI policies', () => {
       d.players[me].hand = [];
       d.units[g.unitId].movedOnTurn = d.turn!.number; // no move competes with the plant
     });
-    expect(chooseAiAction(s)).toEqual({ type: 'plant', player: me, pos, gardenType: 'dandelion' });
+    expect(aiAction(s)).toEqual({ type: 'plant', player: me, pos, gardenType: 'dandelion' });
   });
 
   it('Hard: plants a Maize deterrent on the enemy attack lane, not near its own home', () => {
@@ -911,7 +914,7 @@ describe('AI policies', () => {
     s = mutate(g.state, (d) => {
       d.units[g.unitId].movedOnTurn = d.turn!.number; // already moved: only the plant competes
     });
-    expect(chooseAiAction(s)).toEqual({ type: 'plant', player: me, pos: porch, gardenType: 'maize' });
+    expect(aiAction(s)).toEqual({ type: 'plant', player: me, pos: porch, gardenType: 'maize' });
   });
 
   it('Hard refuses to wall its own base where Normal would plant a maize guard', () => {
@@ -936,12 +939,12 @@ describe('AI policies', () => {
     const normal = mutate(s, (d) => {
       d.players[me].difficulty = 'normal';
     });
-    expect(chooseAiAction(normal)).toEqual({ type: 'plant', player: me, pos, gardenType: 'maize' });
+    expect(aiAction(normal)).toEqual({ type: 'plant', player: me, pos, gardenType: 'maize' });
     // ...but Hard won't hem itself in there (no enemy lane nearby), so it passes.
     const hard = mutate(s, (d) => {
       d.players[me].difficulty = 'hard';
     });
-    expect(chooseAiAction(hard)).toEqual({ type: 'endTurn', player: me });
+    expect(aiAction(hard)).toEqual({ type: 'endTurn', player: me });
   });
 });
 
@@ -958,7 +961,7 @@ describe('AI card play', () => {
       d.players[me].hand = ['rocket-propelled-gnome', 'lost-in-the-maize', 'wild-growth'];
     });
     // lost-in-the-maize has the lowest keep value of the three.
-    expect(chooseAiAction(s)).toEqual({ type: 'discardCard', player: me, cardId: 'lost-in-the-maize' });
+    expect(aiAction(s)).toEqual({ type: 'discardCard', player: me, cardId: 'lost-in-the-maize' });
   });
 
   it('rockets an enemy gnome standing in our Home Garden', () => {
@@ -976,7 +979,7 @@ describe('AI card play', () => {
       d.players[me].hand.push('rocket-propelled-gnome');
       d.players[me].wishes = 0; // no Wishes to draw
     });
-    const action = chooseAiAction(s);
+    const action = aiAction(s);
     expect(action.type).toBe('playCard');
     if (action.type === 'playCard') {
       expect(action.cardId).toBe('rocket-propelled-gnome');
@@ -998,7 +1001,7 @@ describe('AI card play', () => {
       d.players[me].difficulty = 'hard';
       d.players[me].wishes = 0;
     });
-    expect(chooseAiAction(s)).toEqual({
+    expect(aiAction(s)).toEqual({
       type: 'playCard',
       player: me,
       cardId: 'gnomio-and-juliet',
@@ -1021,7 +1024,7 @@ describe('AI card play', () => {
       d.players[me].difficulty = 'hard';
       d.players[me].wishes = 0;
     });
-    expect(chooseAiAction(s)).toEqual({ type: 'playCard', player: me, cardId: 'lost-in-the-maize' });
+    expect(aiAction(s)).toEqual({ type: 'playCard', player: me, cardId: 'lost-in-the-maize' });
   });
 
   it('Hard: walls the non-Home garden nearest home that an enemy is approaching', () => {
@@ -1045,7 +1048,7 @@ describe('AI card play', () => {
       d.players[me].difficulty = 'hard';
       d.players[me].wishes = 0;
     });
-    expect(chooseAiAction(s)).toEqual({
+    expect(aiAction(s)).toEqual({
       type: 'playCard',
       player: me,
       cardId: 'great-wall-of-whimsy',
@@ -1063,7 +1066,7 @@ describe('AI card play', () => {
     s = mutate(g.state, (d) => {
       d.players[me].hand.push('seeing-double');
     });
-    const action = chooseAiAction(s);
+    const action = aiAction(s);
     expect(action.type).toBe('playCard');
     if (action.type === 'playCard') {
       expect(action.cardId).toBe('seeing-double');
@@ -1078,7 +1081,7 @@ describe('AI card play', () => {
       d.players[me].hand.push('wild-growth');
       d.players[me].wishes = 0; // no Wishes to draw or plant normally
     });
-    const action = chooseAiAction(s);
+    const action = aiAction(s);
     expect(action.type).toBe('playCard');
     if (action.type === 'playCard') {
       expect(action.cardId).toBe('wild-growth');
@@ -1095,7 +1098,7 @@ describe('AI card play', () => {
       d.players[me].wishes = 5;
       d.players[me].hand = [];
     });
-    expect(chooseAiAction(s)).toEqual({ type: 'drawCard', player: me });
+    expect(aiAction(s)).toEqual({ type: 'drawCard', player: me });
   });
 });
 
@@ -1116,7 +1119,7 @@ describe('AI respond policies', () => {
       targets: { units: [target.unitId] },
     });
     expect(s.pendingDecision).toMatchObject({ kind: 'cardResponse', player: foe });
-    expect(chooseAiAction(s)).toEqual({ type: 'respondPlayCard', player: foe, cardId: 'nope-gnome' });
+    expect(aiAction(s)).toEqual({ type: 'respondPlayCard', player: foe, cardId: 'nope-gnome' });
   });
 
   it('shields with Gnomebody Dies in a flytrap fight', () => {
@@ -1134,7 +1137,7 @@ describe('AI respond policies', () => {
     });
     s = applyAction(s, { type: 'move', player: me, unitId: g.unitId, to: { x: 3, y: 2 } });
     expect(s.pendingDecision).toMatchObject({ kind: 'fightRespond', player: me });
-    expect(chooseAiAction(s)).toEqual({ type: 'respondPlayCard', player: me, cardId: 'gnomebody-dies' });
+    expect(aiAction(s)).toEqual({ type: 'respondPlayCard', player: me, cardId: 'gnomebody-dies' });
   });
 
   it('swings the dice with 4 Leaf Clover when storming an enemy Home Garden', () => {
@@ -1157,7 +1160,7 @@ describe('AI respond policies', () => {
     });
     s = applyAction(s, { type: 'move', player: me, unitId: attacker.unitId, to: foeHome });
     expect(s.pendingDecision).toMatchObject({ kind: 'fightRespond', player: me });
-    expect(chooseAiAction(s)).toEqual({ type: 'respondPlayCard', player: me, cardId: 'four-leaf-clover' });
+    expect(aiAction(s)).toEqual({ type: 'respondPlayCard', player: me, cardId: 'four-leaf-clover' });
   });
 
   it('easy difficulty passes instead of shielding with Gnomebody Dies', () => {
@@ -1176,7 +1179,7 @@ describe('AI respond policies', () => {
     });
     s = applyAction(s, { type: 'move', player: me, unitId: g.unitId, to: { x: 3, y: 2 } });
     expect(s.pendingDecision).toMatchObject({ kind: 'fightRespond', player: me });
-    expect(chooseAiAction(s)).toEqual({ type: 'respondPass', player: me });
+    expect(aiAction(s)).toEqual({ type: 'respondPass', player: me });
   });
 });
 
@@ -1195,10 +1198,11 @@ describe('AI vs AI smoke', () => {
     for (const seed of [1, 2, 3]) {
       it(`finishes a full game (${cfg.label}, seed ${seed})`, () => {
         let s = newGame(seed, cfg.extra, cfg.count);
+        const memory = createAiMemory();
         let actions = 0;
         const cap = 5000;
         while (!isGameOver(s) && actions < cap) {
-          s = applyAction(s, chooseAiAction(s));
+          s = applyAction(s, chooseAiAction(s, memory));
           actions += 1;
           if (actions % 100 === 0) checkInvariants(s);
         }
@@ -1227,10 +1231,11 @@ describe('AI vs AI smoke', () => {
         },
         seed,
       );
+      const memory = createAiMemory();
       let actions = 0;
       const cap = 5000;
       while (!isGameOver(s) && actions < cap) {
-        s = applyAction(s, chooseAiAction(s));
+        s = applyAction(s, chooseAiAction(s, memory));
         actions += 1;
         if (actions % 100 === 0) checkInvariants(s);
       }

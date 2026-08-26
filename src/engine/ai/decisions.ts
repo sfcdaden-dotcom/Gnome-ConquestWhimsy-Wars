@@ -14,8 +14,9 @@
 import type { Action, CardId, CardTargets, GameState, PendingDecision, PlayerId } from '../types';
 import { EngineError } from '../types';
 import { getPendingDecisionOptions } from '../engine';
-import { gardenAt, gnomesOnBoard, manhattan, playerUnitsAt, samePos } from '../helpers';
+import { gardenAt, gnomesOnBoard, manhattan, playerUnitsAt, samePos, wishCap } from '../helpers';
 import { cardKeepValue } from './cardPlans';
+import type { PlanContext } from './objectiveScoring';
 import { primaryTarget, scoreDestination } from './scoring';
 
 /**
@@ -28,6 +29,7 @@ export function chooseDecisionAction(
   actor: PlayerId,
   d: PendingDecision,
   legal: readonly Action[],
+  ctx: PlanContext,
 ): Action {
   switch (d.kind) {
     case 'rollOff':
@@ -53,12 +55,8 @@ export function chooseDecisionAction(
     case 'sacrificeGnome':
       // Magic Drain: give up the first (lowest-id) gnome.
       return legal[0];
-    case 'homeHarvest': {
-      const wantGnome =
-        d.options.includes('gnome') &&
-        (gnomesOnBoard(state, actor) < 4 || state.players[actor].wishes >= 3);
-      return { type: 'homeHarvest', player: actor, take: wantGnome ? 'gnome' : 'wish' };
-    }
+    case 'homeHarvest':
+      return chooseHomeHarvest(state, actor, d, ctx);
     case 'chooseHarvest': {
       const order = ['dandelion', 'mushroom', 'maize', 'tunnel', 'slippery', 'home', 'flytrap'];
       const sorted = [...d.options].sort(
@@ -119,6 +117,38 @@ function planHop(
     }
   }
   return best ?? legal[0];
+}
+
+/**
+ * A gnome or a Wish from the Home Garden — the turn's one real economic choice,
+ * and the place a posture shows up most plainly.
+ *
+ *  - EXPAND / PRESSURE / FINISH take the body. Growth is bodies: a gnome holds
+ *    a garden, wins a fight and takes a Home, and none of those wait.
+ *  - DEFEND / SURVIVE take the Wish. A dug-in position is not short of gnomes,
+ *    it is short of answers — and Wishes are what buy the cards and the walls.
+ *    A floor keeps a seat that is genuinely down to nothing taking bodies.
+ *  - Either way, a Wish at the cap is a Wish thrown away (the engine logs it as
+ *    "nothing"), so take the gnome instead whatever the posture wants.
+ */
+function chooseHomeHarvest(
+  state: GameState,
+  actor: PlayerId,
+  d: Extract<PendingDecision, { kind: 'homeHarvest' }>,
+  ctx: PlanContext,
+): Action {
+  const take = (choice: 'gnome' | 'wish'): Action => ({ type: 'homeHarvest', player: actor, take: choice });
+  if (!d.options.includes('gnome')) return take('wish');
+
+  const p = state.players[actor];
+  if (p.wishes >= wishCap(state, actor)) return take('gnome'); // the Wish would be lost
+  const board = gnomesOnBoard(state, actor);
+
+  if (ctx.strategy === 'DEFEND' || ctx.strategy === 'SURVIVE') {
+    return board < 3 ? take('gnome') : take('wish');
+  }
+  const growing = ctx.strategy === 'EXPAND';
+  return board < (growing ? 7 : 4) || p.wishes >= 3 ? take('gnome') : take('wish');
 }
 
 /** Lowest-static-value card in hand — the AI's pick when forced to discard. */

@@ -16,8 +16,8 @@ before reaching for it.)
 
 Support queries: `getPlayerToAct`, `isGameOver`, plus the read-only helpers
 re-exported from `helpers.ts` (`posKey`, `unitsAt`, `wishCap`, …) and the card
-lookups from `cards.ts` (`getCardDef`, …). The heuristic CPU lives behind
-`chooseAiAction(state)` and uses only this public API.
+lookups from `cards.ts` (`getCardDef`, …). The CPU lives behind
+`chooseAiAction(state, memory?)` and uses only this public API.
 
 ## Module layout
 
@@ -40,7 +40,7 @@ implementation detail and may move again.
 | `fights.ts` | fight resolution (Respond → Roll → Resolve) |
 | `cards.ts` | card framework, definitions, the card stack |
 | `view.ts` | per-seat redaction: `GameState` → `PlayerView` (multiplayer) |
-| `ai/` | the heuristic CPU — see below |
+| `ai/` | the objective-driven CPU — see below |
 | `helpers.ts` | shared queries and draft mutators |
 | `setup.ts` / `gardenPresets.ts` / `randomLayout.ts` / `rng.ts` / `types.ts` | creation, layouts, procedural map generation, RNG, types |
 
@@ -49,12 +49,29 @@ through `ai/index.ts` (`chooseAiAction`):
 
 | File | Responsibility |
 |---|---|
-| `ai/index.ts` | routing, the Action-Phase pick, target completion, the difficulty doc |
+| `ai/index.ts` | routing, the Action-Phase pick, controlled randomness, target completion, the difficulty doc |
+| `ai/objectives.ts` | strategic state, objective proposal, objective lifetimes, the interrupt stack |
+| `ai/objectiveScoring.ts` | how much a legal action serves the current objective |
+| `ai/personality.ts` | the weights colouring posture, objective choice and action scoring |
+| `ai/memory.ts` | `AiMemory` — where a seat's plan lives between actions and turns |
 | `ai/scoring.ts` | `scoreDestination`, `scoreActionPhase`, the BFS distance field |
 | `ai/cardPlans.ts` | `planCardPlay` — one deterministic target picker per card |
 | `ai/decisions.ts` | one policy per `PendingDecision` kind, incl. both respond windows |
 | `ai/chatter.ts` | idle quick-chat (flavor only; changes no game state) |
-| `ai/util.ts` | small shared reads (own/enemy gnomes, home, difficulty, desperation ramp) |
+| `ai/util.ts` | small shared reads (own/enemy gnomes, home, difficulty, the desperation and turtle-breaker ramps) |
+
+The CPU keeps a **plan** — a strategic posture plus a stack of objectives — so it
+pursues one intention across turns, interrupts it to defend its Home, and then
+resumes it. The posture also decides economic policy, which is the most visible
+difference between two CPU seats at a glance: **EXPAND** spends on the board
+(plants gardens, takes the gnome at the Home Garden), while **DEFEND** spends on
+the hand (draws down to its last Wishes, takes the Wish, and leaves gnomes that
+are already harvesting on their gardens unless somebody is actually in its Home). The plan lives in an `AiMemory` the CALLER owns (`createAiMemory()`,
+one per game) rather than in `GameState`: it is not game truth, it never reaches
+the wire or the match record, and a caller that loses it simply gets a CPU that
+re-reads the board and forms a new intention. `chooseAiAction(state)` without a
+store uses a shared module-level one. `describeAiPlan(state, seat, memory)`
+returns the current plan in one line, for debugging and the log.
 
 Dependencies run one way through the top layer — `engine → {actions, settle,
 legalActions, actionExpansion} → {targeting, turns} → elimination → {gardens,
@@ -215,13 +232,31 @@ player, refilled for everyone at the start of every turn and once more when the
 game ends. `quickChatsLeft(state, player)` is the same number the UI disables
 its button on.
 
-`chooseAiAction` uses it too: when the CPU could play a Whimsy Card this Action
-Phase and picks something else, it sometimes says one line from the `musings`
-group first (`QUICK_CHAT_MUSINGS` — rhetorical gnome questions that describe
-nothing about the board, so a chatty CPU leaks no information), then takes its
-real action on the next call. The coin flip and the phrase are hashed from
-(seed, turn, seat), so the AI stays deterministic, and the engine's own
-`quickChatsThisTurn` counter is what stops it repeating within a turn.
+`chooseAiAction` uses it too, and for the CPU two groups are load-bearing
+rather than cosmetic:
+
+- **`schemes`** (`QUICK_CHAT_SCHEMES`) is how the CPU announces the objective it
+  has just adopted — "That mushroom is mine.", "Get off my lawn!", "I'm coming
+  for you!". This is what makes the objective layer visible at all: the plan
+  lives in an `AiMemory` beside the state, where no player can see it, so the
+  CPU says it. A change of objective KIND always speaks; the same kind again
+  waits out a short cooldown, or the CPU narrates every re-target and reads as
+  indecisive. **A CPU seat therefore telegraphs its intentions on purpose** —
+  the old rule was that its chatter leaked nothing, and that was traded for
+  legibility (see TECH_DEBT.md). Humans get the same lines and, unlike the CPU,
+  can lie with them.
+- **`musings`** (`QUICK_CHAT_MUSINGS`) is the fallback, unchanged: rhetorical
+  gnome questions that describe nothing about the board, said when the CPU sits
+  on a playable Whimsy Card with nothing new to announce.
+
+Either way it takes its real action on the next call — chat costs the turn
+nothing. The coin flip and the phrase are hashed from (seed, turn, seat), so the
+AI stays deterministic, and the engine's own `quickChatsThisTurn` counter is
+what stops it repeating within a turn.
+
+Phrase ids are permanent: a `quickChat` action stores its id in the match record
+and `doQuickChat` rejects an id it cannot find, so deleting one makes every
+stored record containing it un-replayable.
 
 ## Hidden information & per-seat views (multiplayer)
 

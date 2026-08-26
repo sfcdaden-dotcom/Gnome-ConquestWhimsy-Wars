@@ -20,7 +20,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Action, CreateGameOptions, GameState, PlayerId } from '../engine';
-import { applyAction, chooseAiAction, createGame, getPlayerToAct } from '../engine';
+import { applyAction, chooseAiAction, createAiMemory, createGame, getPlayerToAct } from '../engine';
 import type { ChatBubble, FightPlayback, Toast } from './sessionFx';
 import { addedEvents, useChatBubbles, useFightPlayback, useToasts } from './sessionFx';
 
@@ -159,6 +159,13 @@ export function useGame(options: CreateGameOptions, seed: number): GameSession {
   }, []);
 
   // --- CPU driver -----------------------------------------------------------
+  //
+  // One plan store for this game, so a CPU seat keeps the objective it adopted
+  // from one turn to the next (see engine/ai/memory.ts). It holds no game truth:
+  // losing it on a reload just means the CPU re-reads the board and picks a new
+  // intention.
+  const aiMemory = useRef(createAiMemory());
+
   useEffect(() => {
     if (state.status === 'finished') return;
     if (playback) return; // let humans watch the fight
@@ -168,7 +175,7 @@ export function useGame(options: CreateGameOptions, seed: number): GameSession {
       const actor = getPlayerToAct(s);
       if (actor === null || s.players[actor].controller !== 'cpu') return;
       try {
-        dispatch(chooseAiAction(s));
+        dispatch(chooseAiAction(s, aiMemory.current));
       } catch (err) {
         pushToast(
           `CPU error: ${err instanceof Error ? err.message : String(err)}`,

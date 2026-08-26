@@ -17,6 +17,15 @@
  * event log and the sender's remaining allowance, and any seat may send one at
  * any time — including out of turn, while a decision is open, or after the
  * game has finished.
+ *
+ * Two groups are load-bearing for the CPU rather than cosmetic: `schemes` is
+ * how it announces the objective it just adopted, and `musings` is what it says
+ * when it has nothing to announce. See `ai/chatter.ts`.
+ *
+ * PHRASE IDS ARE FOREVER. A `quickChat` action stores its id in the match
+ * record, and `doQuickChat` rejects an id it cannot find — so deleting one
+ * makes every stored record containing it un-replayable. Add freely; retire
+ * only when you mean it.
  */
 
 import type { GameState, PlayerId, QuickChatId, QuickChatPhrase } from './types';
@@ -83,15 +92,55 @@ export const QUICK_CHAT_GROUPS: readonly QuickChatGroup[] = [
     phrases: [
       { id: 'watch-the-flytrap', emoji: '🪰', text: 'Watch the flytrap!' },
       { id: 'taking-the-tunnel', emoji: '🕳️', text: 'Taking the tunnel!' },
-      { id: 'coming-for-you', emoji: '⚔️', text: "I'm coming for you!" },
       { id: 'need-gnomes', emoji: '📦', text: 'I need more gnomes…' },
     ],
   },
   {
+    /**
+     * What a gnome says when it has decided what it wants.
+     *
+     * This group is the CPU's voice for its plan: `idleChatter` picks the line
+     * that matches the objective it just adopted, so a seat that turns around
+     * to defend its Home says so, and says something different when it goes
+     * back to the garden it was after. That is the whole point — the CPU is
+     * meant to be READ, and a plan nobody can see is not a plan anybody enjoys
+     * playing against.
+     *
+     * It follows that a CPU seat now leaks its intentions. That is deliberate:
+     * telegraphing beats inscrutability for a game this size, and a human
+     * reading these lines gets a chance to respond to the plan (which is what
+     * makes the CPU feel like an opponent rather than a dice roll). Humans get
+     * the same lines and, unlike the CPU, can lie with them.
+     */
+    id: 'schemes',
+    label: 'Schemes',
+    emoji: '🗺️',
+    phrases: [
+      // Going after a garden.
+      { id: 'eyeing-that-garden', emoji: '🌷', text: "I've got my eye on that garden." },
+      { id: 'that-mushroom-is-mine', emoji: '🍄', text: 'That mushroom is mine.' },
+      { id: 'dandelion-calling', emoji: '🌼', text: 'That dandelion is calling my name.' },
+      { id: 'staking-a-claim', emoji: '🚩', text: 'Staking my claim.' },
+      { id: 'that-one-there', emoji: '👀', text: "That one. That's the one I want." },
+      // Defending our own.
+      { id: 'off-my-lawn', emoji: '🧹', text: 'Get off my lawn!' },
+      { id: 'not-today', emoji: '🛡️', text: 'Not my home. Not today.' },
+      { id: 'everyone-home', emoji: '🏡', text: 'Everyone back to the garden!' },
+      // Marching on somebody else's.
+      { id: 'coming-for-you', emoji: '⚔️', text: "I'm coming for you!" },
+      { id: 'knock-knock', emoji: '🚪', text: 'Knock knock.' },
+      { id: 'pack-your-pots', emoji: '📦', text: "Pack your pots, I'm moving in." },
+      // Posture, when there is no one target to name.
+      { id: 'just-growing', emoji: '🌱', text: 'Just growing quietly over here.' },
+      { id: 'feeling-brave', emoji: '😈', text: 'Feeling brave today.' },
+      { id: 'regrouping', emoji: '🐌', text: 'Regrouping. Ignore me.' },
+      { id: 'almost-there', emoji: '🏁', text: 'Almost there…' },
+    ],
+  },
+  {
     // Rhetorical gnome chatter: says nothing about the board, answers nothing,
-    // gives nothing away. This is the pool the CPU mutters from when it sits on
-    // a playable card (see `idleChatter` in ai.ts) — and it is on every
-    // player's menu too, because the CPU should not get better lines than you.
+    // gives nothing away. This is what the CPU mutters when it has nothing to
+    // announce — the filler between schemes (see `idleChatter` in ai/chatter.ts).
     id: 'musings',
     label: 'Musings',
     emoji: '🤔',
@@ -99,11 +148,9 @@ export const QUICK_CHAT_GROUPS: readonly QuickChatGroup[] = [
       { id: 'why-the-hats', emoji: '🎩', text: 'Why do we even wear the hats?' },
       { id: 'under-a-mushroom', emoji: '🍄', text: "Ever wonder what's under a mushroom?" },
       { id: 'snail-dreams', emoji: '🐌', text: 'Do snails dream of faster gardens?' },
-      { id: 'really-looked', emoji: '🌼', text: 'Have you ever really looked at a dandelion?' },
       { id: 'gnome-without-garden', emoji: '🧙', text: 'What is a gnome without a garden?' },
       { id: 'unmade-wishes', emoji: '✨', text: 'Where do Wishes go when nobody makes them?' },
       { id: 'where-tunnels-go', emoji: '🕳️', text: 'Where does that tunnel actually go?' },
-      { id: 'grass-greener', emoji: '🌱', text: 'Is the grass greener over there?' },
     ],
   },
   {
@@ -124,12 +171,18 @@ export const QUICK_CHAT_PHRASES: readonly QuickChatPhrase[] = QUICK_CHAT_GROUPS.
 
 const phraseById = new Map<QuickChatId, QuickChatPhrase>(QUICK_CHAT_PHRASES.map((p) => [p.id, p]));
 
-/** The group id the CPU's idle chatter draws from (see ai.ts `idleChatter`). */
+/** The two groups the CPU speaks from (see `ai/chatter.ts`). */
 export const QUICK_CHAT_MUSINGS_GROUP = 'musings';
+export const QUICK_CHAT_SCHEMES_GROUP = 'schemes';
 
-/** Rhetorical musings only — the CPU never comments on the actual board. */
-export const QUICK_CHAT_MUSINGS: readonly QuickChatPhrase[] =
-  QUICK_CHAT_GROUPS.find((g) => g.id === QUICK_CHAT_MUSINGS_GROUP)?.phrases ?? [];
+const groupPhrases = (id: QuickChatGroupId): readonly QuickChatPhrase[] =>
+  QUICK_CHAT_GROUPS.find((g) => g.id === id)?.phrases ?? [];
+
+/** Rhetorical musings — what the CPU says when it has no plan to announce. */
+export const QUICK_CHAT_MUSINGS: readonly QuickChatPhrase[] = groupPhrases(QUICK_CHAT_MUSINGS_GROUP);
+
+/** Plan lines — what the CPU says when it has just decided what it wants. */
+export const QUICK_CHAT_SCHEMES: readonly QuickChatPhrase[] = groupPhrases(QUICK_CHAT_SCHEMES_GROUP);
 
 /** The phrase for an id, or null when the id is not in the catalogue. */
 export function getQuickChatPhrase(id: QuickChatId): QuickChatPhrase | null {
