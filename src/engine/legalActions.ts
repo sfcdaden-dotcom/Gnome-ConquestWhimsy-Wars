@@ -112,7 +112,8 @@ export function getLegalActionIntents(state: GameState, player?: PlayerId): Acti
         return d.options.map((unitId) => ({ type: 'sacrificeGnome', player: actor, unitId }));
       case 'snailMove': {
         const out: Action[] = d.options.map((to) => ({ type: 'snailMove', player: actor, to }));
-        out.push({ type: 'declineEffect', player: actor }); // the move is optional
+        // Snailmaggedon's bonus move is optional; a post-fight rout is not.
+        if (d.context === 'snailmaggedon') out.push({ type: 'declineEffect', player: actor });
         return out;
       }
       default: {

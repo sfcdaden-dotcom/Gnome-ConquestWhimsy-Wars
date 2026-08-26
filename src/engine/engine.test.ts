@@ -23,6 +23,7 @@ import {
   getLegalActions,
   isGameOver,
   posKey,
+  samePos,
 } from './index';
 import {
   activePlayer,
@@ -470,6 +471,104 @@ describe('immortal snail', () => {
     // Destroyed gardens return to their planter's supply.
     expect(s.players[me].supply.dandelion).toBe(supplyBefore + 1);
   });
+
+  it('eliminates the owner of a Home Garden it ate, at the next Harvest Phase', () => {
+    let s = toActionPhase(11, {}, 4);
+    const me = activePlayer(s);
+    const seat = (me + 1) % 4;
+    const victim = (me + 2) % 4;
+    const victimHome = { ...s.players[victim].homePos };
+    // Clear the victim's home space so the snail solely occupies it and eats it.
+    s = mutate(s, (d) => {
+      for (const u of Object.values(d.units)) {
+        if (samePos(u.pos, victimHome)) delete d.units[u.id];
+      }
+    });
+    s = withSnailTurn(s, seat, victimHome);
+
+    s = applyAction(s, { type: 'endTurn', player: seat });
+    expect(s.gardens[posKey(victimHome)]).toBeUndefined();
+    // The very next Harvest Phase notices the home is gone.
+    expect(
+      s.events.some((e) => e.type === 'playerEliminated' && e.player === victim && e.reason === 'home-destroyed'),
+    ).toBe(true);
+    expect(s.pendingDecision).toEqual({ kind: 'snailify', player: victim });
+    checkInvariants(s);
+  });
+
+  it('is driven off the space when it loses a fight, and cannot decline', () => {
+    const s = snailLosesAFight();
+    const seat = s.pendingDecision?.player ?? -1;
+    const d = s.pendingDecision;
+    if (!d || d.kind !== 'snailMove') throw new Error('expected a snail retreat decision');
+    expect(d.context).toBe('retreat');
+    expect(d.options.length).toBeGreaterThan(0);
+    // Every option is an adjacent, empty space.
+    for (const o of d.options) {
+      expect(Math.abs(o.x - d.from.x) + Math.abs(o.y - d.from.y)).toBe(1);
+      expect(Object.values(s.units).some((u) => samePos(u.pos, o))).toBe(false);
+    }
+    // A rout is mandatory: no decline is offered, and asking for one is illegal.
+    expect(getLegalActions(s).some((a) => a.type === 'declineEffect')).toBe(false);
+    expect(() => applyAction(s, { type: 'declineEffect', player: seat })).toThrow(EngineError);
+
+    const after = applyAction(s, { type: 'snailMove', player: seat, to: d.options[0] });
+    expect(after.units[d.unitId].pos).toEqual(d.options[0]);
+    expect(after.pendingDecision?.kind).not.toBe('snailMove');
+    checkInvariants(after);
+  });
+
+  it('holds its ground when a lost fight leaves it nowhere empty to retreat to', () => {
+    const s = snailLosesAFight((d, pos, owner) => {
+      // Wall the snail in: a gnome on every neighbor of the contested space.
+      for (const n of [
+        { x: pos.x + 1, y: pos.y },
+        { x: pos.x - 1, y: pos.y },
+        { x: pos.x, y: pos.y + 1 },
+        { x: pos.x, y: pos.y - 1 },
+      ]) {
+        if (n.x < 0 || n.y < 0 || n.x >= d.config.boardSize || n.y >= d.config.boardSize) continue;
+        const id = `u${d.nextUnitId++}`;
+        d.units[id] = { id, owner, kind: 'gnome', pos: n, movedOnTurn: null };
+        d.players[owner].gnomesSpawned += 1;
+      }
+    });
+    expect(s.pendingDecision?.kind).not.toBe('snailMove');
+    expect(s.events.some((e) => e.type === 'snailRetreatBlocked')).toBe(true);
+    checkInvariants(s);
+  });
+
+  /**
+   * Walk a snail into an enemy gnome until the dice go against it. Rolls are
+   * seeded, so the loss is found by re-running the same scenario over fresh
+   * `rngState` values rather than by stubbing the die.
+   */
+  function snailLosesAFight(
+    setUp?: (draft: GameState, pos: { x: number; y: number }, owner: number) => void,
+  ): GameState {
+    const base = toActionPhase(11, {}, 4);
+    const me = activePlayer(base);
+    const seat = (me + 1) % 4;
+    const target = { x: 3, y: 3 };
+    const from = { x: 2, y: 3 };
+    for (let rng = 1; rng <= 200; rng++) {
+      let s = mutate(base, (d) => {
+        // No cards in hand ⇒ every Respond window auto-passes.
+        for (const p of d.players) {
+          d.discard.push(...p.hand);
+          p.hand = [];
+        }
+        d.rngState = rng;
+      });
+      s = withGnome(s, me, target).state;
+      s = withSnailTurn(s, seat, from);
+      s = mutate(s, (d) => setUp?.(d, target, me));
+      const snailId = Object.values(s.units).find((u) => u.kind === 'snail')?.id ?? '';
+      s = applyAction(s, { type: 'move', player: seat, unitId: snailId, to: target });
+      if (s.events.some((e) => e.type === 'snailSurvivedLoss')) return s;
+    }
+    throw new Error('no seed made the snail lose the fight');
+  }
 });
 
 // ---------------------------------------------------------------------------

@@ -31,6 +31,7 @@ import {
   allNeighbors,
   badArg,
   canSpawnGnome,
+  checkHomeCapture,
   curseActive,
   enemyUnitsAt,
   entryBlockedByWall,
@@ -231,9 +232,42 @@ function tunnelHarvestDestinations(state: GameState, from: Pos, player: PlayerId
 // Harvest phase machine
 // ---------------------------------------------------------------------------
 
-/** Snapshot every qualifying harvest source for the active player. */
+/**
+ * A player without a harvestable Home Garden is out.
+ *
+ * Sole enemy occupation is caught the moment it happens (`checkHomeCapture`),
+ * but a Home Garden can also simply CEASE TO EXIST — most often eaten by an
+ * Immortal Snail at the end of its turn, or destroyed by a card. That player
+ * can never harvest, spawn a reinforcement or win anything again, so the tile
+ * going missing is elimination in its own right. This runs once per Harvest
+ * Phase, over every player still in the game rather than only the active one,
+ * so a razed home is caught on the very next harvest instead of lingering
+ * until its owner's own turn comes round.
+ */
+function eliminatePlayersWithoutHome(draft: GameState): void {
+  for (const p of draft.players) {
+    if (p.status !== 'playing') continue;
+    const home = gardenAt(draft, p.homePos);
+    if (home && home.type === 'home' && home.owner === p.id) {
+      // The tile is there: sole enemy occupation still makes it unharvestable.
+      checkHomeCapture(draft, p.homePos);
+      continue;
+    }
+    queueElimination(draft, p.id, 'home-destroyed');
+  }
+}
+
+/**
+ * Snapshot every qualifying harvest source for the active player.
+ *
+ * Returns without building the phase when the home-garden check queued an
+ * elimination: the settle loop drains that queue first and calls back here
+ * (the eliminated player is no longer `playing`, so the check then passes).
+ */
 export function beginHarvestPhase(draft: GameState): void {
   const t = requireTurn(draft);
+  eliminatePlayersWithoutHome(draft);
+  if (draft.eliminationQueue.length > 0) return;
   const player = getPlayer(draft, t.activePlayer);
   const sources: HarvestSource[] = [];
 
@@ -319,6 +353,7 @@ export function continueHarvest(draft: GameState): void {
       unitId: snail.id,
       from: { ...snail.pos },
       options,
+      context: 'snailmaggedon',
     };
     return;
   }
@@ -675,7 +710,10 @@ export function resolveDeclineEffect(draft: GameState, player: PlayerId): void {
   const unit = draft.units[d.unitId];
   if (!unit) internal('Declining unit vanished');
   if (d.kind === 'snailMove') {
-    // Snailmaggedon moves are optional ("snails CAN move").
+    // Snailmaggedon moves are optional ("snails CAN move"); a rout is not.
+    if (d.context === 'retreat') {
+      illegal('A snail that lost a fight must retreat to an adjacent empty space');
+    }
     draft.pendingDecision = null;
     const h = draft.harvest;
     if (h && h.snailMoves[0] === player) h.snailMoves.shift();
@@ -687,7 +725,10 @@ export function resolveDeclineEffect(draft: GameState, player: PlayerId): void {
   pushEvent(draft, { type: 'entryEffectDeclined', player, unitId: d.unitId, unitKind: unit.kind, pos: d.from });
 }
 
-/** Snailmaggedon: move the snail 1 space during another player's Harvest Phase. */
+/**
+ * Move the snail 1 space: the Snailmaggedon bonus move during another player's
+ * Harvest Phase, or the forced retreat after the snail loses a fight.
+ */
 export function resolveSnailMove(draft: GameState, player: PlayerId, to: Pos): void {
   const d = draft.pendingDecision;
   if (!d || d.kind !== 'snailMove') illegal('No snail-move decision is pending');
@@ -696,8 +737,10 @@ export function resolveSnailMove(draft: GameState, player: PlayerId, to: Pos): v
   const snail = draft.units[d.unitId];
   if (!snail) internal('Snail vanished');
   draft.pendingDecision = null;
-  const h = draft.harvest;
-  if (h && h.snailMoves[0] === player) h.snailMoves.shift();
+  if (d.context === 'snailmaggedon') {
+    const h = draft.harvest;
+    if (h && h.snailMoves[0] === player) h.snailMoves.shift();
+  }
   const from = { ...snail.pos };
   snail.pos = { x: to.x, y: to.y };
   pushEvent(draft, { type: 'unitMoved', player, unitId: snail.id, unitKind: snail.kind, from, to: snail.pos });
