@@ -143,8 +143,18 @@ export {
 } from './cards';
 export type { WhimsyCardDef, CurseCardDef, CardTiming, TargetStep, TargetingContext } from './cards';
 
-// Heuristic CPU player.
-export { chooseAiAction } from './ai';
+// Objective-driven CPU player. `chooseAiAction` takes an optional plan store —
+// see `ai/memory.ts` for why the plan lives beside the state rather than in it.
+export {
+  chooseAiAction,
+  describeAiPlan,
+  createAiMemory,
+  clearAiMemory,
+  sharedAiMemory,
+  PERSONALITIES,
+  personalityFor,
+} from './ai';
+export type { AiMemory, AiPersonality, AiPlan, Objective, ObjectiveKind, StrategicState } from './ai';
 
 // Self-play match recorder (training-data generation).
 export {

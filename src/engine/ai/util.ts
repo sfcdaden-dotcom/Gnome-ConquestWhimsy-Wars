@@ -39,6 +39,22 @@ export function desperation(state: GameState): number {
   return Math.min(6, (state.turn?.number ?? 0) / 25);
 }
 
+/**
+ * Turtle-breakers. The tactical heuristics already erode defensive caution with
+ * `desperation` so a stalemate ends; the objective layer has to do the same or
+ * it re-creates one at a higher level — two CPUs that each adopt DEFEND_HOME
+ * because the other is loitering three spaces out, forever. These are the two
+ * multipliers that ramp the objective layer's postures over a long game.
+ */
+export function defenseDecay(state: GameState): number {
+  return Math.max(0.25, 1 - desperation(state) * 0.12);
+}
+
+/** The offensive counterpart of `defenseDecay`: pressure grows as time passes. */
+export function offensePush(state: GameState): number {
+  return 1 + desperation(state) * 0.25;
+}
+
 export const DIAGONALS: Pos[] = [
   { x: -1, y: -1 },
   { x: 1, y: -1 },

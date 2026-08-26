@@ -16,8 +16,8 @@ before reaching for it.)
 
 Support queries: `getPlayerToAct`, `isGameOver`, plus the read-only helpers
 re-exported from `helpers.ts` (`posKey`, `unitsAt`, `wishCap`, …) and the card
-lookups from `cards.ts` (`getCardDef`, …). The heuristic CPU lives behind
-`chooseAiAction(state)` and uses only this public API.
+lookups from `cards.ts` (`getCardDef`, …). The CPU lives behind
+`chooseAiAction(state, memory?)` and uses only this public API.
 
 ## Module layout
 
@@ -40,7 +40,7 @@ implementation detail and may move again.
 | `fights.ts` | fight resolution (Respond → Roll → Resolve) |
 | `cards.ts` | card framework, definitions, the card stack |
 | `view.ts` | per-seat redaction: `GameState` → `PlayerView` (multiplayer) |
-| `ai/` | the heuristic CPU — see below |
+| `ai/` | the objective-driven CPU — see below |
 | `helpers.ts` | shared queries and draft mutators |
 | `setup.ts` / `gardenPresets.ts` / `randomLayout.ts` / `rng.ts` / `types.ts` | creation, layouts, procedural map generation, RNG, types |
 
@@ -49,12 +49,25 @@ through `ai/index.ts` (`chooseAiAction`):
 
 | File | Responsibility |
 |---|---|
-| `ai/index.ts` | routing, the Action-Phase pick, target completion, the difficulty doc |
+| `ai/index.ts` | routing, the Action-Phase pick, controlled randomness, target completion, the difficulty doc |
+| `ai/objectives.ts` | strategic state, objective proposal, objective lifetimes, the interrupt stack |
+| `ai/objectiveScoring.ts` | how much a legal action serves the current objective |
+| `ai/personality.ts` | the weights colouring posture, objective choice and action scoring |
+| `ai/memory.ts` | `AiMemory` — where a seat's plan lives between actions and turns |
 | `ai/scoring.ts` | `scoreDestination`, `scoreActionPhase`, the BFS distance field |
 | `ai/cardPlans.ts` | `planCardPlay` — one deterministic target picker per card |
 | `ai/decisions.ts` | one policy per `PendingDecision` kind, incl. both respond windows |
 | `ai/chatter.ts` | idle quick-chat (flavor only; changes no game state) |
-| `ai/util.ts` | small shared reads (own/enemy gnomes, home, difficulty, desperation ramp) |
+| `ai/util.ts` | small shared reads (own/enemy gnomes, home, difficulty, the desperation and turtle-breaker ramps) |
+
+The CPU keeps a **plan** — a strategic posture plus a stack of objectives — so it
+pursues one intention across turns, interrupts it to defend its Home, and then
+resumes it. The plan lives in an `AiMemory` the CALLER owns (`createAiMemory()`,
+one per game) rather than in `GameState`: it is not game truth, it never reaches
+the wire or the match record, and a caller that loses it simply gets a CPU that
+re-reads the board and forms a new intention. `chooseAiAction(state)` without a
+store uses a shared module-level one. `describeAiPlan(state, seat, memory)`
+returns the current plan in one line, for debugging and the log.
 
 Dependencies run one way through the top layer — `engine → {actions, settle,
 legalActions, actionExpansion} → {targeting, turns} → elimination → {gardens,

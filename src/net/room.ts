@@ -53,6 +53,7 @@ import {
   MAX_TIMEOUT_STEPS,
   applyAction,
   chooseAiAction,
+  createAiMemory,
   createGame,
   getPlayerToAct,
   getTimeoutAction,
@@ -315,6 +316,14 @@ export class Room {
    * play the CPU's move immediately rather than sit on it.
    */
   private cpuWakeAt: number | null = null;
+  /**
+   * What each CPU seat is currently trying to do (see engine/ai/memory.ts).
+   * In memory only, and deliberately so: the room persists the RECORD, not the
+   * state, and a plan is not part of the game's truth — a room rebuilt by
+   * replaying its actions simply has CPU seats that re-read the board and pick
+   * a fresh intention on their next turn.
+   */
+  private readonly aiMemory = createAiMemory();
   /** Per-connection intake budgets, by connection id. Never persisted. */
   private readonly meters = new Map<string, Meter>();
   /**
@@ -1205,7 +1214,7 @@ export class Room {
       // A room woken from hibernation has forgotten `cpuWakeAt`; that means
       // "due now", not "wait another beat".
       if (this.cpuWakeAt !== null && now < this.cpuWakeAt) return await this.arm();
-      return await this.apply(chooseAiAction(this.state));
+      return await this.apply(chooseAiAction(this.state, this.aiMemory));
     }
 
     if (this.data.clock === null || this.data.clock.seat !== actor) {

@@ -75,7 +75,8 @@ same actions ⇒ identical games, always). `src/ui` is a React layer that never
 recomputes rules: it renders `GameState`, matches clicks against the engine's
 enumerated legal actions, and replays the engine's event log for the game log
 and fight animations. The CPU opponent (`chooseAiAction`) uses only the public
-engine API. This separation is deliberate: the engine is the future
+engine API; it picks a strategic objective, keeps it across turns, and scores
+the engine's own legal actions against it. This separation is deliberate: the engine is the future
 multiplayer server core, and the test suite drives it through thousands of
 actions without any UI.
 

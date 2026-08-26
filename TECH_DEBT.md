@@ -122,7 +122,7 @@ handful of things anyone actually needs to do.
   | `enumerateCompleteCardActions` (analysis path) | 13.9 ms (1336 actions) — **~36× the intent call** |
   | `firstCompleteTargets`, summed over all 18 targeted cards | 0.24 ms (worst: `pocket-shovel` 0.065 ms) |
   | One phased step's options (Plot Twist, first space) | 0.002 ms @7×7 · 0.007 ms @15×15 |
-  | Full AI game: `chooseAiAction` | 0.90 ms/action (244 actions) |
+  | Full AI game: `chooseAiAction` | 0.94 ms/action (318 actions) — includes the objective layer's one BFS per action |
   | … of which `getLegalActionIntents` | **6%** (`applyAction`'s clone+settle is 0.65 ms/action — the real cost) |
 
   The two duplications, both bounded:
@@ -173,6 +173,53 @@ handful of things anyone actually needs to do.
   fight), but the BFS distance field marks the shared square unreachable, so
   any move off it scores ≈+200. Only bites hand-crafted test states; noted so
   future AI tests avoid placing a friendly gnome onto an enemy without a fight.
+
+- **The CPU's plan store is advisory, and its "same game?" guard is a
+  heuristic.** The objective layer (`src/engine/ai/objectives.ts`) keeps a
+  posture and a stack of objectives per seat so the CPU pursues one intention
+  across turns. That plan deliberately does NOT live in `GameState` — the state
+  is cloned per action, encoded, sealed and shipped per seat, and no rule
+  depends on what the CPU wants — so it lives in an `AiMemory` the caller owns
+  (`Room` holds one, `useGame` holds one). Consequences, all accepted:
+  · a room woken from hibernation, or rebuilt by replaying its record, has CPU
+    seats that have forgotten their intentions and pick new ones next turn;
+  · the module-level store behind the one-argument `chooseAiAction(state)`
+    decides "is this the same game still running?" from `seed` plus a monotonic
+    `eventCount` and turn number. Two DIFFERENT games with the SAME seed alive
+    in one process will thrash that guard and get correct but forgetful play.
+    Tests that pin exact CPU actions should pass their own `createAiMemory()`
+    (`aiFingerprint.test.ts` does).
+  If the AI ever needs a plan that survives a replay, the honest fix is to
+  derive it from the state rather than to smuggle it into the wire format.
+
+- **The objective library is deliberately three goals wide.** `CAPTURE_GARDEN`,
+  `DEFEND_HOME`, `ATTACK_ENEMY_HOME`, and one interrupt (defend a threatened
+  Home). The scaffolding for more is in place and cheap to extend — a new goal
+  is an entry in `ObjectiveKind`, a proposal in `proposeObjectives`, a lifetime
+  in `objectiveStatus`, and a bias in `objectiveScoring.ts` — but nothing was
+  added on spec. The same is true of the two half-built extension points:
+  `CARD_AFFINITY` only rates the cards with an obvious directional use (every
+  other card keeps its existing `planCardPlay` score untouched), and
+  `personalityFor` maps a seat's `difficulty` onto one of three personalities
+  because seats have no named-personality field yet. Giving a seat its own
+  weights is a change to `personalityFor` and nothing else.
+
+- **Two turtle-breaker ramps now, not one.** `defenseDecay` / `offensePush`
+  (`ai/util.ts`) exist for the same reason as `desperation`: without them the
+  objective layer re-created the stalemate the tactical heuristics already had
+  to solve, one level up — two CPUs each adopting `DEFEND_HOME` because the
+  other is loitering three spaces away, forever (measured: 1800+ turns).
+  Three ramps over the same clock is one too many. They should be folded into a
+  single "how long has nobody won" signal the next time this area is touched.
+
+- **A 4-player snail endgame can still run forever.** Two seats snailed, the
+  rest with no gnomes left: the snails decline every relocation (nothing
+  improves), nobody can be eliminated, and the game never ends. Reproduces on
+  ~2 of 72 seeded AI games both before and after the objective layer (the
+  affected seeds move, the rate does not), so it is an engine liveness hole
+  rather than an AI one — `getTimeoutAction` closes a stalled SEAT, not a
+  stalled GAME. Needs a rule (a turn cap, or scoring the position), which is
+  why it was left alone here.
 
 - **Quick chat is single-device only so far.** The engine half is
   multiplayer-ready (a `quickChat` action relays and replays like any other),
