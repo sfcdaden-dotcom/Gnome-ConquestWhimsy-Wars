@@ -123,9 +123,13 @@ The 3 R's, in order:
 
 ## Elimination & the Immortal Snail
 
-You are eliminated when either:
+You are eliminated when any of these is true:
 - **[RULING]** After all fights on the space resolve, an enemy unit (gnome or snail)
   solely occupies your Home Garden, OR
+- **[RULING]** Your Home Garden is no longer there to harvest — most often eaten by
+  an Immortal Snail, or destroyed by a card. Every Harvest Phase begins with a check
+  of every surviving player's Home Garden; a player whose home has gone is eliminated
+  then and there (they could never harvest, reinforce or win again), OR
 - You run out of reinforcements (16th gnome destroyed) — note: having 0 gnomes on
   board with reserves remaining is NOT elimination (you can respawn via Home harvest).
 
@@ -139,13 +143,17 @@ Snail rules:
 - Any garden occupied by the Snail is **destroyed at the end of the Snail's turn**
   (returned to supply). This includes Home Gardens (which also means: a Snail
   occupying your Home Garden eliminates you, since the Snail is an enemy).
-- **[RULING]** The Snail only destroys a garden it **solely** occupies. Because
-  the Snail survives lost fights, it can end up sharing a space with the enemy
-  units that fought it off — a garden its defenders are still standing on is
-  NOT destroyed at the end of the Snail's turn.
+- **[RULING]** The Snail only destroys a garden it **solely** occupies. A Snail that
+  loses a fight is normally driven off the space (below), but a boxed-in Snail stays
+  and shares it with the enemy units that fought it off — a garden its defenders are
+  still standing on is NOT destroyed at the end of the Snail's turn.
 - If the Snail **loses** a fight it is not destroyed; its turn ends immediately and
   no gnomes/gardens are destroyed. If it **wins**, the losing gnome is destroyed
   as normal.
+- **[RULING]** A Snail that loses a fight is driven back: it **must** move 1 space to
+  an adjacent empty space (no critters there, and not sealed by the Great Wall). The
+  retreat is forced, so no Maize exit cost is paid. If every neighboring space is
+  occupied, the Snail has nowhere to go and stays where it is.
 - A Snail cannot win the game. The game ends when only one non-snail player remains;
   that player wins.
 

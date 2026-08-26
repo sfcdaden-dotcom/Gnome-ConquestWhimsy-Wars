@@ -8,6 +8,7 @@ import type {
   CardId,
   CardTarget,
   CardTargets,
+  EliminationReason,
   FightSide,
   GameEvent,
   GameState,
@@ -28,6 +29,13 @@ import { gnomeName, unitNameFromEvent, unitNameLive } from './gnomeNames';
  * `PLAYER_COLOR_NAMES`, which is also what an untouched seat is called. */
 export const PLAYER_COLORS = ['#d8504d', '#3f7ad8', '#c9930a', '#9256cf'];
 export const PLAYER_COLOR_NAMES = ['Red', 'Blue', 'Yellow', 'Purple'];
+
+/** Why a seat left the game, in log-line words. */
+export const ELIMINATION_REASON_TEXT: Record<EliminationReason, string> = {
+  'home-captured': 'home garden captured',
+  'home-destroyed': 'home garden gone',
+  reinforcements: 'out of reinforcements',
+};
 
 export function playerColor(id: number): string {
   return PLAYER_COLORS[id % PLAYER_COLORS.length];
@@ -292,11 +300,13 @@ export function describeEvent(state: GameState, ev: GameEvent): string {
     case 'flytrapStunned':
       return `The Flytrap at ${posStr(ev.pos)} is stunned!`;
     case 'snailSurvivedLoss':
-      return `${pname(state, ev.player)}'s Immortal Snail shrugs off the loss.`;
+      return `${pname(state, ev.player)}'s Immortal Snail shrugs off the loss and is driven back.`;
+    case 'snailRetreatBlocked':
+      return `${pname(state, ev.player)}'s Immortal Snail has nowhere to retreat to and holds its ground.`;
     case 'fightEnded':
       return `The fight at ${posStr(ev.pos)} ends.`;
     case 'playerEliminated':
-      return `💀 ${pname(state, ev.player)} is eliminated (${ev.reason === 'home-captured' ? 'home garden captured' : 'out of reinforcements'}).`;
+      return `💀 ${pname(state, ev.player)} is eliminated (${ELIMINATION_REASON_TEXT[ev.reason]}).`;
     case 'playerSnailified':
       return `${pname(state, ev.player)} returns as an Immortal Snail at ${posStr(ev.pos)}!`;
     case 'snailifyDeclined':

@@ -254,7 +254,15 @@ export function DecisionPanel({ state, decision, legal, interactive, act, onResp
       );
 
     case 'snailMove':
-      return (
+      // A rout is mandatory (no "stay put"); the curse's bonus move is not.
+      return decision.context === 'retreat' ? (
+        <Panel title={`${who}: Driven back`} icon={<UnitIcon kind="snail" className="panel-icon" />}>
+          <div className="small muted">
+            Your snail lost the fight and must slither to an adjacent empty space. Click a highlighted
+            space.
+          </div>
+        </Panel>
+      ) : (
         <Panel title={`${who}: Snailmaggedon`} icon={<UnitIcon kind="snail" className="panel-icon" />}>
           <div className="small muted">
             The curse lets your snail slither 1 space during this Harvest Phase. Click a highlighted space,

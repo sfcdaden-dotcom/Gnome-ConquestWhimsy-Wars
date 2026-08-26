@@ -369,10 +369,14 @@ store the order. Logged in TECH_DEBT.md.
   (Great Wall Of Whimsy, Lost In The Maize), then Magic Drain check
   (0 Wishes + owns a gnome ⇒ `sacrificeGnome` decision), then the Harvest
   Phase (skipped entirely for Snail seats).
-- **Harvest Phase**: every qualifying source snapshotted at phase start;
-  owner picks resolution order (`chooseHarvest`) when more than one remains;
-  sources are revalidated when resolved; gardens entered mid-harvest do not
-  harvest this turn.
+- **Harvest Phase**: opens with the **home-garden check** — every seat still
+  `playing` whose Home Garden has ceased to exist (eaten by a snail, destroyed
+  by a card) or is solely held by enemies is queued for elimination
+  (`'home-destroyed'` / `'home-captured'`), and the phase is built only once
+  that queue has drained. Then every qualifying source is snapshotted at phase
+  start; owner picks resolution order (`chooseHarvest`) when more than one
+  remains; sources are revalidated when resolved; gardens entered mid-harvest do
+  not harvest this turn.
 - **Action Phase**: any number of `move` (each unit 1 orthogonal space per
   turn), `plant` (from the actor's own tile supply), `upgrade` (2 Wishes,
   flips a controlled non-Home garden to its upgraded form — see RULES.md
@@ -393,7 +397,8 @@ store the order. Logged in TECH_DEBT.md.
 | `discard` | `discardCard` |
 | `snailify` | `snailify` |
 | `sacrificeGnome` (Magic Drain) | `sacrificeGnome` |
-| `snailMove` (Snailmaggedon) | `snailMove`, `declineEffect` |
+| `snailMove` (`context: 'snailmaggedon'`) | `snailMove`, `declineEffect` (the bonus move is optional) |
+| `snailMove` (`context: 'retreat'`) | `snailMove` only — a snail that lost a fight **must** move to an adjacent empty space |
 
 ### The legal-action contract (phased targeting)
 
@@ -544,6 +549,11 @@ the path end to end.
   own turn ends that turn (skipping its garden-destruction step), and its
   end-of-turn garden destruction only fires when no enemy units share its
   space (defenders who survived fighting it keep the garden safe).
+- A snail that loses a fight is **routed**: it must retreat 1 orthogonal space
+  to an adjacent space empty of all critters and not sealed by a Great Wall
+  (`snailMove` with `context: 'retreat'`, not declinable; the forced move pays
+  no maize exit toll). Boxed in with no empty neighbor, it holds its ground and
+  the engine emits `snailRetreatBlocked`.
 - Home-capture elimination is checked after all fights on the space resolve.
 
 ## Events

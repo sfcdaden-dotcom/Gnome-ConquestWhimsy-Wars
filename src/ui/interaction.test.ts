@@ -155,6 +155,7 @@ describe('resolveCellClick: gating', () => {
       unitId: 'u1',
       from: HOME,
       options: [AWAY],
+      context: 'snailmaggedon',
     };
     const ctx = ctxOf({ state, decision, legal: [move('u1')] });
     expect(resolveCellClick(ctx, AWAY)).toEqual({ kind: 'none' });

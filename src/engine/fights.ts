@@ -27,6 +27,7 @@ import type {
   FightState,
   GameState,
   PlayerId,
+  Pos,
   QueuedFight,
   Unit,
   UnitId,
@@ -37,14 +38,17 @@ import {
   curseActive,
   destroyUnit,
   draftRollD6,
+  entryBlockedByWall,
   gardenAt,
   gardenIsActive,
   illegal,
   internal,
+  orthNeighbors,
   playerUnitsAt,
   pushEvent,
   rollPlayerD6,
   samePos,
+  unitsAt,
 } from './helpers';
 import { playCardFromHand, playableFightRespondCards } from './cards';
 
@@ -323,6 +327,10 @@ function rollAndResolveRound(draft: GameState, f: FightState): void {
       draft.turnMustEnd = true;
     }
     endFight(draft, f);
+    // ...but it is routed: it must slither off the contested space. Opened
+    // after endFight so the fight is fully closed (and its home-capture check
+    // has run) before the retreat decision goes out.
+    requireSnailRetreat(draft, losingSnail.id);
     return;
   }
 
@@ -361,6 +369,42 @@ function rollAndResolveRound(draft: GameState, f: FightState): void {
   }
 
   endFight(draft, f);
+}
+
+/**
+ * Adjacent spaces a routed snail may retreat to: orthogonally adjacent, inside
+ * the board, empty of ALL critters (its own included) and not sealed by a
+ * Great Wall. Gardens are fine — the snail is happy to land on one.
+ */
+export function snailRetreatDestinations(state: GameState, from: Pos): Pos[] {
+  return orthNeighbors(state, from).filter(
+    (q) => unitsAt(state, q).length === 0 && !entryBlockedByWall(state, q),
+  );
+}
+
+/**
+ * A snail that loses a fight is driven off the space: it MUST move 1 space to
+ * an adjacent empty space. The move is forced, so no maize exit toll is
+ * charged (a snail owner has no Wishes to pay one with, and the rout would
+ * otherwise be silently cancelled). Boxed in with nowhere empty to go, it
+ * simply holds its ground.
+ */
+function requireSnailRetreat(draft: GameState, snailId: UnitId): void {
+  const snail = draft.units[snailId];
+  if (!snail || snail.kind !== 'snail') return;
+  const options = snailRetreatDestinations(draft, snail.pos);
+  if (options.length === 0) {
+    pushEvent(draft, { type: 'snailRetreatBlocked', player: snail.owner, pos: { ...snail.pos } });
+    return;
+  }
+  draft.pendingDecision = {
+    kind: 'snailMove',
+    player: snail.owner,
+    unitId: snail.id,
+    from: { ...snail.pos },
+    options,
+    context: 'retreat',
+  };
 }
 
 function endFight(draft: GameState, f: FightState): void {

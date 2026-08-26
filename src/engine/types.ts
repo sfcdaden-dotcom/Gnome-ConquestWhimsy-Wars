@@ -327,7 +327,7 @@ export interface QueuedFight {
 // Eliminations
 // ---------------------------------------------------------------------------
 
-export type EliminationReason = 'home-captured' | 'reinforcements';
+export type EliminationReason = 'home-captured' | 'home-destroyed' | 'reinforcements';
 
 export interface PendingElimination {
   player: PlayerId;
@@ -447,13 +447,19 @@ export type PendingDecision =
       options: UnitId[];
     }
   | {
-      /** Snailmaggedon curse: optionally move your snail 1 space during the
-       *  current Harvest Phase (declineEffect passes). */
+      /**
+       * Move your snail 1 space. Two flavors, told apart by `context`:
+       *  - `snailmaggedon`: the curse's optional bonus move during the current
+       *    Harvest Phase (declineEffect passes),
+       *  - `retreat`: the MANDATORY rout after the snail loses a fight — it
+       *    must slither to an adjacent empty space and cannot be declined.
+       */
       kind: 'snailMove';
       player: PlayerId;
       unitId: UnitId;
       from: Pos;
       options: Pos[];
+      context: 'snailmaggedon' | 'retreat';
     }
   | {
       /**
@@ -600,6 +606,7 @@ export type GameEvent =
   | { type: 'unitDestroyed'; player: PlayerId; unitId: UnitId; unitKind: UnitKind; pos: Pos; cause: string }
   | { type: 'flytrapStunned'; pos: Pos; untilEndOfTurnOf: PlayerId }
   | { type: 'snailSurvivedLoss'; player: PlayerId; pos: Pos }
+  | { type: 'snailRetreatBlocked'; player: PlayerId; pos: Pos }
   | { type: 'fightEnded'; fightId: number; pos: Pos }
   | { type: 'playerEliminated'; player: PlayerId; reason: EliminationReason }
   | { type: 'playerSnailified'; player: PlayerId; pos: Pos }
