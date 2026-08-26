@@ -1,0 +1,16 @@
+{
+  "name": "Whimsy Wars",
+  "short_name": "Whimsy Wars",
+  "description": "A whimsical garden-conquest board game for 2-4 players. Play hot-seat or against the CPU, right in your browser.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#eef4e4",
+  "theme_color": "#dceac8",
+  "icons": [
+    { "src": "./icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "./icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "./icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
