@@ -84,6 +84,13 @@ export interface AiPlan {
   stack: Objective[];
   /** Turn number the base objective was last re-considered. */
   plannedOnTurn: number;
+  /**
+   * What this seat last said out loud, and when (see `chatter.ts`). None of it
+   * feeds the decision — it only keeps the CPU from repeating itself.
+   */
+  announced?: string;
+  announcedKind?: string;
+  announcedOnTurn?: number;
 }
 
 export type ObjectiveStatus = 'active' | 'complete' | 'failed';
@@ -281,58 +288,21 @@ export function proposeObjectives(
   personality: AiPersonality,
 ): ScoredObjective[] {
   const turn = state.turn?.number ?? 0;
-  const bias = POSTURE_BIAS[strategy];
   const out: ScoredObjective[] = [];
+  const add = (objective: Objective) => {
+    const score = scoreObjective(state, player, objective, strategy, personality);
+    if (score > 0) out.push({ objective, score });
+  };
 
   const threat = homeThreat(state, player);
-  if (threat.home) {
-    out.push({
-      objective: { kind: 'DEFEND_HOME', targetPos: threat.home, adoptedOnTurn: turn },
-      score: threat.level * 8 * personality.defense * bias.DEFEND_HOME * defenseDecay(state),
-    });
-  }
+  if (threat.home) add({ kind: 'DEFEND_HOME', targetPos: threat.home, adoptedOnTurn: turn });
 
   for (const h of livingEnemyHomes(state, player)) {
-    const dist = ownDistanceTo(state, player, h.pos);
-    if (!Number.isFinite(dist)) continue;
-    const garrison = playerUnitsAt(state, h.pos, h.player).length;
-    const score =
-      (16 + Math.max(0, 14 - dist) * 1.4 - garrison * 4 / personality.riskTolerance) *
-      personality.aggression *
-      personality.homeAttackPreference *
-      bias.ATTACK_ENEMY_HOME *
-      offensePush(state);
-    if (score > 0) {
-      out.push({
-        objective: {
-          kind: 'ATTACK_ENEMY_HOME',
-          targetPos: h.pos,
-          targetPlayer: h.player,
-          adoptedOnTurn: turn,
-        },
-        score,
-      });
-    }
+    add({ kind: 'ATTACK_ENEMY_HOME', targetPos: h.pos, targetPlayer: h.player, adoptedOnTurn: turn });
   }
 
-  for (const candidate of captureCandidates(state, player, personality)) {
-    const score =
-      candidate.score *
-      personality.expansion *
-      personality.gardenPreference *
-      bias.CAPTURE_GARDEN *
-      defenseDecay(state);
-    if (score > 0) {
-      out.push({
-        objective: {
-          kind: 'CAPTURE_GARDEN',
-          targetPos: candidate.pos,
-          gardenType: candidate.type,
-          adoptedOnTurn: turn,
-        },
-        score,
-      });
-    }
+  for (const c of captureCandidates(state, player)) {
+    add({ kind: 'CAPTURE_GARDEN', targetPos: c.pos, gardenType: c.type, adoptedOnTurn: turn });
   }
 
   // Stable ordering: score, then position, so equal candidates never flap.
@@ -346,35 +316,120 @@ export function proposeObjectives(
 }
 
 /**
- * Gardens worth walking onto: anything we do not already hold a gnome on.
- * Value is the garden's standing worth, less the walk and less whoever is
- * standing in the way (softened by `riskTolerance`).
+ * What one objective — proposed or already held — is worth right now.
+ *
+ * Every score in the layer comes through here, and that is the point. The first
+ * version scored proposals in `proposeObjectives` and then valued the CURRENT
+ * objective by looking it up among them; `captureCandidates` returns only the
+ * plausible few, so an objective that slipped out of that shortlist valued at
+ * zero and was abandoned on the spot — which quietly defeated the persistence
+ * the whole layer exists for (measured: a seat alternating garden / attack /
+ * garden on consecutive turns). One scorer, callable for any objective, is what
+ * makes "is my plan still worth it?" and "is that plan better?" the same
+ * question asked twice.
  */
-function captureCandidates(
+export function scoreObjective(
   state: GameState,
   player: PlayerId,
+  objective: Objective,
+  strategy: StrategicState,
   personality: AiPersonality,
-): Array<{ pos: Pos; type: GardenType; score: number }> {
-  const out: Array<{ pos: Pos; type: GardenType; score: number }> = [];
-  const home = state.players[player].homePos;
+): number {
+  const bias = POSTURE_BIAS[strategy][objective.kind];
+  switch (objective.kind) {
+    case 'DEFEND_HOME': {
+      const threat = homeThreat(state, player);
+      if (!threat.home) return 0;
+      return threat.level * 8 * personality.defense * bias * defenseDecay(state);
+    }
+    case 'ATTACK_ENEMY_HOME': {
+      const dist = ownDistanceTo(state, player, objective.targetPos);
+      if (!Number.isFinite(dist)) return 0;
+      const owner = objective.targetPlayer;
+      const garrison =
+        owner === undefined ? 0 : playerUnitsAt(state, objective.targetPos, owner).length;
+      return (
+        (16 + Math.max(0, 14 - dist) * 1.4 - (garrison * 4) / personality.riskTolerance) *
+        personality.aggression *
+        personality.homeAttackPreference *
+        bias *
+        offensePush(state)
+      );
+    }
+    case 'CAPTURE_GARDEN': {
+      const raw = captureValue(state, player, objective.targetPos, personality);
+      if (raw === null) return 0;
+      return raw * personality.expansion * personality.gardenPreference * bias * defenseDecay(state);
+    }
+  }
+}
+
+/**
+ * What walking onto the garden at `pos` is worth, before posture and taste:
+ * the garden's standing value, less the walk, less whoever is standing on it.
+ * `null` when there is no garden there, we already hold it, or we cannot reach
+ * it at all.
+ */
+function captureValue(
+  state: GameState,
+  player: PlayerId,
+  pos: Pos,
+  personality: AiPersonality,
+): number | null {
+  const g = gardenAt(state, pos);
+  if (!g || g.type === 'home') return null;
+  if (playerUnitsAt(state, pos, player).some((u) => u.kind === 'gnome')) return null; // already ours
+  const dist = ownDistanceTo(state, player, pos);
+  if (!Number.isFinite(dist)) return null;
+  const defenders = enemyUnitsAt(state, pos, player).length;
+  // Gardens near our own home are cheaper to hold once taken.
+  const holdBonus = Math.max(0, 4 - manhattan(pos, state.players[player].homePos) / 2);
+  // A well-defended garden is worth less to WANT, not just harder to reach:
+  // this is the "six gnomes moved onto my Mushroom" abandonment signal.
+  return GARDEN_VALUE[g.type] + holdBonus - dist * 1.2 - (defenders * 5) / personality.riskTolerance;
+}
+
+/**
+ * Gardens worth PROPOSING. Only the plausible few are ever adopted, so this
+ * shortlist keeps objective selection cheap — but it is a shortlist for
+ * proposals only. Valuing an objective we already hold goes through
+ * `captureValue` directly, which has no such cutoff.
+ */
+function captureCandidates(state: GameState, player: PlayerId): Array<{ pos: Pos; type: GardenType }> {
+  const scored: Array<{ pos: Pos; type: GardenType; raw: number }> = [];
   for (const [key, g] of Object.entries(state.gardens)) {
     if (g.type === 'home') continue;
     const [x, y] = key.split(',').map(Number);
     const pos = { x, y };
-    if (playerUnitsAt(state, pos, player).some((u) => u.kind === 'gnome')) continue; // already ours
-    const dist = ownDistanceTo(state, player, pos);
-    if (!Number.isFinite(dist)) continue;
-    const defenders = enemyUnitsAt(state, pos, player).length;
-    // Gardens near our own home are cheaper to hold once taken.
-    const holdBonus = Math.max(0, 4 - manhattan(pos, home) / 2);
-    // A well-defended garden is worth less to WANT, not just harder to reach:
-    // this is the "six gnomes moved onto my Mushroom" abandonment signal.
-    const score = GARDEN_VALUE[g.type] + holdBonus - dist * 1.2 - (defenders * 5) / personality.riskTolerance;
-    out.push({ pos, type: g.type, score });
+    const raw = captureValue(state, player, pos, PROPOSAL_TASTE);
+    if (raw === null) continue;
+    scored.push({ pos, type: g.type, raw });
   }
-  out.sort((a, b) => b.score - a.score || a.pos.y - b.pos.y || a.pos.x - b.pos.x);
-  return out.slice(0, 6); // only the plausible few are ever adopted
+  scored.sort((a, b) => b.raw - a.raw || a.pos.y - b.pos.y || a.pos.x - b.pos.x);
+  return scored.slice(0, CAPTURE_SHORTLIST).map(({ pos, type }) => ({ pos, type }));
 }
+
+/** How many gardens are even considered as a new objective each turn. */
+const CAPTURE_SHORTLIST = 6;
+
+/**
+ * Neutral weights for building the shortlist. Personality decides how much a
+ * garden is WANTED (`scoreObjective`); which gardens are worth looking at is a
+ * board question, and using the seat's own risk tolerance here would let a
+ * timid seat shortlist nothing at all.
+ */
+const PROPOSAL_TASTE: AiPersonality = {
+  name: 'shortlist',
+  aggression: 1,
+  defense: 1,
+  expansion: 1,
+  whimsyPreference: 1,
+  riskTolerance: 1,
+  gardenPreference: 1,
+  homeAttackPreference: 1,
+  objectiveFocus: 1,
+  explorationBand: 0,
+};
 
 // ---------------------------------------------------------------------------
 // Level 2b — lifetimes
@@ -419,10 +474,7 @@ export function objectiveValue(
   strategy: StrategicState,
   personality: AiPersonality,
 ): number {
-  for (const candidate of proposeObjectives(state, player, strategy, personality)) {
-    if (sameObjective(candidate.objective, objective)) return candidate.score;
-  }
-  return 0; // no longer proposed at all ⇒ worth nothing
+  return scoreObjective(state, player, objective, strategy, personality);
 }
 
 /** Two objectives are the same plan if they aim the same kind at the same place. */

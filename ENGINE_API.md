@@ -228,13 +228,31 @@ player, refilled for everyone at the start of every turn and once more when the
 game ends. `quickChatsLeft(state, player)` is the same number the UI disables
 its button on.
 
-`chooseAiAction` uses it too: when the CPU could play a Whimsy Card this Action
-Phase and picks something else, it sometimes says one line from the `musings`
-group first (`QUICK_CHAT_MUSINGS` — rhetorical gnome questions that describe
-nothing about the board, so a chatty CPU leaks no information), then takes its
-real action on the next call. The coin flip and the phrase are hashed from
-(seed, turn, seat), so the AI stays deterministic, and the engine's own
-`quickChatsThisTurn` counter is what stops it repeating within a turn.
+`chooseAiAction` uses it too, and for the CPU two groups are load-bearing
+rather than cosmetic:
+
+- **`schemes`** (`QUICK_CHAT_SCHEMES`) is how the CPU announces the objective it
+  has just adopted — "That mushroom is mine.", "Get off my lawn!", "I'm coming
+  for you!". This is what makes the objective layer visible at all: the plan
+  lives in an `AiMemory` beside the state, where no player can see it, so the
+  CPU says it. A change of objective KIND always speaks; the same kind again
+  waits out a short cooldown, or the CPU narrates every re-target and reads as
+  indecisive. **A CPU seat therefore telegraphs its intentions on purpose** —
+  the old rule was that its chatter leaked nothing, and that was traded for
+  legibility (see TECH_DEBT.md). Humans get the same lines and, unlike the CPU,
+  can lie with them.
+- **`musings`** (`QUICK_CHAT_MUSINGS`) is the fallback, unchanged: rhetorical
+  gnome questions that describe nothing about the board, said when the CPU sits
+  on a playable Whimsy Card with nothing new to announce.
+
+Either way it takes its real action on the next call — chat costs the turn
+nothing. The coin flip and the phrase are hashed from (seed, turn, seat), so the
+AI stays deterministic, and the engine's own `quickChatsThisTurn` counter is
+what stops it repeating within a turn.
+
+Phrase ids are permanent: a `quickChat` action stores its id in the match record
+and `doQuickChat` rejects an id it cannot find, so deleting one makes every
+stored record containing it un-replayable.
 
 ## Hidden information & per-seat views (multiplayer)
 

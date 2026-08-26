@@ -86,9 +86,13 @@
  *    end the turn when nothing scores above passing.
  *  - Discard (over hand limit): pitch the lowest static-value card.
  *  - Snailify: always continue as the Immortal Snail.
- *  - Idle chatter: when it could play a Whimsy Card this Action Phase and
- *    doesn't, it sometimes mutters one rhetorical quick-chat line first (see
- *    `idleChatter`) — flavor only; chat changes no game state.
+ *  - Chatter: the CPU says its plan out loud. When it adopts a new kind of
+ *    objective it spends one quick chat on the line that matches ("That
+ *    mushroom is mine.", "Get off my lawn!"), and otherwise falls back to the
+ *    rhetorical musings it always had. That is how the objective layer becomes
+ *    visible to a player at all — see `chatter.ts`, including the note on why
+ *    a CPU that telegraphs its intentions is the point rather than a leak.
+ *    Chat changes no game state.
  *
  * Roll-influencing / shield cards (Snake Eyes, 4 Leaf Clover, Gnomebody Dies)
  * are never spent proactively in the Action Phase — they are held for the
@@ -127,7 +131,7 @@ import { normalizeSeed } from '../rng';
 import { chooseDecisionAction } from './decisions';
 import { planCardPlay } from './cardPlans';
 import { idleChatter } from './chatter';
-import { scoreActionPhase } from './scoring';
+import { END_TURN_SCORE, scoreActionPhase } from './scoring';
 import type { AiMemory } from './memory';
 import { planFor, sharedAiMemory } from './memory';
 
@@ -207,7 +211,8 @@ function chooseAiActionInner(state: GameState, memory: AiMemory): Action {
   // exists for. It is advisory; a null objective just means every bonus below
   // is 0 and the CPU falls back to its original tactical heuristics.
   const personality = personalityFor(state, actor);
-  const objective = updatePlan(state, actor, planFor(memory, state, actor), personality);
+  const plan = planFor(memory, state, actor);
+  const objective = updatePlan(state, actor, plan, personality);
   // One BFS to the objective's target for the whole decision, shared by every
   // candidate move (see `objectiveField`).
   const field = objectiveField(state, actor, objective);
@@ -225,24 +230,21 @@ function chooseAiActionInner(state: GameState, memory: AiMemory): Action {
   const scored: Array<{ action: Action; score: number }> = [];
   for (const a of legal) {
     if (a.type === 'playCard') {
-      const plan = planCardPlay(state, actor, a.cardId);
-      if (!plan) continue;
-      scored.push({
-        action: plan.action,
-        score: plan.score * cardObjectiveMultiplier(objective, a.cardId, personality),
-      });
+      const cardPlan = planCardPlay(state, actor, a.cardId);
+      if (!cardPlan) continue;
+      const biased = cardPlan.score * cardObjectiveMultiplier(objective, a.cardId, personality);
+      scored.push({ action: cardPlan.action, score: keepAbovePassing(cardPlan.score, biased) });
     } else {
-      scored.push({
-        action: a,
-        score:
-          scoreActionPhase(state, actor, a) +
-          objectiveBonus(state, actor, objective, a, personality, field),
-      });
+      const base = scoreActionPhase(state, actor, a);
+      const biased = base + objectiveBonus(state, actor, objective, a, personality, field);
+      scored.push({ action: a, score: keepAbovePassing(base, biased) });
     }
   }
 
   const action = pickAction(state, actor, scored, personality) ?? legal[0];
-  return idleChatter(state, actor, legal, action) ?? action;
+  // Say the plan before playing it, when there is a new one to say (chat costs
+  // the turn nothing; the action below follows on the next call).
+  return idleChatter(state, actor, legal, action, plan) ?? action;
 }
 
 /**
@@ -267,8 +269,32 @@ function chooseAiActionInner(state: GameState, memory: AiMemory): Action {
  * `endTurn` is excluded from the band: passing is always "close enough" to a
  * marginal action, and randomly giving up a turn reads as a bug, not character.
  */
-/** Fraction of the winning score an action must still reach to be explored. */
-const EXPLORE_FLOOR = 0.8;
+/**
+ * A plan may reorder actions against each other; it may never argue for doing
+ * nothing. Anything the tactical heuristics rated above passing stays above
+ * passing, however badly it serves the current objective.
+ *
+ * The case that found this rule: a seat with no gnomes left and an enemy on its
+ * doorstep. `DEFEND_HOME` docks a card draw ("investing while the house is on
+ * fire"), which is right while there are gnomes to move instead — but with none
+ * left, drawing is the only constructive thing on the board, and the CPU sat
+ * there ending its turn. Discouraging an action is not the same as preferring
+ * to pass, and the objective layer is not allowed to confuse the two.
+ */
+function keepAbovePassing(base: number, biased: number): number {
+  if (base <= END_TURN_SCORE || biased > END_TURN_SCORE) return biased;
+  return END_TURN_SCORE + 0.01;
+}
+
+/**
+ * Fraction of the winning score an action must still reach to be explored.
+ *
+ * 0.9 rather than something looser because the Action-Phase scale is bottom
+ * heavy: most decisions are single digits, where a flat band alone treats
+ * "8 versus 7" — plant the economy garden, or plant the guard garden, two
+ * different intentions — as the same near-tie it treats "91 versus 89".
+ */
+const EXPLORE_FLOOR = 0.9;
 
 function pickAction(
   state: GameState,

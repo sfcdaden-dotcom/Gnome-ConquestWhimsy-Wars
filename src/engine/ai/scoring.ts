@@ -146,6 +146,14 @@ export function scoreDestination(state: GameState, player: PlayerId, from: Pos, 
   return score;
 }
 
+/**
+ * What passing is worth: just above doing something actively bad, just below
+ * anything actively useful. Exported because the objective layer needs to know
+ * where the "do nothing" line sits so it never argues for crossing it (see
+ * `chooseAiActionInner`).
+ */
+export const END_TURN_SCORE = 0.1;
+
 export function scoreActionPhase(state: GameState, player: PlayerId, action: Action): number {
   const p = state.players[player];
   switch (action.type) {
@@ -279,7 +287,7 @@ export function scoreActionPhase(state: GameState, player: PlayerId, action: Act
       // target payload); this path is unreachable for playCard.
       return -1;
     case 'endTurn':
-      return 0.1;
+      return END_TURN_SCORE;
     default:
       return -Infinity;
   }

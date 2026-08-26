@@ -224,14 +224,28 @@ handful of things anyone actually needs to do.
 - **Quick chat is single-device only so far.** The engine half is
   multiplayer-ready (a `quickChat` action relays and replays like any other),
   but the UI speaks for exactly one seat — the revealed human — so in hot-seat
-  play you can only chat as whoever is holding the device. The CPU mutters a
-  rhetorical `musings` line when it sits on a playable Whimsy Card, off a
-  (seed, turn, seat) hash rather than RNG so `chooseAiAction` stays
-  deterministic (`src/engine/ai/chatter.ts`). That is its whole personality; it
-  never reacts to fights, losses or wins. Decide when real multiplayer lands:
-  per-connection sender identity, and whether the CPU's chatter should react to
-  events (which needs a trigger table, and a rule that it still says nothing
-  informative).
+  play you can only chat as whoever is holding the device. Decide when real
+  multiplayer lands: per-connection sender identity.
+
+- **The CPU's chatter deliberately leaks its plan now.** It used to say only
+  rhetorical `musings`, chosen so a chatty CPU gave nothing away. It now
+  announces the objective it has adopted from the `schemes` group, because the
+  objective layer is otherwise invisible — the plan lives in a store beside the
+  state, and a plan nobody can read does not make an opponent more legible. The
+  trade was made on purpose and is reversible in one place (`ai/chatter.ts`):
+  a CPU that telegraphs "I'm coming for you" gives a human something to respond
+  to, which is worth more here than inscrutability. Two consequences worth
+  knowing: a strong human can play against the announcements, and the CPU
+  cannot bluff (humans have the same lines and can). Still off a
+  (seed, turn, seat) hash rather than RNG, so `chooseAiAction` stays
+  deterministic. It reacts to its own plans only — never to fights, losses or
+  wins; that would need a trigger table.
+
+- **Announcements are throttled by feel, not by evidence.** `SCHEME_COOLDOWN_TURNS`
+  = 4, kind-changes speak through it, and the result is ~5% of all actions being
+  chat (about one line every other turn per seat, measured over 72 games).
+  That number came from reading transcripts, not from anyone playing. If it
+  turns out to be grating in a real game, the knob is one constant.
 
 - **Vitest smoke duration.** ~11 full AI games per run (the invariant validator
   and the AI fingerprints added two more). Fine now — the whole suite is ~22 s;

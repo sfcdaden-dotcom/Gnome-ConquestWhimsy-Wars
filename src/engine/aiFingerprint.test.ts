@@ -65,11 +65,11 @@ describe('AI fingerprints (behavior lock)', () => {
     actions: number;
     winner: number | null;
   }> = [
-    { label: '2p normal seed 1', state: () => game(1, 'normal'), digest: 'e47ec821', actions: 188, winner: 1 },
-    { label: '2p normal seed 2', state: () => game(2, 'normal'), digest: '0aaaec50', actions: 196, winner: 1 },
-    { label: '2p hard seed 3', state: () => game(3, 'hard'), digest: '556ae0b8', actions: 166, winner: 0 },
-    { label: '2p easy seed 4', state: () => game(4, 'easy'), digest: '18bf775c', actions: 188, winner: 0 },
-    { label: '4p normal seed 5', state: () => game(5, 'normal', 4), digest: '0bea7eac', actions: 692, winner: 1 },
+    { label: '2p normal seed 1', state: () => game(1, 'normal'), digest: '5c00acbd', actions: 153, winner: 1 },
+    { label: '2p normal seed 2', state: () => game(2, 'normal'), digest: '885249cd', actions: 254, winner: 1 },
+    { label: '2p hard seed 3', state: () => game(3, 'hard'), digest: 'f3d20689', actions: 211, winner: 0 },
+    { label: '2p easy seed 4', state: () => game(4, 'easy'), digest: '0c487cec', actions: 189, winner: 0 },
+    { label: '4p normal seed 5', state: () => game(5, 'normal', 4), digest: '0b4e247e', actions: 776, winner: 3 },
   ];
 
   for (const c of cases) {
