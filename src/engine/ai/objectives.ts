@@ -57,7 +57,24 @@ import { defenseDecay, enemyGnomes, offensePush, ownGnomes, ownHomePos } from '.
 // Model
 // ---------------------------------------------------------------------------
 
-/** Broad posture. Influences objective SELECTION, never one specific action. */
+/**
+ * Broad posture. Influences objective SELECTION, never one specific action —
+ * with one deliberate exception: the posture also owns ECONOMIC POLICY, because
+ * "is a Wish worth more in the ground or in my hand" is not a question any one
+ * objective can answer. Two postures pull in opposite directions, and
+ * `objectiveScoring.ts` / `chooseHomeHarvest` implement the contrast:
+ *
+ *   EXPAND  spends on the board — plants gardens, takes the gnome at the Home
+ *           Garden, keeps its Wishes for the ground. A garden pays every turn.
+ *   DEFEND  spends on the hand — draws down to its last Wishes, takes the Wish
+ *           over the gnome, and leaves the gnomes that are already harvesting
+ *           where they are. A dug-in position is not short of bodies, it is
+ *           short of answers.
+ *
+ * Measured over 16 games: EXPAND plants ~3x as often and takes the body ~7x as
+ * often; DEFEND draws ~6x as often. (SURVIVE follows DEFEND, and PRESSURE /
+ * FINISH follow EXPAND on bodies — both are spending them.)
+ */
 export type StrategicState = 'EXPAND' | 'DEFEND' | 'PRESSURE' | 'SURVIVE' | 'FINISH';
 
 /** The concrete goal library. Deliberately small — grow it once it pays off. */

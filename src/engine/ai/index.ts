@@ -11,7 +11,8 @@
  * an intention and picks the action that serves it:
  *
  *     strategic state   EXPAND / DEFEND / PRESSURE / SURVIVE / FINISH
- *            ↓          (posture — biases what goals are worth having)
+ *            ↓          (posture — biases what goals are worth having, and
+ *                        owns economic policy: plant vs draw, gnome vs Wish)
  *     objective         CAPTURE_GARDEN(3,4) / DEFEND_HOME / ATTACK_ENEMY_HOME(red)
  *            ↓          (a concrete goal, REMEMBERED across turns)
  *     action scoring    existing tactical score + how much it serves the goal
@@ -135,8 +136,10 @@ import { END_TURN_SCORE, scoreActionPhase } from './scoring';
 import type { AiMemory } from './memory';
 import { planFor, sharedAiMemory } from './memory';
 
+import type { Objective } from './objectives';
 import { describeObjective, updatePlan } from './objectives';
-import { cardObjectiveMultiplier, objectiveBonus, objectiveField } from './objectiveScoring';
+import type { PlanContext } from './objectiveScoring';
+import { cardObjectiveMultiplier, homeIsStormed, objectiveBonus, objectiveField } from './objectiveScoring';
 import type { AiPersonality } from './personality';
 import { personalityFor } from './personality';
 
@@ -200,22 +203,45 @@ function chooseAiActionInner(state: GameState, memory: AiMemory): Action {
   const legal = getLegalActionIntents(state, actor);
   if (legal.length === 0) throw new EngineError('INTERNAL', 'No legal actions available for the player to act');
 
-  const d = state.pendingDecision;
-  if (d) return chooseDecisionAction(state, actor, d, legal);
-
-  // Action Phase.
-  //
   // The plan comes first: `updatePlan` retires anything finished, re-reads the
   // posture, pushes an interrupt if our home is in trouble, and otherwise keeps
   // the objective this seat already had — the persistence the whole layer
   // exists for. It is advisory; a null objective just means every bonus below
   // is 0 and the CPU falls back to its original tactical heuristics.
+  //
+  // Most pending decisions are answered without consulting the plan at all
+  // (roll-off, discard, the respond windows), so advancing it there is work
+  // nothing reads. `POSTURE_DECISIONS` names the ones that do: the Home Garden
+  // harvest is an economic choice, and which of a gnome or a Wish is worth more
+  // is exactly what a posture answers.
   const personality = personalityFor(state, actor);
   const plan = planFor(memory, state, actor);
-  const objective = updatePlan(state, actor, plan, personality);
-  // One BFS to the objective's target for the whole decision, shared by every
-  // candidate move (see `objectiveField`).
-  const field = objectiveField(state, actor, objective);
+  const d = state.pendingDecision;
+  const objective =
+    d === null || POSTURE_DECISIONS.has(d.kind)
+      ? updatePlan(state, actor, plan, personality)
+      : currentObjective(plan);
+
+  if (d) {
+    // A decision never needs the movement field, which is the expensive half —
+    // skip the BFS on this path.
+    return chooseDecisionAction(state, actor, d, legal, {
+      strategy: plan.strategy,
+      objective,
+      personality,
+      field: null,
+    });
+  }
+
+  // Everything the plan knows, gathered once for the whole decision — including
+  // one BFS to the objective's target, shared by every candidate move.
+  const ctx: PlanContext = {
+    strategy: plan.strategy,
+    objective,
+    personality,
+    field: objectiveField(state, actor, objective),
+    homeStormed: homeIsStormed(state, actor),
+  };
 
   // Then the pick: every legal action keeps its existing tactical score and
   // gains one objective term on top. endTurn scores its 0.1 baseline via
@@ -232,12 +258,12 @@ function chooseAiActionInner(state: GameState, memory: AiMemory): Action {
     if (a.type === 'playCard') {
       const cardPlan = planCardPlay(state, actor, a.cardId);
       if (!cardPlan) continue;
-      const biased = cardPlan.score * cardObjectiveMultiplier(objective, a.cardId, personality);
-      scored.push({ action: cardPlan.action, score: keepAbovePassing(cardPlan.score, biased) });
+      const biased = cardPlan.score * cardObjectiveMultiplier(a.cardId, ctx);
+      scored.push({ action: cardPlan.action, score: respectTactics(a, cardPlan.score, biased) });
     } else {
       const base = scoreActionPhase(state, actor, a);
-      const biased = base + objectiveBonus(state, actor, objective, a, personality, field);
-      scored.push({ action: a, score: keepAbovePassing(base, biased) });
+      const biased = base + objectiveBonus(state, actor, a, ctx);
+      scored.push({ action: a, score: respectTactics(a, base, biased) });
     }
   }
 
@@ -269,21 +295,44 @@ function chooseAiActionInner(state: GameState, memory: AiMemory): Action {
  * `endTurn` is excluded from the band: passing is always "close enough" to a
  * marginal action, and randomly giving up a turn reads as a bug, not character.
  */
+/** Decision kinds whose policy reads the posture (see `chooseDecisionAction`). */
+const POSTURE_DECISIONS: ReadonlySet<string> = new Set(['homeHarvest']);
+
+/** The objective currently driving scoring, without advancing the plan. */
+function currentObjective(plan: { stack: readonly Objective[] }): Objective | null {
+  return plan.stack.length > 0 ? plan.stack[plan.stack.length - 1] : null;
+}
+
 /**
- * A plan may reorder actions against each other; it may never argue for doing
- * nothing. Anything the tactical heuristics rated above passing stays above
- * passing, however badly it serves the current objective.
+ * Where the plan's authority ends.
  *
- * The case that found this rule: a seat with no gnomes left and an enemy on its
- * doorstep. `DEFEND_HOME` docks a card draw ("investing while the house is on
- * fire"), which is right while there are gnomes to move instead — but with none
- * left, drawing is the only constructive thing on the board, and the CPU sat
- * there ending its turn. Discouraging an action is not the same as preferring
- * to pass, and the objective layer is not allowed to confuse the two.
+ * `scoreActionPhase` is the tactical judgment, and a posture is allowed to
+ * argue with its PRIORITIES but not with its vetoes. Two rules, both found by
+ * watching the CPU do something indefensible:
+ *
+ *  - **A veto stays a veto.** A negative tactical score means "this is a bad
+ *    idea" — a flytrap walling in our own base, a garden nowhere near the
+ *    cluster. EXPAND wants gardens planted, so a flat "planting is good" bonus
+ *    lifted one of those above passing and Hard hemmed itself in. A bias may
+ *    make an approved action more attractive; it may not approve a rejected one.
+ *  - **Nothing is worse than nothing.** Anything the tactics rated above
+ *    passing stays above passing, however badly it serves the objective. The
+ *    case: a seat with no gnomes left and an enemy on its doorstep, where
+ *    DEFEND_HOME's "don't invest while the house is on fire" docked the card
+ *    draw — the only constructive thing left — until the CPU just ended its
+ *    turn. Discouraging an action is not the same as preferring to pass.
+ *
+ * `drawCard` is exempt from the first rule, and deliberately: its negative
+ * score means "you are not Wish-rich enough to spare one", which is a budgeting
+ * preference rather than a judgment about the board — and the budget is exactly
+ * what a posture is. A dug-in seat drawing down to its last Wishes is the
+ * behaviour, not a bug in it. (The bonus itself still refuses to draw into an
+ * immediate discard; hand room is not a budget question.)
  */
-function keepAbovePassing(base: number, biased: number): number {
-  if (base <= END_TURN_SCORE || biased > END_TURN_SCORE) return biased;
-  return END_TURN_SCORE + 0.01;
+function respectTactics(action: Action, base: number, biased: number): number {
+  if (action.type !== 'drawCard' && base < 0) return Math.min(biased, base);
+  if (base > END_TURN_SCORE && biased <= END_TURN_SCORE) return END_TURN_SCORE + 0.01;
+  return biased;
 }
 
 /**

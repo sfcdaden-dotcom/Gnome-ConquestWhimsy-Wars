@@ -122,7 +122,7 @@ handful of things anyone actually needs to do.
   | `enumerateCompleteCardActions` (analysis path) | 13.9 ms (1336 actions) — **~36× the intent call** |
   | `firstCompleteTargets`, summed over all 18 targeted cards | 0.24 ms (worst: `pocket-shovel` 0.065 ms) |
   | One phased step's options (Plot Twist, first space) | 0.002 ms @7×7 · 0.007 ms @15×15 |
-  | Full AI game: `chooseAiAction` | 0.94 ms/action (318 actions) — includes the objective layer's one BFS per action |
+  | Full AI game: `chooseAiAction` | 1.7 ms/action (324 actions) — the objective layer's one BFS per action, plus the economy terms' per-candidate garden lookups |
   | … of which `getLegalActionIntents` | **6%** (`applyAction`'s clone+settle is 0.65 ms/action — the real cost) |
 
   The two duplications, both bounded:
@@ -240,6 +240,18 @@ handful of things anyone actually needs to do.
   (seed, turn, seat) hash rather than RNG, so `chooseAiAction` stays
   deterministic. It reacts to its own plans only — never to fights, losses or
   wins; that would need a trigger table.
+
+- **The postures' economic policy is a designer's choice, not a solved one.**
+  EXPAND plants and takes gnomes; DEFEND draws and takes Wishes; a gnome already
+  harvesting stays put while dug in unless an enemy is literally in the Home.
+  That contrast was specified, then tuned until the measurements matched it
+  (EXPAND plants ~3x as often and takes the body ~7x as often; DEFEND draws ~6x
+  as often). Nobody has checked whether it WINS more — only that it does what it
+  says. The garden-holding half is the weakest of the three: A/B'd, it moves the
+  share of gnomes standing on resource gardens while defending from ~34% to
+  ~38%, because it is competing with a Home that genuinely needs bodies.
+  Raising the weights further bought no more occupancy, so the binding
+  constraint is the defence, not the number.
 
 - **Announcements are throttled by feel, not by evidence.** `SCHEME_COOLDOWN_TURNS`
   = 4, kind-changes speak through it, and the result is ~5% of all actions being

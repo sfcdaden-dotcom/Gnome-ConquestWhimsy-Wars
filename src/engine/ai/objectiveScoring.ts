@@ -32,8 +32,8 @@
 
 import type { Action, CardId, GameState, PlayerId, Pos } from '../types';
 import { enemyUnitsAt, gardenAt, manhattan, playerUnitsAt, samePos } from '../helpers';
-import type { Objective } from './objectives';
-import { HOME_THREAT_RADIUS } from './objectives';
+import type { Objective, StrategicState } from './objectives';
+import { HOME_THREAT_RADIUS, homeThreat } from './objectives';
 import { distanceField } from './scoring';
 import { defenseDecay, offensePush } from './util';
 
@@ -54,6 +54,44 @@ export function objectiveField(
 ): ObjectiveField | null {
   if (!objective) return null;
   return { dist: distanceField(state, player, objective.targetPos), size: state.config.boardSize };
+}
+
+/**
+ * Everything the plan knows, gathered once per action.
+ *
+ * Bundled rather than passed as six arguments because the POSTURE is now as
+ * load-bearing as the objective: what a seat wants from its economy is a
+ * question about EXPAND vs DEFEND, not about which garden it is walking
+ * toward. Anything a future rule needs about the plan belongs here.
+ */
+export interface PlanContext {
+  readonly strategy: StrategicState;
+  readonly objective: Objective | null;
+  readonly personality: AiPersonality;
+  readonly field: ObjectiveField | null;
+  /**
+   * Is an enemy actually IN our Home, rather than merely near it? Precomputed
+   * because `homeThreat` walks every enemy gnome and the answer is consulted
+   * once per candidate move — a per-action fact asked a per-move number of
+   * times is exactly the shape that belongs on the context. Optional so a test
+   * can build a context without one; absent reads as "not stormed".
+   */
+  readonly homeStormed?: boolean;
+}
+
+/** Is this posture about holding what we have rather than taking more? */
+function isDefensive(ctx: PlanContext): boolean {
+  return ctx.strategy === 'DEFEND' || ctx.strategy === 'SURVIVE' || ctx.objective?.kind === 'DEFEND_HOME';
+}
+
+/** Is this posture about growing — bodies and gardens? */
+function isGrowing(ctx: PlanContext): boolean {
+  return ctx.strategy === 'EXPAND';
+}
+
+/** Dandelions and Mushrooms: the gardens that pay a Wish or a gnome per turn. */
+function isResourceGarden(type: string | undefined): boolean {
+  return type === 'dandelion' || type === 'mushroom';
 }
 
 /** Field distance at `p`; falls back to Manhattan if no field was supplied. */
@@ -107,57 +145,64 @@ type ObjectiveKindKey = Objective['kind'];
 export function objectiveBonus(
   state: GameState,
   player: PlayerId,
-  objective: Objective | null,
   action: Action,
-  personality: AiPersonality,
-  field: ObjectiveField | null = null,
+  ctx: PlanContext,
 ): number {
-  if (!objective || personality.objectiveFocus === 0) return 0;
-  return rawBonus(state, player, objective, action, personality, field) * personality.objectiveFocus;
+  if (ctx.personality.objectiveFocus === 0) return 0;
+  return rawBonus(state, player, action, ctx) * ctx.personality.objectiveFocus;
 }
 
-function rawBonus(
-  state: GameState,
-  player: PlayerId,
-  objective: Objective,
-  action: Action,
-  personality: AiPersonality,
-  field: ObjectiveField | null,
-): number {
-  const target = objective.targetPos;
+function rawBonus(state: GameState, player: PlayerId, action: Action, ctx: PlanContext): number {
+  const { objective, personality } = ctx;
   switch (action.type) {
     case 'move': {
       const unit = state.units[action.unitId];
       if (!unit) return 0;
-      return moveBonus(state, player, objective, unit.pos, action.to, personality, field);
+      return moveBonus(state, player, unit.pos, action.to, ctx);
     }
     case 'plant': {
-      // Gardens are an EXPAND-shaped commitment: they cost a turn we might owe
-      // to the plan. Under an attack plan they are a distraction; under a
-      // defensive one, only the ones that actually wall our approach help.
-      if (objective.kind === 'ATTACK_ENEMY_HOME') return -3;
-      if (objective.kind === 'DEFEND_HOME') {
+      // Planting is what EXPAND is FOR: a garden is the only thing on the board
+      // that pays every turn, and a posture that is not spending its Wishes on
+      // one is not expanding. Every other posture treats it as a turn it owes
+      // somewhere else.
+      if (isGrowing(ctx)) {
+        return isResourceGarden(action.gardenType) ? 4 * personality.expansion : 2 * personality.expansion;
+      }
+      if (objective?.kind === 'ATTACK_ENEMY_HOME') return -3;
+      if (isDefensive(ctx)) {
+        // Only the gardens that actually wall our approach are worth the turn.
+        const home = objective?.targetPos ?? state.players[player].homePos;
         const defensive = action.gardenType === 'maize' || action.gardenType === 'flytrap';
-        const near = manhattan(action.pos, target) <= 2 && !samePos(action.pos, target);
+        const near = manhattan(action.pos, home) <= 2 && !samePos(action.pos, home);
         return defensive && near ? 5 * personality.defense : -4;
       }
-      // CAPTURE_GARDEN: planting elsewhere is fine, just not instead of going.
       return -1;
     }
     case 'upgrade':
-      // Deepening a garden we hold never advances an attack or a defence.
-      return objective.kind === 'CAPTURE_GARDEN' ? 1 : -1.5;
-    case 'playCard': {
-      // `planCardPlay` has already scored and targeted the play; the objective
-      // layer only says how much that play matters to the current plan. The
-      // multiplier is folded in by the caller (see `cardObjectiveMultiplier`),
-      // so nothing is added here.
+      // Deepening a resource garden is growth by another name, and it lands on
+      // a tile we already hold — exactly what a defensive posture wants too.
+      if (isGrowing(ctx)) return 2 * personality.expansion;
+      if (isDefensive(ctx)) return 1.5 * personality.defense;
+      return objective?.kind === 'CAPTURE_GARDEN' ? 1 : -1.5;
+    case 'playCard':
+      // `planCardPlay` has already scored and targeted the play; how much that
+      // play matters to the plan is applied by `cardObjectiveMultiplier`.
       return 0;
+    case 'drawCard': {
+      // Dug in with the board already set, a hand is the only thing still
+      // improving: cards are how a defended position answers something it did
+      // not plan for, and a defensive seat will spend down to its last Wishes
+      // for one. While expanding, the same Wish is worth more in the ground —
+      // a garden pays every turn, a card pays once.
+      //
+      // Hand room is the one part of the tactical gate a posture does NOT
+      // overrule (see `respectTactics`): drawing into an immediate discard is
+      // churn whatever the posture wants.
+      if (state.players[player].hand.length > state.config.handLimit - 2) return 0;
+      if (isDefensive(ctx)) return 3 * personality.whimsyPreference;
+      if (isGrowing(ctx)) return -1 * personality.expansion;
+      return 0.5 * personality.whimsyPreference;
     }
-    case 'drawCard':
-      // Fresh cards are an investment. Worth a little while expanding, a waste
-      // while something is standing on our doorstep.
-      return objective.kind === 'DEFEND_HOME' ? -1 : 0.5 * personality.whimsyPreference;
     case 'endTurn':
       return 0;
     default:
@@ -168,21 +213,36 @@ function rawBonus(
 /**
  * The heart of the layer: does this move take us toward what we want?
  *
- * Three parts, all on the Action-Phase scale:
  *  - closing distance on the target (the persistent pull that reads as intent),
  *  - arriving on it (the payoff, big enough to beat a tempting detour),
- *  - objective-specific extras: clearing a defender that blocks the target,
- *    and, while defending, refusing to walk away from home.
+ *  - clearing a defender that stands between us and it,
+ *  - and the economy: a posture decides whether a gnome standing on a Dandelion
+ *    is doing its job or wasting its turn (see `economyBonus`).
+ *
+ * With no objective there is no target to pull toward, but the economy still
+ * has an opinion — so that half runs either way.
  */
 function moveBonus(
   state: GameState,
   player: PlayerId,
-  objective: Objective,
   from: Pos,
   to: Pos,
-  personality: AiPersonality,
-  field: ObjectiveField | null,
+  ctx: PlanContext,
 ): number {
+  const { objective, personality, field } = ctx;
+  let bonus = economyBonus(state, player, from, to, ctx);
+  if (!objective) return bonus;
+
+  // A gnome holding a resource garden while we are dug in ALREADY has a job,
+  // and the plan does not get to call it away from it. Without this the
+  // objective's own pull wins the argument every time — DEFEND_HOME is worth
+  // +10 on arrival and the garden is worth −7 to leave — and the seat ends up
+  // defending a Home with an economy that has quietly switched off. The one
+  // thing that outranks the harvest is somebody actually in the house.
+  if (isDefensive(ctx) && !ctx.homeStormed && holdsResourceGarden(state, player, from)) {
+    return bonus;
+  }
+
   const target = objective.targetPos;
   const before = distanceTo(field, from, target);
   const after = distanceTo(field, to, target);
@@ -197,7 +257,7 @@ function moveBonus(
 
   // Clamp the step: an unreachable square scores manhattan + 100 in the field,
   // so a raw difference can be enormous. One step is worth one step.
-  let bonus = Math.max(-2, Math.min(2, before - after)) * urgency;
+  bonus += Math.max(-2, Math.min(2, before - after)) * urgency;
 
   if (samePos(to, target)) {
     // Landing on the objective is the point. A contested arrival is a fight the
@@ -232,21 +292,98 @@ function moveBonus(
 }
 
 /**
+ * What a posture thinks of a gnome standing on a Dandelion or a Mushroom.
+ *
+ * A resource garden only pays while somebody is standing on it, so "hold the
+ * economy" and "bring everyone home" are the same instruction pulling in
+ * different directions the moment a garden sits outside the ring around Home.
+ * A defensive posture resolves it toward the garden: a dug-in position that
+ * stopped harvesting is losing slowly, and the Wishes it produces are what buy
+ * the cards and walls that hold the position at all.
+ *
+ * The base tactical heuristics already nudge both ways (`scoreActionPhase`'s
+ * "work the cluster" / "hold the cluster"); this is the posture's opinion added
+ * on top, deliberately stronger, and it applies to DEFEND and SURVIVE alike.
+ */
+/** Is this gnome the only one keeping a Dandelion/Mushroom switched on? */
+function holdsResourceGarden(state: GameState, player: PlayerId, pos: Pos): boolean {
+  if (!isResourceGarden(gardenAt(state, pos)?.type)) return false;
+  return playerUnitsAt(state, pos, player).filter((u) => u.kind === 'gnome').length <= 1;
+}
+
+/**
+ * Not "an enemy is nearby" but "an enemy is IN it" — an enemy standing on our
+ * Home, or enough of them on the doorstep to take it next turn. `homeThreat`
+ * scores an occupier 5 and an adjacent gnome 3, so this is the line between a
+ * threat we answer with the gnomes already free and one worth abandoning the
+ * harvest for.
+ */
+const STORM_LEVEL = 5;
+
+/** Computed once per action for `PlanContext.homeStormed`. */
+export function homeIsStormed(state: GameState, player: PlayerId): boolean {
+  return homeThreat(state, player).level >= STORM_LEVEL;
+}
+
+function economyBonus(
+  state: GameState,
+  player: PlayerId,
+  from: Pos,
+  to: Pos,
+  ctx: PlanContext,
+): number {
+  if (!isDefensive(ctx)) return 0;
+  const weight = ctx.personality.defense;
+  let bonus = 0;
+
+  const leaving = gardenAt(state, from);
+  if (isResourceGarden(leaving?.type) && !samePos(from, to)) {
+    // Walking the last harvester off a garden turns it off. Anything else this
+    // gnome could be doing has to beat that.
+    const holders = playerUnitsAt(state, from, player).filter((u) => u.kind === 'gnome').length;
+    if (holders <= 1) bonus -= 10 * weight;
+  }
+
+  const arriving = gardenAt(state, to);
+  if (isResourceGarden(arriving?.type) && !samePos(from, to)) {
+    // Manning an idle garden switches it back on; a second body on a working
+    // one is just a gnome standing still.
+    const holders = playerUnitsAt(state, to, player).filter((u) => u.kind === 'gnome').length;
+    if (holders === 0) bonus += 7 * weight;
+  }
+
+  return bonus;
+}
+
+/**
  * Multiplier applied to a `planCardPlay` score once an objective is in play.
  *
  * Kept separate from `objectiveBonus` because a card's value is proportional to
  * what the card plan already judged it worth — doubling a 12-point removal is
  * meaningful, adding a flat 3 to a 1-point play is not.
  */
-export function cardObjectiveMultiplier(
-  objective: Objective | null,
-  cardId: CardId,
-  personality: AiPersonality,
-): number {
-  if (!objective || personality.objectiveFocus === 0) return 1;
-  const affinity = CARD_AFFINITY[objective.kind]?.[cardId] ?? 1;
+export function cardObjectiveMultiplier(cardId: CardId, ctx: PlanContext): number {
+  const { objective, personality } = ctx;
+  if (personality.objectiveFocus === 0) return 1;
+  const affinity =
+    (objective ? CARD_AFFINITY[objective.kind]?.[cardId] : undefined) ??
+    POSTURE_CARD_AFFINITY[ctx.strategy]?.[cardId] ??
+    1;
   if (affinity === 1) return 1;
   // Scale the affinity's DISTANCE from neutral by focus and taste, so a seat
   // that cares little about either barely moves off the card's own score.
   return 1 + (affinity - 1) * personality.objectiveFocus * personality.whimsyPreference;
 }
+
+/**
+ * Posture-level card taste, consulted when the objective has no opinion.
+ * EXPAND wants bodies and Wishes — the two things it turns into gardens.
+ */
+const POSTURE_CARD_AFFINITY: Partial<Record<StrategicState, Partial<Record<CardId, number>>>> = {
+  EXPAND: {
+    'wild-growth': 1.5, // more gnomes is the whole posture
+    'gnome-birthday-party': 1.3, // Wishes, which become gardens
+    'seeing-double': 1.3,
+    'pocket-shovel': 1.2,
+  },
+};

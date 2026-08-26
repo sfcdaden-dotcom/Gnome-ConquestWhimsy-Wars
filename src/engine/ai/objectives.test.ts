@@ -15,9 +15,12 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import type { GameState, PlayerId } from '../types';
-import { applyAction, chooseAiAction, createAiMemory, describeAiPlan } from '../index';
+import type { Action, GameState, PlayerId } from '../types';
+import { applyAction, chooseAiAction, createAiMemory, describeAiPlan, wishCap } from '../index';
 import { mutate, newGame, toActionPhase, withGarden, withGnome } from '../testkit';
+import { chooseDecisionAction } from './decisions';
+import type { PlanContext } from './objectiveScoring';
+import { objectiveBonus } from './objectiveScoring';
 import type { AiPlan } from './objectives';
 import {
   HOME_THREAT_RADIUS,
@@ -210,6 +213,122 @@ describe('interrupts', () => {
       const withFoe = withGnome(s, foe, away).state;
       expect(urgentInterrupt(withFoe, me, [])).toBeNull();
     }
+  });
+});
+
+describe('posture economics', () => {
+  /**
+   * These pin the ECONOMIC contrast between the two growth-facing postures,
+   * which is a policy choice rather than a derived fact:
+   *
+   *   EXPAND  — spend on the board: plant gardens, take bodies at the Home
+   *             Garden, and keep the Wishes for the ground rather than the hand.
+   *   DEFEND  — spend on the hand: draw cards down to the last Wishes, take the
+   *             Wish over the gnome, and leave the gnomes that are already
+   *             harvesting where they are.
+   *
+   * They are asserted through `objectiveBonus` / `chooseHomeHarvest` rather than
+   * through whole games, because a full game confounds the posture with the
+   * situation that produced it — DEFEND happens precisely when enemies are near,
+   * which pulls gnomes homeward for reasons that have nothing to do with policy.
+   */
+  const EXPANDING: PlanContext = { strategy: 'EXPAND', objective: null, personality: STEADY, field: null };
+  const DEFENDING: PlanContext = { strategy: 'DEFEND', objective: null, personality: STEADY, field: null };
+
+  /** A seat with Wishes, hand room, and a garden it could plant. */
+  function economyBoard(): { state: GameState; me: PlayerId } {
+    const s = toActionPhase(11);
+    const me: PlayerId = s.turn!.activePlayer;
+    return {
+      state: mutate(s, (d) => {
+        d.players[me].wishes = 3;
+        d.players[me].hand = [];
+      }),
+      me,
+    };
+  }
+
+  it('draws far more readily while defending than while expanding', () => {
+    const { state, me } = economyBoard();
+    const draw: Action = { type: 'drawCard', player: me };
+    const defending = objectiveBonus(state, me, draw, DEFENDING);
+    const expanding = objectiveBonus(state, me, draw, EXPANDING);
+    expect(defending).toBeGreaterThan(0);
+    expect(expanding).toBeLessThan(0);
+    expect(defending).toBeGreaterThan(expanding);
+  });
+
+  it('will not draw into an immediate discard, whatever the posture', () => {
+    const { state, me } = economyBoard();
+    const full = mutate(state, (d) => {
+      d.players[me].hand = Array.from({ length: d.config.handLimit }, () => 'nope-gnome');
+    });
+    expect(objectiveBonus(full, me, { type: 'drawCard', player: me }, DEFENDING)).toBe(0);
+  });
+
+  it('plants far more readily while expanding than while defending', () => {
+    const { state, me } = economyBoard();
+    const home = state.players[me].homePos;
+    const spot = { x: home.x, y: home.y === 0 ? 2 : home.y - 2 };
+    const plant: Action = { type: 'plant', player: me, pos: spot, gardenType: 'dandelion' };
+    const expanding = objectiveBonus(state, me, plant, EXPANDING);
+    const defending = objectiveBonus(state, me, plant, DEFENDING);
+    expect(expanding).toBeGreaterThan(0);
+    expect(defending).toBeLessThan(0);
+  });
+
+  it('takes the body while expanding and the Wish while dug in', () => {
+    const s = toActionPhase(11);
+    const me: PlayerId = s.turn!.activePlayer;
+    // Enough gnomes on the board that neither posture is at its floor.
+    let board = s;
+    for (let i = 0; i < 4; i++) board = withGnome(board, me, s.players[me].homePos).state;
+    board = mutate(board, (d) => {
+      d.players[me].wishes = 1; // well under the cap: the Wish is not wasted
+    });
+    const decision = mutate(board, (d) => {
+      d.pendingDecision = { kind: 'homeHarvest', player: me, options: ['gnome', 'wish'] };
+    });
+    const take = (ctx: PlanContext) => {
+      const action = chooseDecisionAction(decision, me, decision.pendingDecision!, [], ctx);
+      return action.type === 'homeHarvest' ? action.take : null;
+    };
+    expect(take(EXPANDING)).toBe('gnome');
+    expect(take(DEFENDING)).toBe('wish');
+  });
+
+  it('takes the body regardless when the Wish would be wasted at the cap', () => {
+    const s = toActionPhase(11);
+    const me: PlayerId = s.turn!.activePlayer;
+    let board = s;
+    for (let i = 0; i < 4; i++) board = withGnome(board, me, s.players[me].homePos).state;
+    const capped = mutate(board, (d) => {
+      d.players[me].wishes = wishCap(d, me);
+      d.pendingDecision = { kind: 'homeHarvest', player: me, options: ['gnome', 'wish'] };
+    });
+    const action = chooseDecisionAction(capped, me, capped.pendingDecision!, [], DEFENDING);
+    expect(action).toEqual({ type: 'homeHarvest', player: me, take: 'gnome' });
+  });
+
+  it('keeps the last harvester on a resource garden while dug in', () => {
+    const s = toActionPhase(11);
+    const me: PlayerId = s.turn!.activePlayer;
+    const home = s.players[me].homePos;
+    const garden = { x: home.x, y: home.y === 0 ? 2 : home.y - 2 };
+    let board = withGarden(s, garden, 'mushroom');
+    const g = withGnome(board, me, garden);
+    board = g.state;
+    const step = { x: garden.x, y: garden.y + (home.y === 0 ? -1 : 1) };
+    const move: Action = { type: 'move', player: me, unitId: g.unitId, to: step };
+
+    // Dug in, walking the only harvester off is penalised…
+    expect(objectiveBonus(board, me, move, DEFENDING)).toBeLessThan(0);
+    // …and it is not penalised for a posture that is not holding a position.
+    expect(objectiveBonus(board, me, move, EXPANDING)).toBe(0);
+
+    // A second gnome makes the garden safe to leave: it keeps harvesting.
+    const doubled = withGnome(board, me, garden).state;
+    expect(objectiveBonus(doubled, me, move, DEFENDING)).toBe(0);
   });
 });
 

@@ -62,7 +62,11 @@ through `ai/index.ts` (`chooseAiAction`):
 
 The CPU keeps a **plan** — a strategic posture plus a stack of objectives — so it
 pursues one intention across turns, interrupts it to defend its Home, and then
-resumes it. The plan lives in an `AiMemory` the CALLER owns (`createAiMemory()`,
+resumes it. The posture also decides economic policy, which is the most visible
+difference between two CPU seats at a glance: **EXPAND** spends on the board
+(plants gardens, takes the gnome at the Home Garden), while **DEFEND** spends on
+the hand (draws down to its last Wishes, takes the Wish, and leaves gnomes that
+are already harvesting on their gardens unless somebody is actually in its Home). The plan lives in an `AiMemory` the CALLER owns (`createAiMemory()`,
 one per game) rather than in `GameState`: it is not game truth, it never reaches
 the wire or the match record, and a caller that loses it simply gets a CPU that
 re-reads the board and forms a new intention. `chooseAiAction(state)` without a
