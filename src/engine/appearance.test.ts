@@ -72,13 +72,24 @@ describe('resolveAppearances', () => {
     }
   });
 
-  it('keeps palettes distinct even when every seat asks for the same one', () => {
-    const out = resolveAppearances(Array.from({ length: 4 }, () => ({ palette: 'teal' as const })), 7);
-    expect(out[0].palette).toBe('teal'); // first claim wins
-    expect(new Set(out.map((a) => a.palette)).size).toBe(4);
+  it('honours a shared palette — that is how a team is declared', () => {
+    const out = resolveAppearances(
+      [{ palette: 'teal' as const }, { palette: 'teal' as const }, undefined, undefined],
+      7,
+    );
+    expect(out[0].palette).toBe('teal');
+    expect(out[1].palette).toBe('teal');
   });
 
-  it('keeps palettes distinct when nobody asks', () => {
+  it('never auto-assigns a palette somebody explicitly chose', () => {
+    // Being drafted onto a team by an unlucky draw would be a bug, not a game.
+    for (let salt = 0; salt < 200; salt++) {
+      const out = resolveAppearances([{ palette: 'green' as const }, undefined, undefined, undefined], salt);
+      expect(out.slice(1).map((a) => a.palette)).not.toContain('green');
+    }
+  });
+
+  it('keeps palettes distinct when nobody asks — the default table is a free-for-all', () => {
     for (let salt = 0; salt < 100; salt++) {
       const out = resolveAppearances([undefined, undefined, undefined, undefined], salt);
       expect(new Set(out.map((a) => a.palette)).size).toBe(4);
@@ -182,7 +193,17 @@ describe('replay', () => {
       config: state.config,
       seed: state.seed,
       actions: [],
-      result: { winner: null, winnerName: null, winnerController: null, turns: 0, actionCount: 0, reason: 'unfinished' },
+      result: {
+        winner: null,
+        winnerName: null,
+        winnerController: null,
+        winningTeam: null,
+        winners: [],
+        winnerNames: [],
+        turns: 0,
+        actionCount: 0,
+        reason: 'unfinished',
+      },
     });
     expect(replayed.players.map((p) => p.appearance)).toEqual(state.players.map((p) => p.appearance));
   });
@@ -199,7 +220,17 @@ describe('replay', () => {
       config,
       seed: state.seed,
       actions: [],
-      result: { winner: null, winnerName: null, winnerController: null, turns: 0, actionCount: 0, reason: 'unfinished' },
+      result: {
+        winner: null,
+        winnerName: null,
+        winnerController: null,
+        winningTeam: null,
+        winners: [],
+        winnerNames: [],
+        turns: 0,
+        actionCount: 0,
+        reason: 'unfinished',
+      },
     });
     for (const p of replayed.players) expect(isPlayerAppearance(p.appearance)).toBe(true);
     expect(new Set(replayed.players.map((p) => p.appearance.palette)).size).toBe(2);

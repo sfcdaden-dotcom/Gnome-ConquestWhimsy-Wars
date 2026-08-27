@@ -448,8 +448,24 @@ describe('bannerText', () => {
     const s = mutate(withStack(['u1']), (d) => {
       d.status = 'finished';
       d.winner = 1;
+      // A win is a TEAM win; `winner` alone is the one-seat shorthand and the
+      // engine never sets it without this (see invariants: WINNER_WITHOUT_TEAM).
+      d.winningTeam = d.players[1].team;
+      d.players[0].status = 'out';
     });
     expect(bannerText(s, null, pname, label)).toBe('🏆 P1 wins!');
+  });
+
+  it('announces both winners of a team game', () => {
+    const s = mutate(withStack(['u1']), (d) => {
+      d.status = 'finished';
+      // Seats 0 and 1 partnered up, so nobody is the single winner.
+      d.players[0].team = 0;
+      d.players[1].team = 0;
+      d.winningTeam = 0;
+      d.winner = null;
+    });
+    expect(bannerText(s, null, pname, label)).toBe('🏆 P0 and P1 win!');
   });
 
   it('names the turn, seat and phase in play', () => {

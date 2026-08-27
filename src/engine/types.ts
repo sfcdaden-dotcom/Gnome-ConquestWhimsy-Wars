@@ -222,11 +222,20 @@ export interface PlayerState {
   id: PlayerId;
   name: string;
   /**
-   * The seat's resolved gnome — every field settled, palette guaranteed unique
-   * across seats. Public information: it is on the board for everyone to see,
-   * so `viewFor` does not redact it.
+   * The seat's resolved gnome. Public information: it is on the board for
+   * everyone to see, so `viewFor` does not redact it.
    */
   appearance: PlayerAppearance;
+  /**
+   * Which side this seat plays for — seats sharing a palette share a team.
+   * Grouped once at `createGame` (see teams.ts) so that no RULE ever reads a
+   * palette: character select decides the sides, and the rules only ever ask
+   * about `team`.
+   *
+   * In a free-for-all every seat is its own team and this is just the seat
+   * index, which is why teams changed no existing behaviour.
+   */
+  team: number;
   controller: PlayerController;
   difficulty: AiDifficulty;
   status: PlayerStatus;
@@ -640,7 +649,15 @@ export type GameEvent =
   | { type: 'playerSnailified'; player: PlayerId; pos: Pos }
   | { type: 'snailifyDeclined'; player: PlayerId }
   | { type: 'turnEnded'; player: PlayerId }
-  | { type: 'gameFinished'; winner: PlayerId | null };
+  | {
+      type: 'gameFinished';
+      /** The sole winning seat, or null when a TEAM of more than one won. */
+      winner: PlayerId | null;
+      /** The winning team, or null for a draw. Set whenever anyone won. */
+      winningTeam: number | null;
+      /** Every surviving seat on the winning team, in seat order. */
+      winners: PlayerId[];
+    };
 
 // ---------------------------------------------------------------------------
 // Game state
@@ -689,7 +706,16 @@ export interface GameState {
   /** Force the active player's turn to end as soon as interrupts settle. */
   turnMustEnd: boolean;
   pendingDecision: PendingDecision | null;
+  /**
+   * The sole winning seat, or null. Null does NOT mean "no winner" now that
+   * teams exist — a 2v2 win has two winners and leaves this null with
+   * `winningTeam` set. Use `winningSeats(state)` for "who won"; this field is
+   * kept because in a free-for-all (every seat its own team) it still means
+   * exactly what it always did.
+   */
   winner: PlayerId | null;
+  /** The winning team, or null while the game runs and for a draw. */
+  winningTeam: number | null;
   nextUnitId: number;
   nextFightId: number;
   /**

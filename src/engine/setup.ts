@@ -30,6 +30,7 @@ import type {
 import { EngineError, PLANTABLE_GARDEN_TYPES } from './types';
 import { normalizeSeed, shuffled } from './rng';
 import { resolveAppearances } from './appearance';
+import { assignTeams, teamCount } from './teams';
 import { posKey } from './helpers';
 import { makeGarden } from './gardens';
 import { buildInitialDeck, isCurseId, MAX_CARD_COPIES, resolveDeckCounts } from './cards';
@@ -234,10 +235,20 @@ export function createGame(options: CreateGameOptions, seed: number): GameState 
   // no randomness from `rngState`, so seeded games are unaffected.
   const appearances = resolveAppearances(config.players.map((p) => p.appearance), seed);
 
+  // Palettes become sides here and nowhere else — see teams.ts.
+  const teams = assignTeams(appearances.map((a) => a.palette));
+  // A table where everyone is on one side has no game in it: nobody can be
+  // fought, no home can be captured, and the win condition is satisfied before
+  // the first roll. Refuse it at setup rather than dealing an unplayable game.
+  if (teamCount(teams) < 2) {
+    badConfig('Every seat picked the same colour — at least two teams are needed to play');
+  }
+
   const players: PlayerState[] = config.players.map((p, i) => ({
     id: i as PlayerId,
     name: p.name,
     appearance: appearances[i],
+    team: teams[i],
     controller: p.controller,
     difficulty: p.difficulty,
     status: 'playing',
@@ -282,6 +293,7 @@ export function createGame(options: CreateGameOptions, seed: number): GameState 
     turnMustEnd: false,
     pendingDecision: { kind: 'rollOff', player: players[0].id },
     winner: null,
+    winningTeam: null,
     nextUnitId: 1,
     nextFightId: 1,
     events: [],

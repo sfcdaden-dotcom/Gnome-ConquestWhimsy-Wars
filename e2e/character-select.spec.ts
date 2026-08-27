@@ -55,19 +55,53 @@ test.describe('character select', () => {
     await expect(page.locator('.player-panel').first().locator('.pp-gnome')).toHaveAttribute(LOOK, chosen);
   });
 
-  test('a colour another seat holds cannot be taken', async ({ page }) => {
+  test('sharing a colour makes a team, and the board says who with', async ({ page }) => {
+    await page.goto('/');
+    await page.getByTestId('home-local').click();
+    await page.getByTestId('player-count-4').click();
+
+    // Seats 0 and 2 both take orange: that is the whole team-up gesture.
+    await page.getByTestId('seat-0-customise').click();
+    await page.getByTestId('cc-palette-orange').click();
+    await page.getByTestId('seat-0-customise').click();
+
+    await page.getByTestId('seat-2-customise').click();
+    // Not disabled — picking a colour somebody has is how you join them.
+    await expect(page.getByTestId('cc-palette-orange')).toBeEnabled();
+    await page.getByTestId('cc-palette-orange').click();
+    await page.getByTestId('seat-2-customise').click();
+
+    const palettes = await page.locator('.seat-list .seat-gnome').evaluateAll((n) =>
+      n.map((x) => (x.getAttribute('data-look') ?? '').split('/')[0]),
+    );
+    expect(palettes[0]).toBe('orange');
+    expect(palettes[2]).toBe('orange');
+
+    await page.getByTestId('start-game').click();
+    await expect(page.getByTestId('game-screen')).toBeVisible();
+
+    // Each partner's panel names the other.
+    const panels = page.locator('.player-panel');
+    await expect(panels.nth(0).locator('.pp-team')).toContainText(await panels.nth(2).locator('.pp-name').innerText());
+    await expect(panels.nth(2).locator('.pp-team')).toContainText(await panels.nth(0).locator('.pp-name').innerText());
+    // The free-for-all seats have no partner line.
+    await expect(panels.nth(1).locator('.pp-team')).toHaveCount(0);
+  });
+
+  test('everyone on one colour is refused with a reason', async ({ page }) => {
     await page.goto('/');
     await page.getByTestId('home-local').click();
     await page.getByTestId('player-count-2').click();
 
-    await page.getByTestId('seat-0-customise').click();
-    await page.getByTestId('cc-palette-orange').click();
-    await page.getByTestId('seat-0-customise').click(); // close
+    for (const seat of [0, 1]) {
+      await page.getByTestId(`seat-${seat}-customise`).click();
+      await page.getByTestId('cc-palette-pink').click();
+      await page.getByTestId(`seat-${seat}-customise`).click();
+    }
+    await page.getByTestId('start-game').click();
 
-    await page.getByTestId('seat-1-customise').click();
-    // Seat 0 has orange, so seat 1 is shown it as taken rather than being
-    // allowed to pick it and silently reassigned later.
-    await expect(page.getByTestId('cc-palette-orange')).toBeDisabled();
+    await expect(page.getByTestId('game-screen')).toHaveCount(0);
+    await expect(page.getByText(/same colour/i)).toBeVisible();
   });
 
   test('🎲 re-rolls the parts but never steals a colour', async ({ page }) => {

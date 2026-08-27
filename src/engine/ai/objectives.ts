@@ -48,6 +48,7 @@
  * in a stable order, so a seeded game still replays exactly.
  */
 
+import { areAllies, teamOf } from '../teams';
 import type { GameState, GardenType, PlayerId, Pos, Unit } from '../types';
 import { enemyUnitsAt, gardenAt, gnomesOnBoard, manhattan, playerUnitsAt, reserveGnomes } from '../helpers';
 import type { AiPersonality } from './personality';
@@ -186,21 +187,32 @@ export function forceOf(state: GameState, player: PlayerId): number {
   return gnomesOnBoard(state, player) + reserveGnomes(state, player);
 }
 
-/** Our force minus the strongest surviving opponent's. Positive = ahead. */
+/**
+ * Our TEAM's force minus the strongest surviving enemy team's. Positive =
+ * ahead. Counting partners on our side of the ledger is what stops an AI
+ * reading a 2v2 it is winning as a game it is losing.
+ */
 export function materialEdge(state: GameState, player: PlayerId): number {
-  let best = 0;
+  const byTeam = new Map<number, number>();
   for (const p of state.players) {
-    if (p.id === player || p.status !== 'playing') continue;
-    best = Math.max(best, forceOf(state, p.id));
+    if (p.status !== 'playing') continue;
+    const team = teamOf(state, p.id);
+    byTeam.set(team, (byTeam.get(team) ?? 0) + forceOf(state, p.id));
   }
-  return forceOf(state, player) - best;
+  const ours = byTeam.get(teamOf(state, player)) ?? 0;
+  let best = 0;
+  for (const [team, force] of byTeam) {
+    if (team === teamOf(state, player)) continue;
+    best = Math.max(best, force);
+  }
+  return ours - best;
 }
 
-/** Enemy homes still standing, in seat order (stable). */
+/** Enemy homes still standing, in seat order (stable). Never a partner's. */
 function livingEnemyHomes(state: GameState, player: PlayerId): Array<{ player: PlayerId; pos: Pos }> {
   const out: Array<{ player: PlayerId; pos: Pos }> = [];
   for (const p of state.players) {
-    if (p.id === player || p.status !== 'playing') continue;
+    if (areAllies(state, p.id, player) || p.status !== 'playing') continue;
     const g = gardenAt(state, p.homePos);
     if (g && g.type === 'home' && g.owner === p.id) out.push({ player: p.id, pos: p.homePos });
   }

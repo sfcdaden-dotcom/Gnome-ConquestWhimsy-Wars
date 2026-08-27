@@ -12,7 +12,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Action, CardId, CardTarget, GameState, PendingDecision, PlayerId, Pos } from '../engine';
-import { gardenAt, getLegalActionIntents, getPendingDecisionOptions, posKey } from '../engine';
+import { gardenAt, getLegalActionIntents, getPendingDecisionOptions, posKey, winningSeats } from '../engine';
 import { Board } from './Board';
 import { DecisionPanel } from './DecisionPanel';
 import { FightPanel, FightPlaybackCard, HandPanel, PlayerPanels } from './panels';
@@ -808,15 +808,22 @@ function EndOverlay({
   onQuit: () => void;
   onReview: () => void;
 }) {
-  const w = state.winner;
+  // Not `state.winner`: a team win has two winners and leaves that null.
+  const winners = winningSeats(state);
   return (
     <div className="overlay" role="dialog" aria-label="Game over" data-testid="end-overlay">
       <div className="overlay-card end-card">
-        <div className="pass-emoji">{w !== null ? '🏆' : '🍂'}</div>
+        <div className="pass-emoji">{winners.length > 0 ? '🏆' : '🍂'}</div>
         <h2>
-          {w !== null ? (
+          {winners.length > 0 ? (
             <>
-              <span style={{ color: playerColor(state, w) }}>{pname(state, w)}</span> wins Whimsy Wars!
+              {winners.map((w, i) => (
+                <span key={w}>
+                  {i > 0 && ' and '}
+                  <span style={{ color: playerColor(state, w) }}>{pname(state, w)}</span>
+                </span>
+              ))}
+              {winners.length > 1 ? ' win Whimsy Wars together!' : ' wins Whimsy Wars!'}
             </>
           ) : (
             'Nobody wins — the garden falls silent.'

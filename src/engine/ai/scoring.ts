@@ -9,6 +9,7 @@
  * a card play and a board move can be compared directly.
  */
 
+import { areAllies } from '../teams';
 import type { Action, GameState, PlantableGardenType, PlayerId, Pos } from '../types';
 import {
   centerPos,
@@ -114,7 +115,10 @@ export function scoreDestination(state: GameState, player: PlayerId, from: Pos, 
   if (enemies.length > 0) {
     const destGarden = gardenAt(state, to);
     const attackingHome =
-      !!destGarden && destGarden.type === 'home' && destGarden.owner !== undefined && destGarden.owner !== player;
+      !!destGarden &&
+      destGarden.type === 'home' &&
+      destGarden.owner !== undefined &&
+      !areAllies(state, destGarden.owner, player);
     const difficulty = state.players[player].difficulty;
     if (difficulty === 'easy') {
       // Easy: no late-game push, and barely weighs being outnumbered —
@@ -295,7 +299,7 @@ export function scoreActionPhase(state: GameState, player: PlayerId, action: Act
 
 export function enemyNear(state: GameState, player: PlayerId, pos: Pos, radius: number): boolean {
   for (const u of Object.values(state.units)) {
-    if (u.owner !== player && manhattan(u.pos, pos) <= radius) return true;
+    if (!areAllies(state, u.owner, player) && manhattan(u.pos, pos) <= radius) return true;
   }
   return false;
 }

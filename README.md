@@ -66,6 +66,12 @@ colour, so it needs a light outline or halo to stay legible on any of them.
 top-left corner during play, and filling the whole cell in the setup preview
 and the preset editor.
 
+Two players who pick the same colour are **teammates** (see the Teams section
+in RULES.md) — the palette is the team, so the board says who is with whom
+without a legend. That makes `appearance.palette` the one cosmetic field with a
+rules consequence, which is why `createGame` groups the palettes into
+`PlayerState.team` once at setup and no rule ever reads a palette again.
+
 ### Gnome parts
 
 A player's gnome is not one of those files. It is composited from five layers —

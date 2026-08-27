@@ -26,7 +26,13 @@ rulebook was ambiguous, the designer's ruling is marked **[RULING]**.
 - **Controlled space**: occupied only by units of a single player.
 - **Contested space**: contains critters of different players.
 - **Reserve**: units not on the board but still spawnable.
-- **Enemy**: any critter not controlled by you.
+- **Team**: the set of players sharing a colour (see Teams). A player with a
+  colour to themselves is a team of one.
+- **Ally / partner**: a player on your team. You are always your own ally.
+- **Enemy**: any critter not controlled by you **or an ally**.
+- **Controlled space** and **contested space** are judged by TEAM, not by
+  player: a space holding two allied players' gnomes is controlled, not
+  contested.
 
 ## Setup
 
@@ -44,6 +50,29 @@ rulebook was ambiguous, the designer's ruling is marked **[RULING]**.
 6. **Center Star** (if enabled): the center space is marked. While a player
    **occupies** the center space, their wish limit is +1 (i.e. 4). This is a marker
    on the space, not a garden — the space is otherwise normal (can be planted on).
+7. **Colours are chosen at setup**, and choosing the same colour as another
+   player puts you on their team (see Teams). By default every seat gets a
+   colour of its own, so the default game is a free-for-all.
+
+## Teams
+
+Players who share a colour are on the same team. A 4-player game can therefore
+be a free-for-all (four colours), a 2v2 (two colours), or a 3v1.
+
+- **[RULING]** A team is declared ONLY by deliberately choosing a colour
+  somebody already has. Colours handed out automatically always avoid the ones
+  players picked, so nobody is put on a team by accident.
+- Allies **do not fight**. Allied critters may share a space freely, and a
+  space holding only allied units is controlled, not contested.
+- An ally standing on your Home Garden is a garrison: **allies cannot capture
+  each other's homes**.
+- Everything else is unchanged. Allies do **not** share Wishes, hands, gnome
+  supplies, reinforcements or turns; they take their own turns in the normal
+  clockwise order, and each is eliminated on their own.
+- **[RULING]** Every seat on one team is not a game — at least two teams are
+  required, and setup refuses a table where everyone picked the same colour.
+- A free-for-all is the case where every team has one member. Every rule above
+  is then vacuous, which is why teams changed nothing about the solo game.
 
 ## Turn structure
 
@@ -290,5 +319,14 @@ Any non-Home garden can be upgraded once to a stronger form — see each garden'
 
 ## Win condition
 
-Last non-snail player remaining wins. (Snails may still be on the board when the
+The last **team** with a non-snail player remaining wins, and every surviving
+member of that team wins together. (Snails may still be on the board when the
 game ends.)
+
+In a free-for-all every team has one member, so this is the original rule: the
+last player standing wins.
+
+- **[RULING]** A team wins the moment no player outside it is still playing —
+  its members do NOT then fight it out.
+- An eliminated player whose partner is still playing is out for good (they may
+  still take the Immortal Snail); their team plays on without them.

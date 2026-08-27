@@ -493,19 +493,68 @@ describe('character select', () => {
     expect(room.snapshot().seats[1].appearance).toEqual(LOOK);
   });
 
-  it('refuses a palette another seat already holds, out loud', async () => {
+  it('lets two seats share a palette — that is how they team up', async () => {
     const { room } = await lobby(['human', 'human']);
+    await room.handle('c0', { t: 'configure', playerCount: 4, seats: [{ index: 2, controller: 'cpu' }, { index: 3, controller: 'cpu' }] });
     const c1 = new FakeConn('c1');
     await room.hello(c1, { ...HELLO });
 
     await room.handle('c0', { t: 'setAppearance', appearance: LOOK });
     await room.handle('c1', { t: 'setAppearance', appearance: LOOK });
 
-    expect(c1.last('error')?.code).toBe('BAD_CONFIG');
-    // Silently reassigning would leave the player staring at a colour they did
-    // not pick with no explanation.
-    expect(room.snapshot().seats[1].appearance.palette).not.toBe('teal');
-    expect(room.snapshot().seats[0].appearance).toEqual(LOOK);
+    expect(c1.errors()).toEqual([]);
+    expect(room.snapshot().seats[0].appearance.palette).toBe('teal');
+    expect(room.snapshot().seats[1].appearance.palette).toBe('teal');
+  });
+
+  it('joining somebody\'s colour does not move them off it', async () => {
+    // A seat that never opened character select still holds the colour it is
+    // shown wearing. Without pinning, picking it would push that seat onto a
+    // different colour and the two would never end up on a team.
+    const { room } = await lobby(['human', 'human']);
+    await room.handle('c0', {
+      t: 'configure',
+      playerCount: 4,
+      seats: [{ index: 2, controller: 'cpu' }, { index: 3, controller: 'cpu' }],
+    });
+    const c1 = new FakeConn('c1');
+    await room.hello(c1, { ...HELLO });
+
+    const hers = room.snapshot().seats[0].appearance;
+    await room.handle('c1', { t: 'setAppearance', appearance: { ...hers } });
+
+    expect(c1.errors()).toEqual([]);
+    const after = room.snapshot().seats;
+    expect(after[0].appearance.palette).toBe(hers.palette);
+    expect(after[1].appearance.palette).toBe(hers.palette);
+  });
+
+  it('refuses the pick that would leave nobody on the other side', async () => {
+    const { room, c0 } = await lobby(['human', 'cpu']);
+    // Seat 1 is already some other colour; seat 0 joining it empties the
+    // opposition, and createGame would reject the game at start.
+    const other = room.snapshot().seats[1].appearance;
+    await room.handle('c0', { t: 'setAppearance', appearance: { ...LOOK, palette: other.palette } });
+
+    expect(c0.last('error')?.code).toBe('BAD_CONFIG');
+    expect(c0.last('error')?.message).toMatch(/one team/i);
+    expect(room.snapshot().seats[0].appearance.palette).not.toBe(other.palette);
+  });
+
+  it('starts a 2v2 and puts the partners on one team', async () => {
+    const { room, c0 } = await lobby(['human', 'cpu']);
+    await room.handle('c0', { t: 'configure', playerCount: 4, seats: [{ index: 2, controller: 'cpu' }, { index: 3, controller: 'cpu' }] });
+    const shared = room.snapshot().seats[0].appearance;
+    await room.handle('c0', {
+      t: 'configure',
+      seats: [{ index: 2, appearance: { ...shared } }],
+    });
+    await room.handle('c0', { t: 'start' });
+
+    expect(room.phase).toBe('playing');
+    const view = c0.last('state')?.view;
+    expect(view?.players[0].team).toBe(view?.players[2].team);
+    expect(view?.players[0].team).not.toBe(view?.players[1].team);
   });
 
   it('refuses a gnome outside the catalogue', async () => {

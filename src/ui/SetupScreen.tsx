@@ -27,10 +27,12 @@ import {
   DEFAULT_GARDEN_PRESET_ID,
   GARDEN_PRESETS,
   MODE_PRESETS,
+  assignTeams,
   homePositions,
   posKey,
   resolveAppearances,
   seatHomes,
+  teamCount,
 } from '../engine';
 import { GARDEN_META, randomSeed, PLAYER_COLOR_NAMES } from './meta';
 import { GardenIcon, UnitIcon } from './art';
@@ -89,9 +91,18 @@ interface SeatDraft {
  */
 const DEFAULT_NAMES = PLAYER_COLOR_NAMES;
 
-/** What seat `i` is called when its name box is empty. */
-function seatDefaultName(seat: SeatDraft, i: number): string {
-  return PALETTES[seat.appearance.palette]?.label ?? DEFAULT_NAMES[i] ?? `Player ${i + 1}`;
+/**
+ * What seat `i` is called when its name box is empty.
+ *
+ * Numbered when the colour is shared, because teammates wear the SAME colour —
+ * two seats both called "Orange" is unreadable the moment the panels say
+ * "Orange, with Orange".
+ */
+function seatDefaultName(seat: SeatDraft, i: number, all: readonly SeatDraft[] = []): string {
+  const label = PALETTES[seat.appearance.palette]?.label ?? DEFAULT_NAMES[i] ?? `Player ${i + 1}`;
+  const sharing = all.filter((s) => s.appearance.palette === seat.appearance.palette);
+  if (sharing.length < 2) return label;
+  return `${label} ${sharing.indexOf(seat) + 1}`;
 }
 
 /**
@@ -419,6 +430,13 @@ export function SetupScreen({
   }
 
   function start() {
+    // Everyone in one colour is everyone on one team, which `createGame`
+    // rejects. Say so here, where the colours were picked, rather than letting
+    // the engine's error surface out of nowhere.
+    if (teamCount(assignTeams(seats.slice(0, count).map((s) => s.appearance.palette))) < 2) {
+      setError('Everyone picked the same colour — that is one team with nobody to play against.');
+      return;
+    }
     // A blank seed is the common case: roll one here, so every game the panel
     // did not pin is a fresh one. Anything unparseable was already refused by
     // the panel (`settingsProblem`), which is why there is no error path.
@@ -429,7 +447,7 @@ export function SetupScreen({
       centerStar,
       ...settingsOptions(settings),
       players: seats.slice(0, count).map((s, i) => ({
-        name: s.name.trim() || seatDefaultName(s, i),
+        name: s.name.trim() || seatDefaultName(s, i, seats.slice(0, count)),
         controller: s.controller,
         ...(s.controller === 'cpu' ? { difficulty: s.difficulty } : {}),
         appearance: s.appearance,
@@ -497,7 +515,7 @@ export function SetupScreen({
                 type="text"
                 value={seat.name}
                 maxLength={16}
-                placeholder={seatDefaultName(seat, i)}
+                placeholder={seatDefaultName(seat, i, seats.slice(0, count))}
                 aria-label={`Seat ${i + 1} name`}
                 onChange={(e) => updateSeat(i, { name: e.target.value })}
               />
@@ -536,7 +554,18 @@ export function SetupScreen({
               {openSeat === i && (
                 <CharacterPicker
                   appearance={seat.appearance}
-                  taken={seats.slice(0, count).flatMap((s, j) => (j === i ? [] : [s.appearance.palette]))}
+                  taken={seats
+                    .slice(0, count)
+                    .flatMap((s, j) =>
+                      j === i
+                        ? []
+                        : [
+                            {
+                              palette: s.appearance.palette,
+                              name: s.name.trim() || seatDefaultName(s, j, seats.slice(0, count)),
+                            },
+                          ],
+                    )}
                   randomSalt={i}
                   onChange={(appearance) => updateSeat(i, { appearance })}
                 />

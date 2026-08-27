@@ -33,7 +33,7 @@ import type {
   Pos,
   UnitId,
 } from '../engine';
-import { posKey, samePos } from '../engine';
+import { posKey, samePos, winningSeats } from '../engine';
 import type { HighlightKind } from './Board';
 import { actionableUnitsAt, nextInCycle } from './selection';
 
@@ -359,7 +359,12 @@ export function bannerText(
   decisionLabel: (kind: PendingDecision['kind']) => string,
 ): string {
   if (state.status === 'finished') {
-    return state.winner !== null ? `🏆 ${pname(state, state.winner)} wins!` : 'Game over — no winner.';
+    // A team win has two winners and leaves `state.winner` null, so reading
+    // that alone would announce "no winner" for a game somebody just won.
+    const winners = winningSeats(state);
+    if (winners.length === 0) return 'Game over — no winner.';
+    const names = winners.map((w) => pname(state, w)).join(' and ');
+    return `🏆 ${names} ${winners.length > 1 ? 'win' : 'wins'}!`;
   }
   if (state.status === 'rolloff') {
     return `🎲 Rolling for turn order — ${playerToAct !== null ? pname(state, playerToAct) : '…'} to roll`;

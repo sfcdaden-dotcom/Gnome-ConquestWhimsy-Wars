@@ -16,6 +16,12 @@
  * for the same reason. Pulling a default look through the engine's RNG would
  * shift `rngState` and invalidate every seeded test and recorded match, so an
  * unconfigured seat's look is a pure function of a salt and the seat index.
+ *
+ * One field here is not cosmetic: seats that share a PALETTE are on the same
+ * team (see teams.ts). That makes "who has which colour" a rules input, and it
+ * is why the resolution below never hands out a shared palette by accident —
+ * a team is something players opt into, never something a random draw or a
+ * collision does to them.
  */
 
 import { normalizeSeed } from './rng';
@@ -138,13 +144,21 @@ export function isPlayerAppearance(v: unknown): v is PlayerAppearance {
 }
 
 /**
- * Fill in every seat's appearance and guarantee the palettes are distinct.
+ * Fill in every seat's appearance.
  *
- * Seats that chose a look keep it. Seats that did not get `randomLook`. Then
- * palettes are settled in seat order: an explicit choice wins, an earlier seat
- * beats a later one for the same palette, and a seat left without one takes
- * the first palette nobody else has. Distinctness is the load-bearing part —
- * the whole board reads seat identity off this colour.
+ * Seats that chose a look keep it, EXACTLY — including a palette another seat
+ * already has, because sharing a palette is how two players declare
+ * themselves teammates and refusing it would refuse the feature.
+ *
+ * Seats that chose nothing get `randomLook` for their parts and a palette
+ * nobody else holds. That asymmetry is the point: a shared colour is always
+ * deliberate. A default seating is a free-for-all, and nobody is ever drafted
+ * onto a team by an unlucky draw.
+ *
+ * If the catalogue runs out of free palettes (more seats than colours), a seat
+ * falls back to its seat-ordered default, which may collide. That is
+ * unreachable at 4 seats and 8 palettes, and `createGame` validates the team
+ * split it produces regardless.
  *
  * Deterministic given (salt, requests), so host and client agree without the
  * host having to broadcast the resolution.
@@ -153,16 +167,16 @@ export function resolveAppearances(
   requested: readonly (Partial<PlayerAppearance> | undefined)[],
   salt: number,
 ): PlayerAppearance[] {
-  const taken = new Set<PaletteId>();
-  const palettes: (PaletteId | null)[] = requested.map((req) => {
-    const want = req?.palette;
-    if (!isMember(PALETTE_IDS, want) || taken.has(want)) return null;
-    taken.add(want);
-    return want;
-  });
+  // Only EXPLICIT choices reserve a colour. An auto-assigned seat avoids every
+  // explicit pick, so it can never be forced onto somebody else's team.
+  const chosen = requested.map((req) =>
+    isMember(PALETTE_IDS, req?.palette) ? req.palette : null,
+  );
+  const spoken = new Set<PaletteId>(chosen.filter((p): p is PaletteId => p !== null));
+  const taken = new Set<PaletteId>(spoken);
   return requested.map((req, seat) => {
     const look = randomLook(salt, seat);
-    let palette = palettes[seat];
+    let palette = chosen[seat];
     if (palette === null) {
       palette = PALETTE_IDS.find((p) => !taken.has(p)) ?? defaultPalette(seat);
       taken.add(palette);

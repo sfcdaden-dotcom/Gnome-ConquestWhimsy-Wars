@@ -19,6 +19,7 @@ import {
   pushEvent,
 } from './helpers';
 import { handleEntry } from './gardens';
+import { teamOf } from './teams';
 import { refillQuickChat } from './quickchat';
 
 export function processNextElimination(draft: GameState): void {
@@ -32,10 +33,15 @@ export function processNextElimination(draft: GameState): void {
   const stillPlaying = draft.players.filter(
     (pl) => pl.status === 'playing' && !draft.eliminationQueue.some((q) => q.player === pl.id),
   );
+  // The game is decided when one TEAM is left, not one player: a 2v2 ends the
+  // moment both opponents are gone, with both partners still on the board. In
+  // a free-for-all every seat is its own team, so this counts survivors and
+  // behaves exactly as it always did.
+  const survivingTeams = new Set(stillPlaying.map((pl) => teamOf(draft, pl.id)));
 
-  if (stillPlaying.length <= 1) {
-    // Last non-snail player standing wins immediately; pending eliminated
-    // players do not get a snailify choice (there is no game left to play).
+  if (survivingTeams.size <= 1) {
+    // Last team standing wins immediately; pending eliminated players do not
+    // get a snailify choice (there is no game left to play).
     for (const q of draft.eliminationQueue) {
       const qp = getPlayer(draft, q.player);
       if (qp.status !== 'playing') continue;
@@ -44,7 +50,7 @@ export function processNextElimination(draft: GameState): void {
       qp.status = 'out';
     }
     draft.eliminationQueue = [];
-    finishGame(draft, stillPlaying.length === 1 ? stillPlaying[0].id : null);
+    finishGame(draft, stillPlaying.length > 0 ? teamOf(draft, stillPlaying[0].id) : null);
     return;
   }
 
@@ -119,13 +125,28 @@ function removePlayerAssets(draft: GameState, player: PlayerId): void {
   }
 }
 
-export function finishGame(draft: GameState, winner: PlayerId | null): void {
+/**
+ * End the game for a winning TEAM (null for a draw).
+ *
+ * `winner` stays the authoritative single-seat field it always was, and is set
+ * only when the winning team has exactly one surviving member — which is every
+ * free-for-all game, so nothing that reads `state.winner` changed. A 2v2 win
+ * leaves `winner` null and `winningTeam` set, and callers that want "who won"
+ * ask `winningSeats`.
+ */
+export function finishGame(draft: GameState, winningTeam: number | null): void {
+  const seats =
+    winningTeam === null
+      ? []
+      : draft.players.filter((p) => p.status === 'playing' && teamOf(draft, p.id) === winningTeam).map((p) => p.id);
+  const winner = seats.length === 1 ? seats[0] : null;
   draft.status = 'finished';
+  draft.winningTeam = winningTeam;
   draft.winner = winner;
   draft.pendingDecision = null;
   draft.fight = null;
   draft.fightQueue = [];
   draft.harvest = null;
   refillQuickChat(draft); // no more turns to refill on — everyone gets to say "gg"
-  pushEvent(draft, { type: 'gameFinished', winner });
+  pushEvent(draft, { type: 'gameFinished', winner, winningTeam, winners: seats });
 }

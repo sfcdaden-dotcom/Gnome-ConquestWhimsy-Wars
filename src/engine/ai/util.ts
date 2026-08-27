@@ -7,6 +7,7 @@
  * cardPlans, chatter} → scoring → util).
  */
 
+import { areAllies } from '../teams';
 import type { GameState, PlayerId, Pos, Unit } from '../types';
 import { gardenAt, playerUnits } from '../helpers';
 
@@ -27,10 +28,10 @@ export function ownGnomes(state: GameState, player: PlayerId): Unit[] {
   return playerUnits(state, player).filter((u) => u.kind === 'gnome');
 }
 
-/** Enemy gnomes anywhere, lowest-id first. */
+/** Enemy gnomes anywhere, lowest-id first. A partner's gnome is not one. */
 export function enemyGnomes(state: GameState, player: PlayerId): Unit[] {
   return Object.values(state.units)
-    .filter((u) => u.kind === 'gnome' && u.owner !== player)
+    .filter((u) => u.kind === 'gnome' && !areAllies(state, u.owner, player))
     .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 }
 

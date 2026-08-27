@@ -59,9 +59,12 @@ import {
   getPlayerToAct,
   getTimeoutAction,
   isGameOver,
+  assignTeams,
   isPlayerAppearance,
   resolveAppearances,
+  teamCount,
   sealHiddenState,
+  winningSeats,
   viewFor,
 } from '../engine';
 import type {
@@ -836,6 +839,9 @@ export class Room {
       this.data.boardSize = n;
     }
     if (message.gardenPreset !== undefined) this.data.gardenPreset = message.gardenPreset;
+    // Same reason as in `setAppearance`: a seat's shown colour must be the
+    // colour it holds, or dressing one seat silently recolours another.
+    this.pinSeatLooks();
     for (const seat of message.seats ?? []) this.applySeatConfig(seat);
 
     // Nobody is left holding a seat the host just turned into a CPU (or a seat
@@ -879,12 +885,14 @@ export class Room {
   /**
    * A player choosing their own character.
    *
-   * Three refusals, all of them about who owns what: a spectator owns no seat,
-   * a started game owns its seating, and a palette belongs to whoever claimed
-   * it first. The last one is refused out loud rather than silently corrected
-   * — `resolveAppearances` would quietly hand out a different colour, and a
-   * player who picked teal and got orange with no explanation would reasonably
-   * think the game was broken.
+   * Two refusals, both about who owns what: a spectator owns no seat, and a
+   * started game owns its seating. A palette another seat already has is NOT
+   * refused — sharing one is how two players declare themselves a team.
+   *
+   * What is refused is the last seat leaving the opposition empty: a table
+   * where everyone wears the same colour has no game in it, and `createGame`
+   * would reject it at start. Catching it here means the lobby says so at the
+   * moment somebody causes it rather than when the host presses Start.
    */
   private async setAppearance(
     c: ConnState,
@@ -897,10 +905,16 @@ export class Room {
     if (!isPlayerAppearance(message.appearance)) {
       throw new RoomError('BAD_CONFIG', 'That is not a gnome this game knows how to draw');
     }
-    const looks = this.resolvedSeatLooks();
-    const clash = looks.findIndex((a, i) => i !== c.seat && a.palette === message.appearance.palette);
-    if (clash >= 0) {
-      throw new RoomError('BAD_CONFIG', `${this.data.seats[clash].name} already has that colour`);
+    // Pin first: joining somebody's colour must not move them off it.
+    this.pinSeatLooks();
+    const after = this.resolvedSeatLooks().map((a, i) =>
+      i === c.seat ? message.appearance.palette : a.palette,
+    );
+    if (teamCount(assignTeams(after)) < 2) {
+      throw new RoomError(
+        'BAD_CONFIG',
+        'That would put every seat on one team — somebody has to be on the other side',
+      );
     }
     this.data.seats[c.seat].appearance = message.appearance;
     await this.save();
@@ -921,6 +935,24 @@ export class Room {
       this.data.seats.map((s) => s.appearance),
       codeSalt(this.data.code),
     );
+  }
+
+  /**
+   * Write every seat's resolved look back onto the seat, so no palette is held
+   * only implicitly.
+   *
+   * This is what makes teaming up stable. An unset seat's palette is derived
+   * by avoiding the palettes somebody explicitly chose — so if Alice never
+   * opened character select, her red is implicit, and Bob picking red to join
+   * her would push HER off red instead of putting them on a team. Pinning the
+   * derived looks the moment anyone touches the lobby means the colour a seat
+   * is shown wearing is the colour it actually holds.
+   */
+  private pinSeatLooks(): void {
+    const looks = this.resolvedSeatLooks();
+    this.data.seats.forEach((seat, i) => {
+      if (!seat.appearance) seat.appearance = looks[i];
+    });
   }
 
   /**
@@ -1380,6 +1412,7 @@ export class Room {
   private reveal(): void {
     if (!this.state || !this.data.seal || !this.data.config || this.data.seed === null) return;
     const winner = this.state.winner;
+    const winners = winningSeats(this.state);
     const record: MatchRecord = {
       schemaVersion: MATCH_RECORD_SCHEMA,
       config: this.data.config,
@@ -1390,9 +1423,14 @@ export class Room {
         winner,
         winnerName: winner !== null ? this.state.players[winner].name : null,
         winnerController: winner !== null ? this.state.players[winner].controller : null,
+        winningTeam: this.state.winningTeam,
+        winners,
+        winnerNames: winners.map((id) => this.state!.players[id].name),
         turns: this.state.turn?.number ?? 0,
         actionCount: this.data.actions.length,
-        reason: winner === null ? 'draw' : 'lastStanding',
+        // "Nobody won" is winningTeam === null, not winner === null: a 2v2 win
+        // has two winners and leaves `winner` null.
+        reason: this.state.winningTeam === null ? 'draw' : 'lastStanding',
       },
     };
     for (const c of this.conns.values()) c.conn.send({ t: 'revealed', seal: this.data.seal, record });

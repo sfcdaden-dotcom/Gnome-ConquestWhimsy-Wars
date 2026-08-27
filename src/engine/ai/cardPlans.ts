@@ -17,6 +17,7 @@
  * every difficulty (see the comment at the bottom of `planCardPlay`).
  */
 
+import { areAllies } from '../teams';
 import type { Action, CardId, CardTargets, GameState, PlayerId, Pos, Unit } from '../types';
 import { getCardDef } from '../cards';
 import {
@@ -224,7 +225,7 @@ function planGreatWall(state: GameState, player: PlayerId): CardPlan | null {
     const distHome = manhattan(pos, home);
     if (distHome > 4) continue; // only worth guarding our own approach
     const threatened = Object.values(state.units).some(
-      (u) => u.owner !== player && u.kind === 'gnome' && manhattan(u.pos, pos) <= 2,
+      (u) => !areAllies(state, u.owner, player) && u.kind === 'gnome' && manhattan(u.pos, pos) <= 2,
     );
     if (!threatened) continue;
     if (distHome < bestDist) {
@@ -289,7 +290,7 @@ function planGnomioAndJuliet(state: GameState, player: PlayerId): CardPlan | nul
 /** Trap an enemy gnome that's currently sitting on a Maize Garden. */
 function planLostInTheMaize(state: GameState, player: PlayerId): CardPlan | null {
   const trapped = Object.values(state.units).some(
-    (u) => u.owner !== player && u.kind === 'gnome' && gardenAt(state, u.pos)?.type === 'maize',
+    (u) => !areAllies(state, u.owner, player) && u.kind === 'gnome' && gardenAt(state, u.pos)?.type === 'maize',
   );
   if (!trapped) return null;
   const a = tryPlayCard(state, player, 'lost-in-the-maize', undefined);
@@ -386,7 +387,7 @@ function planMushroomCloud(state: GameState, player: PlayerId): CardPlan | null 
     const pos = { x, y };
     const occupants = unitsAt(state, pos);
     if (occupants.some((u) => u.owner === player)) continue; // never nuke our own
-    let v = occupants.filter((u) => u.owner !== player && u.kind === 'gnome').length * 8;
+    let v = occupants.filter((u) => !areAllies(state, u.owner, player) && u.kind === 'gnome').length * 8;
     if (g.type === 'dandelion' || g.type === 'mushroom') v += 3;
     else if (g.type === 'flytrap' && gardenIsActive(state, g)) v += 2;
     if (v > bestVal) {

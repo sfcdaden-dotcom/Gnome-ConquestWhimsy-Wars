@@ -12,6 +12,7 @@ import {
   gnomeBoardCap,
   gnomesOnBoard,
   reserveGnomes,
+  teammates,
   wishCap,
 } from '../engine';
 import type { FightPlayback } from './useGame';
@@ -46,6 +47,9 @@ export function PlayerPanels({ state, takenOverSeats = [] }: { state: GameState;
     <div className="player-panels">
       {state.players.map((p) => {
         const cap = wishCap(state, p.id);
+        // Partners share a colour, so the panel needs to say WHO you share it
+        // with — otherwise two identical-looking panels is all you get.
+        const partners = teammates(state, p.id).filter((id) => id !== p.id);
         const classes = ['player-panel', `status-${p.status}`];
         if (p.id === active) classes.push('active-turn');
         if (p.id === actor) classes.push('to-act');
@@ -53,6 +57,7 @@ export function PlayerPanels({ state, takenOverSeats = [] }: { state: GameState;
           <div
             key={p.id}
             className={classes.join(' ')}
+            data-team={p.team}
             style={{ '--pc': playerColor(state, p.id) } as CSSProperties}
           >
             <div className="pp-head">
@@ -66,6 +71,11 @@ export function PlayerPanels({ state, takenOverSeats = [] }: { state: GameState;
               </span>
               {p.id === actor && <span className="pp-act">acting</span>}
             </div>
+            {partners.length > 0 && (
+              <div className="pp-team" title="Same colour, same side">
+                🤝 with {partners.map((id) => state.players[id].name).join(' and ')}
+              </div>
+            )}
             {p.status === 'playing' ? (
               <div className="pp-stats">
                 <span title={`Wishes (cap ${cap})`}>✨ {p.wishes}/{cap}</span>

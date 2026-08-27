@@ -60,6 +60,7 @@ import {
   wishCap,
 } from './helpers';
 import { queueFight } from './fights';
+import { areAllies } from './teams';
 
 // ---------------------------------------------------------------------------
 // Entry handling (movement, slides, tunnels, snail placement all funnel here)
@@ -134,8 +135,14 @@ export function handleEntry(draft: GameState, unitId: UnitId, hops = 0): void {
 
   if (fights > 0) return; // fights preempt entry effects and capture checks
 
-  // Un-contested arrival on an enemy Home Garden ⇒ sole occupation ⇒ capture.
-  if (garden && garden.type === 'home' && garden.owner !== undefined && garden.owner !== unit.owner) {
+  // Un-contested arrival on an ENEMY Home Garden ⇒ sole occupation ⇒ capture.
+  // A partner standing on your home is a garrison, not a conquest.
+  if (
+    garden &&
+    garden.type === 'home' &&
+    garden.owner !== undefined &&
+    !areAllies(draft, garden.owner, unit.owner)
+  ) {
     queueElimination(draft, garden.owner, 'home-captured');
     return;
   }

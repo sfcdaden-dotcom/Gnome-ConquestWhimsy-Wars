@@ -395,7 +395,9 @@ function Lobby({
                   {dressing === seat.index && (
                     <CharacterPicker
                       appearance={seat.appearance}
-                      taken={room.seats.flatMap((s) => (s.index === seat.index ? [] : [s.appearance.palette]))}
+                      taken={room.seats.flatMap((s) =>
+                        s.index === seat.index ? [] : [{ palette: s.appearance.palette, name: s.name }],
+                      )}
                       randomSalt={seat.index}
                       onChange={(appearance) =>
                         you?.seat === seat.index

@@ -88,7 +88,10 @@ describe('a finished game verifies against the seal published before it', () => 
         winnerController: null,
         turns: state.turn?.number ?? 0,
         actionCount: actions.length,
-        reason: state.winner === null ? 'draw' : 'lastStanding',
+        winningTeam: null,
+      winners: [],
+      winnerNames: [],
+      reason: state.winner === null ? 'draw' : 'lastStanding',
       },
     };
   }

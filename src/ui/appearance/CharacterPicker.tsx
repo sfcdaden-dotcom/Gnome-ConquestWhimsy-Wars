@@ -6,10 +6,10 @@
  * point, the hat is not. The whole thing is optional: a seat that never opens
  * it still gets a gnome, drawn from the seed at `createGame`.
  *
- * Palette exclusivity is enforced HERE as well as in the engine. The engine's
- * `resolveAppearances` is the guarantee (it silently reassigns a clash so a
- * game can never start with two identical teams); this is the explanation —
- * a swatch another seat holds is shown taken rather than quietly ignored.
+ * A palette another seat holds is not refused — it is how you JOIN them. Two
+ * seats wearing red are one team (see engine/teams.ts), so the swatch shows
+ * who already has it rather than locking you out, and picking it is the only
+ * way to team up.
  */
 
 import {
@@ -80,8 +80,11 @@ function PartRow<T extends string>({ label, ids, labels, value, onPick }: RowPro
 interface CharacterPickerProps {
   appearance: PlayerAppearance;
   onChange: (next: PlayerAppearance) => void;
-  /** Palettes other seats hold. The current seat's own palette is never in here. */
-  taken?: readonly PaletteId[];
+  /**
+   * Palettes other seats hold, with the names holding them — picking one of
+   * these joins that team rather than being refused.
+   */
+  taken?: readonly { palette: PaletteId; name: string }[];
   /** A seat you may look at but not edit (another player's, in an online lobby). */
   readOnly?: boolean;
   /** Feeds the 🎲 button. Any number: this only ever picks a look, never game randomness. */
@@ -120,20 +123,24 @@ export function CharacterPicker({
           <span className="cc-label">Colour</span>
           <div className="cc-swatches">
             {PALETTE_LIST.map((p) => {
-              const isTaken = taken.includes(p.id) && p.id !== appearance.palette;
+              const holders = taken.filter((t) => t.palette === p.id).map((t) => t.name);
+              const shared = holders.length > 0;
+              const label = shared ? `${p.label} — team up with ${holders.join(' and ')}` : p.label;
               return (
                 <button
                   key={p.id}
                   type="button"
-                  className={`cc-swatch${appearance.palette === p.id ? ' sel' : ''}`}
+                  className={`cc-swatch${appearance.palette === p.id ? ' sel' : ''}${shared ? ' shared' : ''}`}
                   style={{ background: p.accent }}
-                  disabled={readOnly || isTaken}
+                  disabled={readOnly}
                   aria-pressed={appearance.palette === p.id}
-                  aria-label={isTaken ? `${p.label} (taken)` : p.label}
-                  title={isTaken ? `${p.label} — taken by another seat` : p.label}
+                  aria-label={label}
+                  title={label}
                   data-testid={`cc-palette-${p.id}`}
                   onClick={() => set('palette', p.id)}
-                />
+                >
+                  {shared && <span className="cc-swatch-mark" aria-hidden="true">+</span>}
+                </button>
               );
             })}
           </div>

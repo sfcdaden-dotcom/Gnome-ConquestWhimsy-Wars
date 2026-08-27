@@ -25,6 +25,7 @@ import type { Action, CreateGameOptions, GameConfig, GameState, PlayerController
 import type { GameSeal } from './setup';
 import { createGame, sealHiddenState } from './setup';
 import { applyAction, isGameOver } from './engine';
+import { winningSeats } from './teams';
 import { chooseAiAction } from './ai';
 
 /** Bump when the MatchRecord shape changes; dataset loaders gate on this.
@@ -41,8 +42,18 @@ export type MatchEndReason =
   | 'unfinished'; // hit the maxActions guard without finishing
 
 export interface MatchResult {
-  /** Winning seat, or null for a draw / unfinished game. */
+  /**
+   * The sole winning seat, or null. Null is NOT the same as "nobody won" now
+   * that a team can win: check `winningTeam` for that, and read `winners` for
+   * who won. Kept as-is because a free-for-all still has exactly one.
+   */
   winner: PlayerId | null;
+  /** The winning team, or null for a draw / unfinished game. */
+  winningTeam: number | null;
+  /** Every winning seat, in seat order. One entry in a free-for-all, two in a 2v2. */
+  winners: PlayerId[];
+  /** Names of `winners`, same order — the convenience `winnerName` gives for one seat. */
+  winnerNames: string[];
   /** Convenience copies derived from the winning seat (null when no winner). */
   winnerName: string | null;
   winnerController: PlayerController | null;
@@ -84,11 +95,22 @@ function summarize(final: GameState, actions: Action[], turns: number): MatchRes
   const finished = isGameOver(final);
   const winner = final.winner;
   const wp = winner !== null ? final.players[winner] : null;
-  const reason: MatchEndReason = !finished ? 'unfinished' : winner === null ? 'draw' : 'lastStanding';
+  const winners = winningSeats(final);
+  // A draw is "nobody won", which is `winningTeam === null` — NOT
+  // `winner === null`. A 2v2 win has two winners and leaves `winner` null;
+  // reading that as a draw would misreport every team game.
+  const reason: MatchEndReason = !finished
+    ? 'unfinished'
+    : final.winningTeam === null
+      ? 'draw'
+      : 'lastStanding';
   return {
     winner,
     winnerName: wp?.name ?? null,
     winnerController: wp?.controller ?? null,
+    winningTeam: final.winningTeam,
+    winners,
+    winnerNames: winners.map((id) => final.players[id].name),
     turns,
     actionCount: actions.length,
     reason,

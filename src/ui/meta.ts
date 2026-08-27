@@ -339,10 +339,15 @@ export function describeEvent(state: GameState, ev: GameEvent): string {
       return `${pname(state, ev.player)} leaves the game.`;
     case 'turnEnded':
       return `${pname(state, ev.player)} ends their turn.`;
-    case 'gameFinished':
-      return ev.winner !== null
-        ? `🏆 ${pname(state, ev.winner)} wins Whimsy Wars!`
-        : 'Nobody wins — the garden falls silent.';
+    case 'gameFinished': {
+      // The event carries every winner; `ev.winner` is only the one-seat
+      // shorthand and is null for a team win.
+      if (ev.winners.length === 0) return 'Nobody wins — the garden falls silent.';
+      const names = ev.winners.map((w) => pname(state, w)).join(' and ');
+      return ev.winners.length > 1
+        ? `🏆 ${names} win Whimsy Wars together!`
+        : `🏆 ${names} wins Whimsy Wars!`;
+    }
     default: {
       // Future event kinds (cards in progress): render something readable.
       const e = ev as { type: string };

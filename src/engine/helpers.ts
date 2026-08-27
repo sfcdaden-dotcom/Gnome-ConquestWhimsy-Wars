@@ -20,6 +20,7 @@ import type {
 } from './types';
 import { EngineError } from './types';
 import { rollDie, shuffled } from './rng';
+import { areAllies } from './teams';
 
 // ---------------------------------------------------------------------------
 // Errors
@@ -135,8 +136,24 @@ export function playerUnitsAt(state: GameState, p: Pos, player: PlayerId): Unit[
   return unitsAt(state, p).filter((u) => u.owner === player);
 }
 
+/**
+ * Units on this square that `player` is at war with — everything not on their
+ * team, which for a free-for-all seat is everything not their own.
+ *
+ * This one predicate is what makes teams a rule rather than a label. Every
+ * question the engine asks about a contested square routes through here:
+ * whether moving in starts a fight, whether a garden may be planted or
+ * harvested, whether a Snail has anywhere to retreat to. Making it team-aware
+ * is what lets partners share a square, walk past each other and defend the
+ * same garden, without a single one of those call sites knowing teams exist.
+ */
 export function enemyUnitsAt(state: GameState, p: Pos, player: PlayerId): Unit[] {
-  return unitsAt(state, p).filter((u) => u.owner !== player);
+  return unitsAt(state, p).filter((u) => !areAllies(state, u.owner, player));
+}
+
+/** Units on this square belonging to `player` or a partner. */
+export function allyUnitsAt(state: GameState, p: Pos, player: PlayerId): Unit[] {
+  return unitsAt(state, p).filter((u) => areAllies(state, u.owner, player));
 }
 
 /** All of a player's units, sorted by id. */

@@ -119,6 +119,9 @@ export {
 } from './appearance';
 export type { CapId, BeardId, WeaponId, AccessoryId, PaletteId, PlayerAppearance } from './appearance';
 
+// Teams: seats that share a palette share a side (see teams.ts).
+export { assignTeams, teamCount, teamOf, areAllies, teammates, livingTeams, winningSeats } from './teams';
+
 // Read-only state queries (safe for UI use).
 export {
   posKey,

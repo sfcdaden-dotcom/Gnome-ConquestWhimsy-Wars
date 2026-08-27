@@ -172,6 +172,38 @@ export function checkInvariants(state: GameState): InvariantViolation[] {
   if (state.status !== 'finished' && state.winner !== null) {
     fail('WINNER_BEFORE_END', 'winner', `winner ${state.winner} recorded while status is "${state.status}"`);
   }
+  if (state.status !== 'finished' && state.winningTeam !== null) {
+    fail('WINNER_BEFORE_END', 'winningTeam', `winningTeam ${state.winningTeam} recorded while status is "${state.status}"`);
+  }
+  // A sole winner is a winning team of one: the two fields must never disagree
+  // about whether anybody won.
+  if (state.winner !== null && state.winningTeam === null) {
+    fail('WINNER_WITHOUT_TEAM', 'winningTeam', `seat ${state.winner} won but no winning team is recorded`);
+  }
+  if (state.winningTeam !== null) {
+    const survivors = state.players.filter(
+      (p) => p.status === 'playing' && p.team === state.winningTeam,
+    );
+    if (survivors.length === 0) {
+      fail('EMPTY_WINNING_TEAM', 'winningTeam', `team ${state.winningTeam} won with nobody left on it`);
+    }
+    // `winner` is the single-seat shorthand and is only meaningful for a team
+    // of one — a 2v2 win must leave it null rather than naming one partner.
+    if (survivors.length === 1 && state.winner !== survivors[0].id) {
+      fail('WINNER_TEAM_MISMATCH', 'winner', `team ${state.winningTeam} has one survivor (seat ${survivors[0].id}) but winner = ${state.winner}`);
+    }
+    if (survivors.length > 1 && state.winner !== null) {
+      fail('WINNER_TEAM_MISMATCH', 'winner', `team ${state.winningTeam} won with ${survivors.length} seats, so winner must be null (got ${state.winner})`);
+    }
+  }
+  // Teams are grouped from palettes at createGame; a seat whose team does not
+  // match its palette group means something rewrote one without the other.
+  for (const p of state.players) {
+    const first = state.players.find((q) => q.appearance.palette === p.appearance.palette);
+    if (first && first.team !== p.team) {
+      fail('TEAM_PALETTE_MISMATCH', 'team', `seats ${first.id} and ${p.id} share a palette but are on teams ${first.team} and ${p.team}`);
+    }
+  }
 
   // --- bookkeeping ----------------------------------------------------------
 
