@@ -43,9 +43,11 @@ test.describe('character select', () => {
     await page.getByTestId('cc-cap-wide').click();
     await page.getByTestId('cc-beard-bushy').click();
     await page.getByTestId('cc-weapon-staff').click();
-    await page.getByTestId('cc-extra-lantern').click();
+    await page.getByTestId('cc-accessory-lantern').click();
 
-    const chosen = 'green/wide/bushy/staff/lantern';
+    // `data-look` is palette then the layers in DRAW order (weapon, beard,
+    // cap, accessory) — see lookKey in gnomeImage.ts.
+    const chosen = 'green/staff/bushy/wide/lantern';
     await expect(page.locator('.seat-list .seat-gnome').first()).toHaveAttribute(LOOK, chosen);
 
     await page.getByTestId('start-game').click();

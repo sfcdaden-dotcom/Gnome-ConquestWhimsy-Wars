@@ -105,7 +105,49 @@ export const CAP_WIDE = sprite([
   R(6, r('0', 20)),
 ]);
 
-export const CAPS = { pointy: CAP_POINTY, bulbous: CAP_BULBOUS, wide: CAP_WIDE };
+export const CAP_TALL = sprite([
+  R(15, '00'),
+  R(14, '0330'),
+  R(14, '0330'),
+  R(13, '033330'),
+  R(13, '034430'),
+  R(12, '03343230'),
+  R(12, '03443230'),
+  R(11, '0334333220'),
+  R(11, '0333433220'),
+  R(10, '033343332210'),
+  R(9, '03333433322210'),
+  R(8, '0333334433322210'),
+  R(8, '0' + r('1', 14) + '0'),
+  R(9, r('0', 14)),
+]);
+
+export const CAP_DROOPY = sprite([
+  ...blank(3),
+  R(13, '033330'),
+  R(11, '0333333230'),
+  R(10, '033333443210'),
+  R(9, '03333344433210'),
+  R(8, '0333334443332210'),
+  R(7, '033333444433322210'),
+  R(6, '0' + r('3', 7) + r('4', 4) + r('3', 3) + r('2', 3) + '1110'),
+  R(6, '0' + r('3', 7) + r('4', 3) + r('3', 4) + r('2', 3) + '110'),
+  R(5, '0' + r('3', 8) + r('4', 2) + r('3', 4) + r('2', 4) + '1110'),
+  R(5, '0' + r('1', 21) + '0'),
+  // The brim curls down at the sides — the silhouette that separates this from
+  // the bulbous cap once both are 20px wide.
+  R(5, '01110' + '.'.repeat(13) + '01110'),
+  R(5, '0110' + '.'.repeat(15) + '0110'),
+  R(5, '000' + '.'.repeat(17) + '000'),
+]);
+
+export const CAPS = {
+  pointy: CAP_POINTY,
+  bulbous: CAP_BULBOUS,
+  wide: CAP_WIDE,
+  tall: CAP_TALL,
+  droopy: CAP_DROOPY,
+};
 
 // ---------------------------------------------------------------------------
 // Beards — hung from y19, below the nose, so a beard never reads as a mask
@@ -157,7 +199,38 @@ export const BEARD_BUSHY = sprite([
   R(13, r('0', 6)),
 ]);
 
-export const BEARDS = { pointy: BEARD_POINTY, wild: BEARD_WILD, bushy: BEARD_BUSHY };
+export const BEARD_BRAIDED = sprite([
+  ...blank(19),
+  R(8, '0' + r('2', 14) + '0'),
+  R(8, '0' + r('2', 14) + '0'),
+  R(9, '0' + r('1', 12) + '0'),
+  R(9, '0' + r('1', 12) + '0'),
+  R(10, '0' + r('1', 4) + '00' + r('1', 4) + '0'),
+  R(10, '0' + r('1', 3) + '0..0' + r('1', 3) + '0'),
+  R(10, '0' + r('2', 3) + '0..0' + r('2', 3) + '0'),
+  R(10, '0' + r('1', 3) + '0..0' + r('1', 3) + '0'),
+  R(10, '0' + r('2', 3) + '0..0' + r('2', 3) + '0'),
+  R(11, '010..010'),
+  R(11, '00....00'),
+]);
+
+export const BEARD_STUBBLE = sprite([
+  ...blank(19),
+  R(8, '0' + r('2', 14) + '0'),
+  R(8, '0' + r('1', 14) + '0'),
+  R(8, '0' + r('1', 14) + '0'),
+  R(9, '0' + r('1', 12) + '0'),
+  R(10, '0' + r('1', 10) + '0'),
+  R(12, r('0', 8)),
+]);
+
+export const BEARDS = {
+  pointy: BEARD_POINTY,
+  wild: BEARD_WILD,
+  bushy: BEARD_BUSHY,
+  braided: BEARD_BRAIDED,
+  stubble: BEARD_STUBBLE,
+};
 
 // ---------------------------------------------------------------------------
 // Weapons — down the right margin, drawn BEHIND the body so the beard overlaps
@@ -200,7 +273,36 @@ export const WEAPON_STAFF = sprite([
   R(25, r('0', 4)),
 ]);
 
-export const WEAPONS = { shovel: WEAPON_SHOVEL, pitchfork: WEAPON_PITCHFORK, staff: WEAPON_STAFF };
+export const WEAPON_AXE = sprite([
+  ...blank(3),
+  R(23, r('0', 6)),
+  R(23, '0' + r('4', 4) + '0'),
+  R(23, '0' + r('4', 4) + '0'),
+  R(23, '0' + r('3', 4) + '0'),
+  R(24, '0' + r('3', 2) + '0'),
+  ...Array.from({ length: 21 }, () => R(25, '0210')),
+  R(25, r('0', 4)),
+]);
+
+export const WEAPON_BROOM = sprite([
+  ...blank(5),
+  R(25, r('0', 4)),
+  ...Array.from({ length: 19 }, () => R(25, '0210')),
+  R(24, r('0', 6)),
+  R(23, '0' + r('3', 6) + '0'),
+  R(23, '0' + r('3', 6) + '0'),
+  R(23, '0' + r('2', 6) + '0'),
+  R(23, '0' + r('2', 6) + '0'),
+  R(23, '00.00.00'),
+]);
+
+export const WEAPONS = {
+  shovel: WEAPON_SHOVEL,
+  pitchfork: WEAPON_PITCHFORK,
+  staff: WEAPON_STAFF,
+  axe: WEAPON_AXE,
+  broom: WEAPON_BROOM,
+};
 
 // ---------------------------------------------------------------------------
 // Accessories — drawn last, over everything. These three are a guess at what
@@ -240,4 +342,26 @@ export const ACC_LANTERN = sprite([
   R(3, r('0', 6)),
 ]);
 
-export const ACCESSORIES = { monocle: ACC_MONOCLE, pipe: ACC_PIPE, lantern: ACC_LANTERN };
+export const ACC_FLOWER = sprite([
+  ...blank(5),
+  R(9, '.4.'),
+  R(9, '404'),
+  R(9, '.4.'),
+]);
+
+export const ACC_GLASSES = sprite([
+  ...blank(13),
+  R(10, '.444...444.'.replace('...', '..').padEnd(12, '.')),
+  R(10, '4...4' + '..' + '4...4'),
+  R(10, '4...4' + '44' + '4...4'),
+  R(10, '4...4' + '..' + '4...4'),
+  R(10, '.444.' + '..' + '.444.'),
+]);
+
+export const ACCESSORIES = {
+  monocle: ACC_MONOCLE,
+  pipe: ACC_PIPE,
+  lantern: ACC_LANTERN,
+  flower: ACC_FLOWER,
+  glasses: ACC_GLASSES,
+};

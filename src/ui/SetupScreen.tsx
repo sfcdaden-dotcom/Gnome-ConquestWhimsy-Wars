@@ -566,7 +566,6 @@ export function SetupScreen({
                             },
                           ],
                     )}
-                  randomSalt={i}
                   onChange={(appearance) => updateSeat(i, { appearance })}
                 />
               )}

@@ -14,32 +14,32 @@
  * 3 x 3 x 3 x 4 x 8 = 864 possibilities, and in practice by the four in play.
  */
 
-import type { PlayerAppearance } from '../../engine';
+import { CHOOSABLE_LAYERS, NONE_ID, PART_IDS, type PlayerAppearance } from '../../engine';
 import { PALETTES } from './palettes';
-import { SPRITES, SPRITE_GRID, type RampKey, type SpritePaths } from './spriteData';
+import { LAYER_ORDER, SPRITES, SPRITE_GRID, type RampKey, type SpritePaths } from './spriteData';
 
 /**
- * Bottom to top. The weapon goes UNDER the body on purpose: the beard then
- * overlaps the shaft, which reads as the gnome holding it rather than standing
- * next to it.
+ * The sprites to stack, bottom to top, following the generated `LAYER_ORDER`.
+ *
+ * The body is not a choice, so it is looked up from the catalogue rather than
+ * the appearance. A layer set to `none` contributes nothing, and an id outside
+ * the catalogue means the sprite table and the engine have drifted — skipped
+ * rather than rendered as `undefined`.
  */
 function layersOf(a: PlayerAppearance): SpritePaths[] {
-  const parts = [
-    SPRITES[`WEAPON_${a.weapon.toUpperCase()}`],
-    SPRITES.BASE,
-    SPRITES[`BEARD_${a.beard.toUpperCase()}`],
-    SPRITES[`CAP_${a.cap.toUpperCase()}`],
-    a.accessory === 'none' ? undefined : SPRITES[`ACC_${a.accessory.toUpperCase()}`],
-  ];
-  // An id outside the catalogue means the sprite table and engine/appearance.ts
-  // have drifted. Skip it rather than render `undefined` into the document.
-  return parts.filter((p): p is SpritePaths => p !== undefined);
+  const chosen = a as unknown as Record<string, string>;
+  return LAYER_ORDER.map((layer) => {
+    const id = layer === 'base' ? PART_IDS.base[0] : chosen[layer];
+    return id && id !== NONE_ID ? SPRITES[`${layer}/${id}`] : undefined;
+  }).filter((p): p is SpritePaths => p !== undefined);
 }
 
 const cache = new Map<string, string>();
 
+/** A stable key for one look — also what `data-look` exposes for tests. */
 export function lookKey(a: PlayerAppearance): string {
-  return `${a.palette}/${a.cap}/${a.beard}/${a.weapon}/${a.accessory}`;
+  const chosen = a as unknown as Record<string, string>;
+  return [a.palette, ...CHOOSABLE_LAYERS.map((l) => chosen[l])].join('/');
 }
 
 /** The gnome as an SVG data URI, built once per distinct look. */

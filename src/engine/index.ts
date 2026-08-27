@@ -107,17 +107,18 @@ export { getTimeoutAction, applyTimeout, isOnTheClock, MAX_TIMEOUT_STEPS } from 
 // Seat appearance: the catalogue, the derivation, and the validator a
 // networked lobby must run untrusted seat configuration through.
 export {
-  CAP_IDS,
-  BEARD_IDS,
-  WEAPON_IDS,
-  ACCESSORY_IDS,
+  CHOOSABLE_LAYERS,
+  NONE_ID,
   PALETTE_IDS,
+  PART_IDS,
   defaultPalette,
-  randomLook,
+  isOptionalLayer,
   isPlayerAppearance,
+  partIds,
+  randomLook,
   resolveAppearances,
 } from './appearance';
-export type { CapId, BeardId, WeaponId, AccessoryId, PaletteId, PlayerAppearance } from './appearance';
+export type { ChoosableLayer, GnomeParts, PaletteId, PlayerAppearance } from './appearance';
 
 // Teams: seats that share a palette share a side (see teams.ts).
 export { assignTeams, teamCount, teamOf, areAllies, teammates, livingTeams, winningSeats } from './teams';

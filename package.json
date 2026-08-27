@@ -10,6 +10,7 @@
     "cf-typegen": "wrangler types",
     "lint": "oxlint",
     "art": "node scripts/art/build.mjs",
+    "art:preview": "node scripts/art/preview.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "preview": "npm run build && wrangler dev",

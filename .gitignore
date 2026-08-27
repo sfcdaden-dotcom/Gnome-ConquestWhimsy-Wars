@@ -35,3 +35,4 @@ dist-ssr
 !.dev.vars.example
 .env*
 !.env.example
+art-preview.png

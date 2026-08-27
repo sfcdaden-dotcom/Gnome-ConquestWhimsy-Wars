@@ -398,7 +398,6 @@ function Lobby({
                       taken={room.seats.flatMap((s) =>
                         s.index === seat.index ? [] : [{ palette: s.appearance.palette, name: s.name }],
                       )}
-                      randomSalt={seat.index}
                       onChange={(appearance) =>
                         you?.seat === seat.index
                           ? net.setAppearance(appearance)

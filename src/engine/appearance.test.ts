@@ -1,10 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
-  ACCESSORY_IDS,
-  BEARD_IDS,
-  CAP_IDS,
+  CHOOSABLE_LAYERS,
   PALETTE_IDS,
-  WEAPON_IDS,
+  PART_IDS,
   createGame,
   isPlayerAppearance,
   randomLook,
@@ -28,38 +26,36 @@ describe('randomLook', () => {
     expect(randomLook(1234, 2)).toEqual(randomLook(1234, 2));
   });
 
-  it('only ever returns catalogue ids', () => {
+  it('only ever returns catalogue ids, for every layer the folders define', () => {
     for (let salt = 0; salt < 200; salt++) {
       for (let seat = 0; seat < 4; seat++) {
-        const look = randomLook(salt, seat);
-        expect(CAP_IDS).toContain(look.cap);
-        expect(BEARD_IDS).toContain(look.beard);
-        expect(WEAPON_IDS).toContain(look.weapon);
-        expect(ACCESSORY_IDS).toContain(look.accessory);
+        const look = randomLook(salt, seat) as unknown as Record<string, string>;
+        for (const layer of CHOOSABLE_LAYERS) {
+          expect(PART_IDS[layer], `${layer} @ salt ${salt}`).toContain(look[layer]);
+        }
       }
     }
   });
 
   it('survives a hostile seed the way normalizeSeed promises', () => {
     for (const salt of [0, -1, -99999, 2 ** 32, 1.5, Number.MAX_SAFE_INTEGER]) {
-      const look = randomLook(salt, 0);
-      expect(CAP_IDS).toContain(look.cap);
-      expect(BEARD_IDS).toContain(look.beard);
+      const look = randomLook(salt, 0) as unknown as Record<string, string>;
+      for (const layer of CHOOSABLE_LAYERS) expect(PART_IDS[layer]).toContain(look[layer]);
     }
   });
 
   it('spreads across the catalogue rather than sticking on one id', () => {
-    const caps = new Set(Array.from({ length: 60 }, (_, i) => randomLook(i, 0).cap));
-    expect(caps.size).toBe(CAP_IDS.length);
+    const caps = new Set(Array.from({ length: 200 }, (_, i) => randomLook(i, 0).cap));
+    expect(caps.size).toBe(PART_IDS.cap.length);
   });
 
   it('does not move a seat in lockstep with its neighbour', () => {
     // The failure this guards is a hash that mixes seat in linearly: seat n and
     // seat n+1 would then differ by a constant in every slot at once.
     const pairs = Array.from({ length: 40 }, (_, salt) => {
-      const a = randomLook(salt, 0);
-      const b = randomLook(salt, 1);
-      return a.cap === b.cap && a.beard === b.beard && a.weapon === b.weapon;
+      const a = randomLook(salt, 0) as unknown as Record<string, string>;
+      const b = randomLook(salt, 1) as unknown as Record<string, string>;
+      return CHOOSABLE_LAYERS.every((l) => a[l] === b[l]);
     });
     expect(pairs.filter(Boolean).length).toBeLessThan(pairs.length / 2);
   });
@@ -112,7 +108,7 @@ describe('resolveAppearances', () => {
       [{ cap: 'sombrero', palette: 'chartreuse' } as unknown as Partial<PlayerAppearance>],
       42,
     )[0];
-    expect(CAP_IDS).toContain(out.cap);
+    expect(PART_IDS.cap).toContain(out.cap);
     expect(PALETTE_IDS).toContain(out.palette);
   });
 
@@ -131,6 +127,7 @@ describe('isPlayerAppearance', () => {
     expect(isPlayerAppearance({ ...FULL, cap: undefined })).toBe(false);
     expect(isPlayerAppearance({ ...FULL, palette: 'chartreuse' })).toBe(false);
     expect(isPlayerAppearance({ ...FULL, accessory: 'sword' })).toBe(false);
+    expect(isPlayerAppearance({ palette: 'red' })).toBe(false);
     expect(isPlayerAppearance(null)).toBe(false);
     expect(isPlayerAppearance('teal')).toBe(false);
     expect(isPlayerAppearance([])).toBe(false);

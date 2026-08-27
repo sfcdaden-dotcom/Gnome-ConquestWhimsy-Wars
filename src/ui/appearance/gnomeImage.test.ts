@@ -1,15 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
-  ACCESSORY_IDS,
-  BEARD_IDS,
-  CAP_IDS,
+  CHOOSABLE_LAYERS,
+  NONE_ID,
   PALETTE_IDS,
-  WEAPON_IDS,
+  PART_IDS,
   type PlayerAppearance,
 } from '../../engine';
 import { gnomeImageUrl, lookKey } from './gnomeImage';
 import { PALETTES } from './palettes';
-import { RAMP_KEYS, SPRITES } from './spriteData';
+import { LAYER_LABELS, LAYER_ORDER, PART_LABELS, RAMP_KEYS, SPRITES } from './spriteData';
 
 const BASE: PlayerAppearance = {
   palette: 'red',
@@ -19,25 +18,56 @@ const BASE: PlayerAppearance = {
   accessory: 'none',
 };
 
-/** Every look the catalogue can produce. */
+/** Every look the catalogue can produce — the cartesian product of the folders. */
 function everyLook(): PlayerAppearance[] {
-  const out: PlayerAppearance[] = [];
-  for (const palette of PALETTE_IDS)
-    for (const cap of CAP_IDS)
-      for (const beard of BEARD_IDS)
-        for (const weapon of WEAPON_IDS)
-          for (const accessory of ACCESSORY_IDS) out.push({ palette, cap, beard, weapon, accessory });
-  return out;
+  let looks: Record<string, string>[] = PALETTE_IDS.map((palette) => ({ palette }));
+  for (const layer of CHOOSABLE_LAYERS) {
+    looks = looks.flatMap((base) =>
+      (PART_IDS[layer] as readonly string[]).map((id) => ({ ...base, [layer]: id })),
+    );
+  }
+  return looks as unknown as PlayerAppearance[];
 }
 
 describe('sprite data', () => {
   it('has a sprite for every catalogue id', () => {
-    expect(SPRITES.BASE).toBeDefined();
-    for (const id of CAP_IDS) expect(SPRITES[`CAP_${id.toUpperCase()}`]).toBeDefined();
-    for (const id of BEARD_IDS) expect(SPRITES[`BEARD_${id.toUpperCase()}`]).toBeDefined();
-    for (const id of WEAPON_IDS) expect(SPRITES[`WEAPON_${id.toUpperCase()}`]).toBeDefined();
-    for (const id of ACCESSORY_IDS)
-      if (id !== 'none') expect(SPRITES[`ACC_${id.toUpperCase()}`]).toBeDefined();
+    // The generator writes both files from the same folder walk, so a missing
+    // sprite means someone edited one by hand.
+    expect(SPRITES[`base/${PART_IDS.base[0]}`]).toBeDefined();
+    for (const layer of CHOOSABLE_LAYERS) {
+      for (const id of PART_IDS[layer] as readonly string[]) {
+        if (id === NONE_ID) continue;
+        expect(SPRITES[`${layer}/${id}`], `${layer}/${id}`).toBeDefined();
+      }
+    }
+  });
+
+  it('labels every part and every choosable layer', () => {
+    for (const layer of CHOOSABLE_LAYERS) {
+      expect(LAYER_LABELS[layer], layer).toBeTruthy();
+      for (const id of PART_IDS[layer] as readonly string[]) {
+        if (id === NONE_ID) continue;
+        expect(PART_LABELS[`${layer}/${id}`], `${layer}/${id}`).toBeTruthy();
+      }
+    }
+  });
+
+  it('draws every layer, with the body between the weapon and the cap', () => {
+    // Order is load-bearing: the beard must overlap the weapon shaft, and the
+    // cap must sit on the head rather than behind it.
+    expect(LAYER_ORDER).toContain('base');
+    expect(LAYER_ORDER.indexOf('weapon')).toBeLessThan(LAYER_ORDER.indexOf('base'));
+    expect(LAYER_ORDER.indexOf('base')).toBeLessThan(LAYER_ORDER.indexOf('beard'));
+    expect(LAYER_ORDER.indexOf('beard')).toBeLessThan(LAYER_ORDER.indexOf('cap'));
+    for (const layer of CHOOSABLE_LAYERS) expect(LAYER_ORDER).toContain(layer);
+  });
+
+  it('never leaves a sprite empty', () => {
+    // A part that compiled to nothing is a file drawn fully transparent, or
+    // drawn below the alpha floor — it would render as an invisible option.
+    for (const [name, paths] of Object.entries(SPRITES)) {
+      expect(Object.keys(paths).length, `${name} has no pixels`).toBeGreaterThan(0);
+    }
   });
 
   it('only uses fill keys the recolourer can resolve', () => {
@@ -83,17 +113,15 @@ describe('gnomeImageUrl', () => {
     expect(gnomeImageUrl({ ...BASE, palette: 'red' })).not.toBe(gnomeImageUrl({ ...BASE, palette: 'blue' }));
   });
 
-  it('gives each part choice a distinct image', () => {
-    const urls = new Set([
-      gnomeImageUrl(BASE),
-      ...CAP_IDS.map((cap) => gnomeImageUrl({ ...BASE, cap })),
-      ...BEARD_IDS.map((beard) => gnomeImageUrl({ ...BASE, beard })),
-      ...WEAPON_IDS.map((weapon) => gnomeImageUrl({ ...BASE, weapon })),
-      ...ACCESSORY_IDS.map((accessory) => gnomeImageUrl({ ...BASE, accessory })),
-    ]);
-    // 1 base + 3 caps + 3 beards + 3 weapons + 4 accessories, less the four
-    // that restate BASE's own choices.
-    expect(urls.size).toBe(1 + 3 + 3 + 3 + 4 - 4);
+  it('gives every part choice a distinct image', () => {
+    // Two different parts rendering identically would mean a duplicate file or
+    // a sprite that compiled to the same pixels as its neighbour.
+    for (const layer of CHOOSABLE_LAYERS) {
+      const urls = new Set(
+        (PART_IDS[layer] as readonly string[]).map((id) => gnomeImageUrl({ ...BASE, [layer]: id })),
+      );
+      expect(urls.size, `${layer} options are not all distinct`).toBe(PART_IDS[layer].length);
+    }
   });
 
   it('returns the identical string for the same look — the cache is the point', () => {
@@ -106,19 +134,15 @@ describe('gnomeImageUrl', () => {
     expect(worn.length).toBeGreaterThan(bare.length);
   });
 
-  it('layers the weapon under the body and the cap over it', () => {
-    // Order is load-bearing: the beard must overlap the shaft, and the cap must
-    // sit on the head rather than behind it.
+  it('emits the layers in draw order', () => {
     const svg = decodeURIComponent(
       gnomeImageUrl({ ...BASE, weapon: 'staff', accessory: 'monocle' }).replace('data:image/svg+xml,', ''),
     );
-    const at = (paths: Record<string, string>) => {
-      const first = Object.values(paths)[0];
-      return svg.indexOf(first);
-    };
-    expect(at(SPRITES.WEAPON_STAFF)).toBeLessThan(at(SPRITES.BASE));
-    expect(at(SPRITES.BASE)).toBeLessThan(at(SPRITES.CAP_POINTY));
-    expect(at(SPRITES.CAP_POINTY)).toBeLessThan(at(SPRITES.ACC_MONOCLE));
+    const at = (key: string) => svg.indexOf(Object.values(SPRITES[key])[0]);
+    expect(at('weapon/staff')).toBeLessThan(at(`base/${PART_IDS.base[0]}`));
+    expect(at(`base/${PART_IDS.base[0]}`)).toBeLessThan(at('beard/bushy'));
+    expect(at('beard/bushy')).toBeLessThan(at('cap/pointy'));
+    expect(at('cap/pointy')).toBeLessThan(at('accessory/monocle'));
   });
 });
 
@@ -159,5 +183,52 @@ describe('palettes', () => {
 
   it('gives the eight teams eight distinguishable accents', () => {
     expect(new Set(PALETTE_IDS.map((id) => PALETTES[id].accent)).size).toBe(PALETTE_IDS.length);
+  });
+});
+
+describe('the part folders are the catalogue', () => {
+  it('offers every layer more than one option', () => {
+    // A layer with one option is a row of one button — the generator should
+    // have found the folder, and the folder should have art in it.
+    for (const layer of CHOOSABLE_LAYERS) {
+      expect(PART_IDS[layer].length, `${layer} has nothing to choose from`).toBeGreaterThan(1);
+    }
+  });
+
+  it('uses ids safe for a filename, a URL and a wire message', () => {
+    // These travel in MatchRecord and over the socket, and index sprite tables.
+    for (const layer of CHOOSABLE_LAYERS) {
+      for (const id of PART_IDS[layer] as readonly string[]) {
+        expect(id, `${layer}/${id}`).toMatch(/^[a-z0-9][a-z0-9-]*$/);
+      }
+    }
+  });
+
+  it('keeps ids unique within a layer', () => {
+    for (const layer of CHOOSABLE_LAYERS) {
+      const ids = PART_IDS[layer] as readonly string[];
+      expect(new Set(ids).size, layer).toBe(ids.length);
+    }
+  });
+
+  it('puts none first on the layers that allow it, and nowhere else', () => {
+    for (const layer of CHOOSABLE_LAYERS) {
+      const ids = PART_IDS[layer] as readonly string[];
+      const at = ids.indexOf(NONE_ID);
+      expect(at === -1 || at === 0, `${layer} lists ${NONE_ID} at ${at}`).toBe(true);
+    }
+  });
+
+  it('draws every part inside the shared frame', () => {
+    // A part drawn outside the 32x32 grid would be silently cropped; the path
+    // data is the proof it was sampled onto the frame at all.
+    for (const [name, paths] of Object.entries(SPRITES)) {
+      for (const d of Object.values(paths)) {
+        for (const [, x, y] of d.matchAll(/M(\d+) (\d+)/g)) {
+          expect(Number(x), `${name} x`).toBeLessThan(32);
+          expect(Number(y), `${name} y`).toBeLessThan(32);
+        }
+      }
+    }
   });
 });

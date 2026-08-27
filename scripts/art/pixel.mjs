@@ -6,15 +6,15 @@
  * what makes a beard reviewable in a diff — and what lets a shape be nudged a
  * pixel without opening an image editor.
  *
- * The five ramp characters are written out as five EXACT greys. That is the
- * whole contract with the recolourer at runtime (`appearance/recolor.ts`): it
- * maps those five values onto a team ramp and passes every other colour
- * through untouched. So skin, eyes and outlines are written as real colours
- * here and survive recolouring; anything drawn in the ramp takes the team's.
+ * The five ramp characters are the five EXACT greys the compiler recognises.
+ * That is the whole contract with `build.mjs`: it snaps greys onto a team's
+ * ramp and passes every other colour through untouched, so skin, eyes and
+ * outlines are written as real colours here and survive recolouring.
+ *
+ * This module is only used by the STARTER art (`sprites.mjs` and
+ * `export-starter.mjs`). Parts added later are PNGs in `src/assets/art/parts/`
+ * and never come through here — see the Art section in README.md.
  */
-
-import fs from 'node:fs';
-import zlib from 'node:zlib';
 
 /** Logical pixels per side. Every sprite is authored on this grid. */
 export const GRID = 32;
@@ -65,60 +65,4 @@ export function parse(rows, name) {
       return COLORS[ch];
     });
   });
-}
-
-function rgba(hex) {
-  if (hex === null) return [0, 0, 0, 0];
-  const [r, g, b] = hex.slice(1).match(/../g).map((v) => parseInt(v, 16));
-  return [r, g, b, 255];
-}
-
-let CRC_TABLE = null;
-function crc32(buf) {
-  if (!CRC_TABLE) {
-    CRC_TABLE = [];
-    for (let n = 0; n < 256; n++) {
-      let c = n;
-      for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
-      CRC_TABLE[n] = c >>> 0;
-    }
-  }
-  let c = 0xffffffff;
-  for (const v of buf) c = CRC_TABLE[(c ^ v) & 0xff] ^ (c >>> 8);
-  return (c ^ 0xffffffff) >>> 0;
-}
-
-function chunk(type, data) {
-  const len = Buffer.alloc(4);
-  len.writeUInt32BE(data.length);
-  const td = Buffer.concat([Buffer.from(type, 'ascii'), data]);
-  const crc = Buffer.alloc(4);
-  crc.writeUInt32BE(crc32(td));
-  return Buffer.concat([len, td, crc]);
-}
-
-/** Nearest-neighbour upscale to `GRID * SCALE`, written as an RGBA PNG. */
-export function writePng(file, grid) {
-  const size = GRID * SCALE;
-  const stride = size * 4 + 1;
-  const rows = Buffer.alloc(size * stride);
-  for (let y = 0; y < size; y++) {
-    const src = grid[Math.floor(y / SCALE)];
-    let o = y * stride + 1;
-    for (let x = 0; x < size; x++) {
-      const [r, g, b, a] = rgba(src[Math.floor(x / SCALE)]);
-      rows[o++] = r; rows[o++] = g; rows[o++] = b; rows[o++] = a;
-    }
-  }
-  const ihdr = Buffer.alloc(13);
-  ihdr.writeUInt32BE(size, 0);
-  ihdr.writeUInt32BE(size, 4);
-  ihdr[8] = 8; // bit depth
-  ihdr[9] = 6; // truecolour + alpha
-  fs.writeFileSync(file, Buffer.concat([
-    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
-    chunk('IHDR', ihdr),
-    chunk('IDAT', zlib.deflateSync(rows, { level: 9 })),
-    chunk('IEND', Buffer.alloc(0)),
-  ]));
 }

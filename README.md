@@ -78,28 +78,77 @@ A player's gnome is not one of those files. It is composited from five layers �
 weapon, body, beard, cap, accessory — recoloured at runtime to that player's
 team palette, so one set of art serves every team.
 
-That rules out PNGs: recolouring means mapping a five-step greyscale ramp onto
-a team's five-step colour ramp, and an `<img>` cannot be palette-swapped (CSS
-filters do hue rotation, not a per-step colour map). So the parts are authored
-as ASCII on a 32×32 grid in `scripts/art/sprites.mjs`, one character per pixel,
-and compiled to SVG path data:
+**Adding a part is adding a file.** Drop a PNG into the folder for its layer and
+re-run the generator; the id, the label, the engine's catalogue and the
+picker's buttons are all derived from the filename.
 
 ```
-npm run art        # scripts/art/sprites.mjs -> src/ui/appearance/spriteData.ts
+src/assets/art/parts/
+  base/       gnome.png                        the head every layer hangs off
+  cap/        pointy.png bulbous.png wide.png tall.png droopy.png
+  beard/      pointy.png wild.png bushy.png braided.png stubble.png
+  weapon/     shovel.png pitchfork.png staff.png axe.png broom.png
+  accessory/  monocle.png pipe.png lantern.png flower.png glasses.png
+
+npm run art             # folders -> src/engine/partCatalog.ts + src/ui/appearance/spriteData.ts
+npm run art:preview     # renders art-preview.png: every part, on a gnome, recoloured
+npm run art:preview -- cap teal      # one layer, one palette
 ```
 
-The generated file is checked in, so a normal build never runs the generator.
-`src/ui/appearance/gnomeImage.ts` fills those paths with a palette and memoises
-the result as one data URI per distinct look.
+`art-preview.png` is the fast way to check a new drawing: it composites each
+part onto a full gnome in a team's colours, because a cap on its own tells you
+nothing about whether it collides with the beard.
 
-Drawing a part: `0`–`4` are the recolourable ramp, darkest to lightest, and
-`K/S/s/h/e/w` are fixed colours that survive recolouring (skin, eyes). Two
-conventions are load-bearing rather than stylistic — **beards use the dark half
-of the ramp (0–2) and caps the light half (2–4)**, which is what keeps a
-gnome's two big masses apart at 20px, and every layer is drawn in the same
-frame, so parts line up by construction rather than by runtime positioning.
-Adding a part means adding its sprite, its id in `src/engine/appearance.ts`,
-and its label in `src/ui/appearance/CharacterPicker.tsx`.
+#### What to draw
+
+Square, transparent where empty, ideally **256×256**. Any square size works —
+the image is sampled onto the 32×32 grid every part shares, so the layers line
+up by construction — but a clean multiple of 32 keeps pixel edges exact.
+
+**Colour decides what recolours**, and this is the whole authoring contract:
+
+| You draw | It becomes |
+| --- | --- |
+| Grey (r ≈ g ≈ b) | The team's colour, at that lightness. Dark greys → the team's dark shades, light greys → its light ones. |
+| Any other colour | Exactly that colour, on every team. This is how skin and eyes survive recolouring. |
+
+Two conventions are load-bearing rather than stylistic — ignore them and the
+part will look wrong at the ~20px a board token actually gets:
+
+- **Beards use the dark half of the range, caps the light half.** That contrast
+  is what keeps a gnome's two big masses apart when it is tiny.
+- **Everything is drawn in one shared frame**: head at x 8–23 / y 8–25 of the
+  32×32 grid, caps above it, beards hanging below y19, weapons down the right
+  margin. Nothing is positioned at runtime.
+
+Filenames become ids and labels: `wide-brim.png` → id `wide-brim`, label "Wide
+Brim". A numeric prefix orders the picker and is stripped from the id
+(`01-pointy.png` → `pointy`), so renumbering the menu never invalidates a saved
+game. Ids are stored in match records and sent over the wire, so **deleting a
+part breaks replays of games that used it** — rename freely before release,
+not after.
+
+#### Why the art is compiled rather than loaded
+
+A gnome is recoloured to its team's palette at runtime, and an `<img>` cannot be
+palette-swapped — CSS filters do hue rotation, not a per-step colour map. So
+`npm run art` converts each PNG into one SVG path per colour, and
+`gnomeImage.ts` fills those paths with a team's ramp and memoises the result as
+a single data URI per distinct look. The generated files are checked in, so a
+normal build is still a plain `tsc && vite build`.
+
+The starter art was drawn as ASCII in `scripts/art/sprites.mjs` and exported to
+the folders by `node scripts/art/export-starter.mjs`. That script is kept for
+provenance only — the folders are the source of truth, and re-running it
+overwrites them, discarding hand edits.
+
+#### Adding a whole new layer
+
+Rarer, and the one case that needs a code change: add an entry to `LAYERS` in
+`scripts/art/layers.mjs` (id, folder, label, draw order, whether it may be
+empty), create the folder, and run `npm run art`. The appearance type, the
+validator, the random-look derivation and the picker row all follow from the
+generated catalogue.
 
 ## Architecture in one paragraph
 
