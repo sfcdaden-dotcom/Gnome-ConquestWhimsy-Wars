@@ -29,6 +29,7 @@ import type {
 } from './types';
 import { EngineError, PLANTABLE_GARDEN_TYPES } from './types';
 import { normalizeSeed, shuffled } from './rng';
+import { resolveAppearances } from './appearance';
 import { posKey } from './helpers';
 import { makeGarden } from './gardens';
 import { buildInitialDeck, isCurseId, MAX_CARD_COPIES, resolveDeckCounts } from './cards';
@@ -190,6 +191,10 @@ function resolveConfig(options: CreateGameOptions): GameConfig {
       name: p.name ?? `Player ${i + 1}`,
       controller: p.controller,
       difficulty: p.difficulty ?? 'normal',
+      // Stored as REQUESTED. Resolution needs the seed, which resolveConfig
+      // does not have, and needs to see every seat at once to keep palettes
+      // distinct — both of which happen in buildState.
+      ...(p.appearance ? { appearance: { ...p.appearance } } : {}),
     })),
   };
   if (cfg.startingWishes < 0 || cfg.wishLimit < 1 || cfg.gnomeBoardLimit < 1) badConfig('Limits must be positive');
@@ -224,9 +229,15 @@ export function createGame(options: CreateGameOptions, seed: number): GameState 
     config.customHomes ??
     (presetHomes ? seatHomes(presetHomes, playerCount) : homePositions(config.boardSize, playerCount));
 
+  // Every seat's look, settled together: unrequested parts derive from the
+  // seed, and palettes are made distinct across the table. Pure — it consumes
+  // no randomness from `rngState`, so seeded games are unaffected.
+  const appearances = resolveAppearances(config.players.map((p) => p.appearance), seed);
+
   const players: PlayerState[] = config.players.map((p, i) => ({
     id: i as PlayerId,
     name: p.name,
+    appearance: appearances[i],
     controller: p.controller,
     difficulty: p.difficulty,
     status: 'playing',

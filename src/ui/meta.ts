@@ -17,18 +17,28 @@ import type {
   Pos,
   QuickChatId,
 } from '../engine';
-import { getCardDef, getCurseDef, getQuickChatPhrase, nameSaltOf, whyCannotPlayNow } from '../engine';
+import { PALETTE_IDS, defaultPalette, getCardDef, getCurseDef, getQuickChatPhrase, nameSaltOf, whyCannotPlayNow } from '../engine';
 import type { UnitEventRef } from './gnomeNames';
 import { gnomeName, unitNameFromEvent, unitNameLive } from './gnomeNames';
+import { PALETTES, type Palette } from './appearance/palettes';
 
 // ---------------------------------------------------------------------------
 // Player + garden presentation
 // ---------------------------------------------------------------------------
 
-/** Seat colors: red, blue, yellow, purple (clockwise). Named in
- * `PLAYER_COLOR_NAMES`, which is also what an untouched seat is called. */
-export const PLAYER_COLORS = ['#d8504d', '#3f7ad8', '#c9930a', '#9256cf'];
-export const PLAYER_COLOR_NAMES = ['Red', 'Blue', 'Yellow', 'Purple'];
+/**
+ * Seat colours are no longer a property of the SEAT — a player picks a palette
+ * in character select and their colour follows them into whichever seat they
+ * sit in, so the colour has to be read off the state rather than off the
+ * index. `resolveAppearances` guarantees the palettes are distinct, which is
+ * what lets the board keep using colour as identity.
+ *
+ * These two are the fallback for a state that predates character select (an
+ * old `MatchRecord`, a half-built test fixture): seat order red, blue, yellow,
+ * purple, exactly as the game shipped.
+ */
+export const PLAYER_COLORS = PALETTE_IDS.slice(0, 4).map((id) => PALETTES[id].accent);
+export const PLAYER_COLOR_NAMES = PALETTE_IDS.slice(0, 4).map((id) => PALETTES[id].label);
 
 /** Why a seat left the game, in log-line words. */
 export const ELIMINATION_REASON_TEXT: Record<EliminationReason, string> = {
@@ -37,8 +47,24 @@ export const ELIMINATION_REASON_TEXT: Record<EliminationReason, string> = {
   reinforcements: 'out of reinforcements',
 };
 
-export function playerColor(id: number): string {
-  return PLAYER_COLORS[id % PLAYER_COLORS.length];
+/**
+ * The seat's full palette. Falls back to the seat-ordered defaults when the
+ * state has no appearance for that seat, so every caller can assume a palette
+ * exists without null-checking a cosmetic.
+ */
+export function seatPalette(state: GameState, id: number): Palette {
+  const chosen = state.players[id]?.appearance?.palette;
+  return PALETTES[chosen ?? defaultPalette(id)];
+}
+
+/** The seat's identity colour: name text, panel edges, highlight rings. */
+export function playerColor(state: GameState, id: number): string {
+  return seatPalette(state, id).accent;
+}
+
+/** The seat's token background — deliberately darker than any step of its art. */
+export function playerDisc(state: GameState, id: number): string {
+  return seatPalette(state, id).disc;
 }
 
 /** "👋 Hi!" for a quick-chat phrase id (raw id if it is not in the catalogue). */

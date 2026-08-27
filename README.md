@@ -61,10 +61,39 @@ What the art has to survive: square and transparent, 128–256px (they render at
 14–24px in a board cell, ~40px in a token — anything fiddly turns to mush at
 that size; non-square is allowed but letterboxes, since the CSS uses
 `object-fit: contain`). **Unit art** sits on a disc filled with its seat's
-colour — red, blue, yellow or purple — so it needs a light outline or halo to
-stay legible on all four. **Garden art** appears at two very different scales:
-tucked into a cell's top-left corner during play, and filling the whole cell in
-the setup preview and the preset editor.
+colour, so it needs a light outline or halo to stay legible on any of them.
+**Garden art** appears at two very different scales: tucked into a cell's
+top-left corner during play, and filling the whole cell in the setup preview
+and the preset editor.
+
+### Gnome parts
+
+A player's gnome is not one of those files. It is composited from five layers —
+weapon, body, beard, cap, accessory — recoloured at runtime to that player's
+team palette, so one set of art serves every team.
+
+That rules out PNGs: recolouring means mapping a five-step greyscale ramp onto
+a team's five-step colour ramp, and an `<img>` cannot be palette-swapped (CSS
+filters do hue rotation, not a per-step colour map). So the parts are authored
+as ASCII on a 32×32 grid in `scripts/art/sprites.mjs`, one character per pixel,
+and compiled to SVG path data:
+
+```
+npm run art        # scripts/art/sprites.mjs -> src/ui/appearance/spriteData.ts
+```
+
+The generated file is checked in, so a normal build never runs the generator.
+`src/ui/appearance/gnomeImage.ts` fills those paths with a palette and memoises
+the result as one data URI per distinct look.
+
+Drawing a part: `0`–`4` are the recolourable ramp, darkest to lightest, and
+`K/S/s/h/e/w` are fixed colours that survive recolouring (skin, eyes). Two
+conventions are load-bearing rather than stylistic — **beards use the dark half
+of the ramp (0–2) and caps the light half (2–4)**, which is what keeps a
+gnome's two big masses apart at 20px, and every layer is drawn in the same
+frame, so parts line up by construction rather than by runtime positioning.
+Adding a part means adding its sprite, its id in `src/engine/appearance.ts`,
+and its label in `src/ui/appearance/CharacterPicker.tsx`.
 
 ## Architecture in one paragraph
 

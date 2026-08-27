@@ -18,6 +18,7 @@ import type {
   CreateGameOptions,
   GardenPreset,
   GardenPresetDef,
+  PlayerAppearance,
   PlayerController,
   RandomLayout,
 } from '../engine';
@@ -28,10 +29,14 @@ import {
   MODE_PRESETS,
   homePositions,
   posKey,
+  resolveAppearances,
   seatHomes,
 } from '../engine';
-import { GARDEN_META, playerColor, randomSeed, PLAYER_COLOR_NAMES } from './meta';
+import { GARDEN_META, randomSeed, PLAYER_COLOR_NAMES } from './meta';
 import { GardenIcon, UnitIcon } from './art';
+import { CharacterPicker } from './appearance/CharacterPicker';
+import { GnomeAvatar } from './appearance/gnome';
+import { PALETTES } from './appearance/palettes';
 import { AdvancedSettings } from './AdvancedSettings';
 import { DEFAULT_ADVANCED_SETTINGS, isDefaultSettings, parseSeedText, settingsOptions } from './advancedSettings';
 import type { AdvancedSettingsValue } from './advancedSettings';
@@ -65,15 +70,38 @@ interface SeatDraft {
   name: string;
   controller: PlayerController;
   difficulty: AiDifficulty;
+  /**
+   * Fully resolved, not partial: the panel always has a gnome to draw, so the
+   * draft carries a complete look from the moment the screen opens and the
+   * engine's derivation only ever runs for seats this screen never built (a
+   * networked game, a replayed record).
+   */
+  appearance: PlayerAppearance;
 }
 
 /**
- * Seats are named for their colour, so the name on the panel, the dot beside
- * it and the tokens on the board all say the same thing. (Typing over one is
- * still the first thing a hot-seat table does — these only have to be right
- * for the table that doesn't bother.)
+ * A seat nobody names is named for its colour, so the name on the panel, the
+ * gnome beside it and the tokens on the board all say the same thing. Since a
+ * colour now follows the player who picked it, the default name follows the
+ * palette rather than the seat — `seatDefaultName` below, not a fixed list.
+ * (Typing over one is still the first thing a hot-seat table does; these only
+ * have to be right for the table that doesn't bother.)
  */
 const DEFAULT_NAMES = PLAYER_COLOR_NAMES;
+
+/** What seat `i` is called when its name box is empty. */
+function seatDefaultName(seat: SeatDraft, i: number): string {
+  return PALETTES[seat.appearance.palette]?.label ?? DEFAULT_NAMES[i] ?? `Player ${i + 1}`;
+}
+
+/**
+ * The four starting looks. Salted off the clock so a fresh table gets fresh
+ * gnomes — this feeds presentation only and never touches the game's RNG, so
+ * a seeded game is still a seeded game.
+ */
+function initialSeatLooks(): PlayerAppearance[] {
+  return resolveAppearances([undefined, undefined, undefined, undefined], Date.now() >>> 0);
+}
 const DIFFICULTIES: readonly AiDifficulty[] = ['easy', 'normal', 'hard'];
 const DIFFICULTY_LABELS: Record<AiDifficulty, string> = { easy: 'Easy', normal: 'Normal', hard: 'Hard' };
 
@@ -141,7 +169,7 @@ function LayoutPreview({
         const title = isHome
           ? seat === undefined
             ? 'Home Garden (unused in a 2-player game)'
-            : `${PLAYER_COLOR_NAMES[seat]}'s Home Garden`
+            : `Seat ${seat + 1}'s Home Garden`
           : type
             ? GARDEN_META[type].label
             : isCenter && centerStar
@@ -172,12 +200,19 @@ export function SetupScreen({
   onBack?: () => void;
 }) {
   const [count, setCount] = useState<2 | 4>(2);
-  const [seats, setSeats] = useState<SeatDraft[]>([
-    { name: DEFAULT_NAMES[0], controller: 'human', difficulty: 'normal' },
-    { name: DEFAULT_NAMES[1], controller: 'cpu', difficulty: 'normal' },
-    { name: DEFAULT_NAMES[2], controller: 'cpu', difficulty: 'normal' },
-    { name: DEFAULT_NAMES[3], controller: 'cpu', difficulty: 'normal' },
-  ]);
+  const [seats, setSeats] = useState<SeatDraft[]>(() => {
+    const looks = initialSeatLooks();
+    return looks.map((appearance, i) => ({
+      // Left empty rather than pre-filled, so the name can follow the palette
+      // for as long as nobody has typed one of their own.
+      name: '',
+      controller: i === 0 ? 'human' : 'cpu',
+      difficulty: 'normal',
+      appearance,
+    }));
+  });
+  /** Which seat has character select open, or null. One at a time: the panel is tall. */
+  const [openSeat, setOpenSeat] = useState<number | null>(null);
   const [preset, setPreset] = useState<GardenPreset>(DEFAULT_GARDEN_PRESET_ID);
   const [customPresets, setCustomPresets] = useState<GardenPresetDef[]>([]);
   // Which layout the editor is open on: a brand-new one, an existing custom
@@ -394,9 +429,10 @@ export function SetupScreen({
       centerStar,
       ...settingsOptions(settings),
       players: seats.slice(0, count).map((s, i) => ({
-        name: s.name.trim() || DEFAULT_NAMES[i],
+        name: s.name.trim() || seatDefaultName(s, i),
         controller: s.controller,
         ...(s.controller === 'cpu' ? { difficulty: s.difficulty } : {}),
+        appearance: s.appearance,
       })),
     };
     onStart({ options, seed });
@@ -441,12 +477,27 @@ export function SetupScreen({
 
         <div className="seat-list">
           {seats.slice(0, count).map((seat, i) => (
-            <div key={i} className="seat-row" style={{ '--pc': playerColor(i) } as CSSProperties}>
-              <span className="pp-dot" title={PLAYER_COLOR_NAMES[i]} />
+            <div
+              key={i}
+              className="seat-row"
+              style={{ '--pc': PALETTES[seat.appearance.palette].accent } as CSSProperties}
+            >
+              <button
+                type="button"
+                className={`seat-gnome-btn${openSeat === i ? ' accent' : ''}`}
+                aria-expanded={openSeat === i}
+                aria-label={`Customise seat ${i + 1}'s gnome`}
+                title="Character select"
+                data-testid={`seat-${i}-customise`}
+                onClick={() => setOpenSeat(openSeat === i ? null : i)}
+              >
+                <GnomeAvatar appearance={seat.appearance} className="seat-gnome" />
+              </button>
               <input
                 type="text"
                 value={seat.name}
                 maxLength={16}
+                placeholder={seatDefaultName(seat, i)}
                 aria-label={`Seat ${i + 1} name`}
                 onChange={(e) => updateSeat(i, { name: e.target.value })}
               />
@@ -481,6 +532,14 @@ export function SetupScreen({
                     </option>
                   ))}
                 </select>
+              )}
+              {openSeat === i && (
+                <CharacterPicker
+                  appearance={seat.appearance}
+                  taken={seats.slice(0, count).flatMap((s, j) => (j === i ? [] : [s.appearance.palette]))}
+                  randomSalt={i}
+                  onChange={(appearance) => updateSeat(i, { appearance })}
+                />
               )}
             </div>
           ))}

@@ -104,6 +104,21 @@ export type { PlayerView } from './view';
 // Shot-clock enforcement (multiplayer hosts; the engine holds no wall clock).
 export { getTimeoutAction, applyTimeout, isOnTheClock, MAX_TIMEOUT_STEPS } from './timeout';
 
+// Seat appearance: the catalogue, the derivation, and the validator a
+// networked lobby must run untrusted seat configuration through.
+export {
+  CAP_IDS,
+  BEARD_IDS,
+  WEAPON_IDS,
+  ACCESSORY_IDS,
+  PALETTE_IDS,
+  defaultPalette,
+  randomLook,
+  isPlayerAppearance,
+  resolveAppearances,
+} from './appearance';
+export type { CapId, BeardId, WeaponId, AccessoryId, PaletteId, PlayerAppearance } from './appearance';
+
 // Read-only state queries (safe for UI use).
 export {
   posKey,

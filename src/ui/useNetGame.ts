@@ -26,7 +26,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { Action, PlayerId, PlayerView } from '../engine';
+import type { Action, PlayerAppearance, PlayerId, PlayerView } from '../engine';
 import { getPlayerToAct } from '../engine';
 import type { GameSeal, MatchRecord } from '../engine';
 import { verifySeal } from '../net/commitment';
@@ -87,6 +87,8 @@ export interface NetGame {
   closedReason: RoomClosedReason | null;
   /** Host lobby controls (server-rejected for anyone else). */
   configure: (config: Omit<Extract<ClientMessage, { t: 'configure' }>, 't'>) => void;
+  /** Change your OWN seat's gnome. Unlike `configure`, not host-only. */
+  setAppearance: (appearance: PlayerAppearance) => void;
   start: () => void;
   /** Claim a room whose host has gone. Refused unless it really has none. */
   takeOverRoom: () => void;
@@ -370,6 +372,10 @@ export function useNetGame(code: string, name: string): NetGame {
     (config: Omit<Extract<ClientMessage, { t: 'configure' }>, 't'>) => send({ t: 'configure', ...config } as ClientMessage),
     [send],
   );
+  const setAppearance = useCallback(
+    (appearance: PlayerAppearance) => send({ t: 'setAppearance', appearance }),
+    [send],
+  );
   const start = useCallback(() => send({ t: 'start' }), [send]);
   const takeOverRoom = useCallback(() => send({ t: 'takeOverRoom' }), [send]);
 
@@ -393,6 +399,7 @@ export function useNetGame(code: string, name: string): NetGame {
     revealed,
     closedReason,
     configure,
+    setAppearance,
     start,
     takeOverRoom,
     rejoin,

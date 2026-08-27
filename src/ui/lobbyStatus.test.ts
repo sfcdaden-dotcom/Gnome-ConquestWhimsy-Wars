@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { PALETTE_IDS } from '../engine';
 import type { RoomSnapshot, SeatInfo } from '../net/protocol';
 import { blockerAction, blockerText, canStart, lobbyBlocker } from './lobbyStatus';
 
@@ -8,6 +9,7 @@ function seat(index: number, over: Partial<SeatInfo> = {}): SeatInfo {
     name: ['Rose', 'Thistle', 'Marigold', 'Bramble'][index],
     controller: 'human',
     difficulty: 'normal',
+    appearance: { palette: PALETTE_IDS[index], cap: 'pointy', beard: 'bushy', weapon: 'shovel', accessory: 'none' },
     connected: true,
     takenOver: false,
     ...over,

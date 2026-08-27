@@ -13,6 +13,8 @@
  * persisted and replayed.
  */
 
+import type { PlayerAppearance } from './appearance';
+
 // ---------------------------------------------------------------------------
 // Primitives
 // ---------------------------------------------------------------------------
@@ -99,6 +101,12 @@ export interface PlayerSetup {
   controller: PlayerController;
   /** CPU strength; ignored for 'human'. Defaults to 'normal'. */
   difficulty?: AiDifficulty;
+  /**
+   * What this seat's gnome should look like. Every field is optional and any
+   * field left out is DERIVED from the game's seed — an omitted appearance is
+   * a random gnome, not a default one. See engine/appearance.ts.
+   */
+  appearance?: Partial<PlayerAppearance>;
 }
 
 /** Fully-resolved game configuration (stored on the state). */
@@ -146,7 +154,21 @@ export interface GameConfig {
    */
   customHomes?: Pos[];
   /** 2 or 4 seats, clockwise. */
-  players: Array<{ name: string; controller: PlayerController; difficulty: AiDifficulty }>;
+  players: Array<{
+    name: string;
+    controller: PlayerController;
+    difficulty: AiDifficulty;
+    /**
+     * The seat's REQUEST, not its resolved look: absent fields are filled in
+     * from the seed at `createGame`, and a requested palette can still be
+     * refused if an earlier seat asked for it first. The resolved appearance
+     * lands on `PlayerState.appearance`.
+     *
+     * Optional so a `MatchRecord` written before character select still
+     * replays — such a game simply had no requests, and its seats derive.
+     */
+    appearance?: Partial<PlayerAppearance>;
+  }>;
 }
 
 /** Input to createGame: players required, everything else defaulted. */
@@ -199,6 +221,12 @@ export interface Unit {
 export interface PlayerState {
   id: PlayerId;
   name: string;
+  /**
+   * The seat's resolved gnome — every field settled, palette guaranteed unique
+   * across seats. Public information: it is on the board for everyone to see,
+   * so `viewFor` does not redact it.
+   */
+  appearance: PlayerAppearance;
   controller: PlayerController;
   difficulty: AiDifficulty;
   status: PlayerStatus;

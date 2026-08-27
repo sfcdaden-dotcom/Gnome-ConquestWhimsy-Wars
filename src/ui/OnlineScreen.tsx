@@ -32,7 +32,8 @@ import { hostKeyStore, NAME_KEY, recentRoom, roomCodeFromSearch, roomHref } from
 import { HOST_GRACE_MS, ROOM_CODE_LENGTH } from '../net/protocol';
 import type { RoomClosedReason } from '../net/protocol';
 import { HostGraceBanner } from './HostGraceBanner';
-import { playerColor } from './meta';
+import { CharacterPicker } from './appearance/CharacterPicker';
+import { GnomeAvatar } from './appearance/gnome';
 import { blockerAction, blockerText, canStart, lobbyBlocker } from './lobbyStatus';
 
 /** Point the address bar at the room (or at no room) without a navigation. */
@@ -285,6 +286,8 @@ function Lobby({
   const { room, you, status } = net;
   const isHost = you?.isHost ?? false;
   const [copied, setCopied] = useState<'code' | 'link' | null>(null);
+  /** Which seat's character select is open, or null. One at a time: the panel is tall. */
+  const [dressing, setDressing] = useState<number | null>(null);
 
   function copy(what: 'code' | 'link', text: string) {
     void navigator.clipboard?.writeText(text);
@@ -350,7 +353,11 @@ function Lobby({
             <div className="lobby-seats" data-testid="lobby-seats">
               {room.seats.map((seat) => (
                 <div className="lobby-seat" key={seat.index} data-testid={`lobby-seat-${seat.index}`}>
-                  <span className="seat-dot" style={{ background: playerColor(seat.index) }} />
+                  <GnomeAvatar
+                    appearance={seat.appearance}
+                    className="seat-gnome"
+                    title={`${seat.name}'s gnome`}
+                  />
                   <span className="seat-name">
                     {seat.name}
                     {you?.seat === seat.index && <span className="muted small"> (you)</span>}
@@ -369,6 +376,34 @@ function Lobby({
                         ? 'ready'
                         : 'open — waiting for a player'}
                   </span>
+
+                  {/* Your own gnome is yours to dress, host or not. Other
+                      seats get the button only for the host, who dresses the
+                      CPUs; a seated player's character is never overridden
+                      from here. */}
+                  {status === 'lobby' && (you?.seat === seat.index || (isHost && seat.controller === 'cpu')) && (
+                    <button
+                      type="button"
+                      className={`btn small${dressing === seat.index ? ' accent' : ''}`}
+                      aria-expanded={dressing === seat.index}
+                      data-testid={`lobby-seat-${seat.index}-customise`}
+                      onClick={() => setDressing(dressing === seat.index ? null : seat.index)}
+                    >
+                      🎨 Gnome
+                    </button>
+                  )}
+                  {dressing === seat.index && (
+                    <CharacterPicker
+                      appearance={seat.appearance}
+                      taken={room.seats.flatMap((s) => (s.index === seat.index ? [] : [s.appearance.palette]))}
+                      randomSalt={seat.index}
+                      onChange={(appearance) =>
+                        you?.seat === seat.index
+                          ? net.setAppearance(appearance)
+                          : net.configure({ seats: [{ index: seat.index, appearance }] })
+                      }
+                    />
+                  )}
 
                   {isHost && status === 'lobby' && (
                     <>

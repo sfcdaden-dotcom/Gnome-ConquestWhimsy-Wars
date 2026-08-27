@@ -46,6 +46,7 @@ import type {
   GameState,
   GardenPreset,
   MatchRecord,
+  PlayerAppearance,
   PlayerSetup,
 } from '../engine';
 import {
@@ -58,6 +59,8 @@ import {
   getPlayerToAct,
   getTimeoutAction,
   isGameOver,
+  isPlayerAppearance,
+  resolveAppearances,
   sealHiddenState,
   viewFor,
 } from '../engine';
@@ -185,6 +188,12 @@ export interface PersistedSeat {
   name: string;
   controller: 'human' | 'cpu';
   difficulty: AiDifficulty;
+  /**
+   * The seat's chosen gnome, or absent for a seat that never chose. Absent is
+   * not "no gnome": `resolvedSeatLooks` derives one from the room code, so an
+   * untouched seat still has a settled look that every client agrees on.
+   */
+  appearance?: PlayerAppearance;
   /** The room took this seat over for inactivity (not a lobby CPU seat). */
   takenOver?: boolean;
   /** Consecutive shot-clock timeouts. Any action by the seat resets it. */
@@ -261,6 +270,17 @@ function defaultSeats(count: 2 | 4): PersistedSeat[] {
     controller: 'human' as const,
     difficulty: 'normal' as AiDifficulty,
   }));
+}
+
+/**
+ * A stable 32-bit salt for a room code. Only ever feeds appearance derivation,
+ * so it wants determinism and spread, not secrecy — the code is public and the
+ * gnomes it picks are on screen for everyone anyway.
+ */
+function codeSalt(code: string): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < code.length; i++) h = Math.imul(h ^ code.charCodeAt(i), 0x01000193);
+  return h >>> 0;
 }
 
 class RoomError extends Error {
@@ -742,6 +762,8 @@ export class Room {
           return c.conn.send({ t: 'pong' });
         case 'configure':
           return await this.configure(c, message);
+        case 'setAppearance':
+          return await this.setAppearance(c, message);
         case 'start':
           return await this.start(c);
         case 'takeOverRoom':
@@ -846,6 +868,59 @@ export class Room {
     if (cfg.controller) seat.controller = cfg.controller;
     if (cfg.difficulty) seat.difficulty = cfg.difficulty;
     if (cfg.name) seat.name = cfg.name.slice(0, 24);
+    if (cfg.appearance !== undefined) {
+      if (!isPlayerAppearance(cfg.appearance)) {
+        throw new RoomError('BAD_CONFIG', 'That is not a gnome this game knows how to draw');
+      }
+      seat.appearance = cfg.appearance;
+    }
+  }
+
+  /**
+   * A player choosing their own character.
+   *
+   * Three refusals, all of them about who owns what: a spectator owns no seat,
+   * a started game owns its seating, and a palette belongs to whoever claimed
+   * it first. The last one is refused out loud rather than silently corrected
+   * — `resolveAppearances` would quietly hand out a different colour, and a
+   * player who picked teal and got orange with no explanation would reasonably
+   * think the game was broken.
+   */
+  private async setAppearance(
+    c: ConnState,
+    message: Extract<ClientMessage, { t: 'setAppearance' }>,
+  ): Promise<void> {
+    if (this.data.phase !== 'lobby') {
+      throw new RoomError('WRONG_PHASE', 'The game has already started');
+    }
+    if (c.seat === null) throw new RoomError('NOT_SEATED', 'Spectators have no gnome to dress');
+    if (!isPlayerAppearance(message.appearance)) {
+      throw new RoomError('BAD_CONFIG', 'That is not a gnome this game knows how to draw');
+    }
+    const looks = this.resolvedSeatLooks();
+    const clash = looks.findIndex((a, i) => i !== c.seat && a.palette === message.appearance.palette);
+    if (clash >= 0) {
+      throw new RoomError('BAD_CONFIG', `${this.data.seats[clash].name} already has that colour`);
+    }
+    this.data.seats[c.seat].appearance = message.appearance;
+    await this.save();
+    this.broadcastRoom();
+  }
+
+  /**
+   * Every seat's settled look.
+   *
+   * Salted off the room CODE rather than a stored random value, so it needs no
+   * migration, survives hibernation, and is identical for the host, every
+   * client and the room itself — the lobby shows the gnomes the game will
+   * actually deal, because `start` passes these same resolved looks to
+   * `createGame` rather than letting it derive its own.
+   */
+  private resolvedSeatLooks(): PlayerAppearance[] {
+    return resolveAppearances(
+      this.data.seats.map((s) => s.appearance),
+      codeSalt(this.data.code),
+    );
   }
 
   /**
@@ -874,10 +949,14 @@ export class Room {
       );
     }
 
-    const players: PlayerSetup[] = this.data.seats.map((s) => ({
+    // Fully resolved, not the raw requests: the lobby has already shown these
+    // gnomes to everyone, so the game has to deal exactly them.
+    const looks = this.resolvedSeatLooks();
+    const players: PlayerSetup[] = this.data.seats.map((s, i) => ({
       name: s.name,
       controller: s.controller,
       difficulty: s.difficulty,
+      appearance: looks[i],
     }));
 
     const b = this.host.randomBytes(4);
@@ -1374,9 +1453,11 @@ export class Room {
   }
 
   snapshot(): RoomSnapshot {
+    const looks = this.resolvedSeatLooks();
     const seats: SeatInfo[] = this.data.seats.map((s, i) => ({
       index: i,
       name: s.name,
+      appearance: looks[i],
       controller: s.controller,
       difficulty: s.difficulty,
       connected: s.controller === 'human' && this.seatIsOccupied(i),

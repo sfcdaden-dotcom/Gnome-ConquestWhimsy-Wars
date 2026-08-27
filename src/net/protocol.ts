@@ -19,7 +19,7 @@
  * client afterwards.
  */
 
-import type { Action, AiDifficulty, GameSeal, GardenPreset, PlayerView } from '../engine';
+import type { Action, AiDifficulty, GameSeal, GardenPreset, PlayerAppearance, PlayerView } from '../engine';
 import type { MatchRecord } from '../engine';
 
 /** Bumped on any breaking change to the messages below. */
@@ -179,6 +179,12 @@ export interface ShotClock {
 export interface SeatInfo {
   index: number;
   name: string;
+  /**
+   * Always fully resolved, never partial: the room settles every seat's look
+   * (and keeps the palettes distinct) before anyone sees the lobby, so the
+   * gnomes on the lobby list are exactly the gnomes the game deals.
+   */
+  appearance: PlayerAppearance;
   /** 'human' seats are claimed by a connection; 'cpu' seats the room plays. */
   controller: 'human' | 'cpu';
   difficulty: AiDifficulty;
@@ -241,6 +247,13 @@ export type ClientMessage =
   | { t: 'hello'; protocol: number; token?: string; name?: string; hostKey?: string }
   /** Host only: lobby settings. Rejected once the game has started. */
   | { t: 'configure'; playerCount?: 2 | 4; boardSize?: number; gardenPreset?: GardenPreset; seats?: SeatConfig[] }
+  /**
+   * Choose your own gnome. Unlike `configure` this is NOT host-only — it
+   * applies to the seat the sending connection holds, because the one thing a
+   * player should always control is their own character. Refused for a
+   * spectator, once the game has started, or for a palette another seat holds.
+   */
+  | { t: 'setAppearance'; appearance: PlayerAppearance }
   /** Host only: deal the cards. The room picks the seed; no client ever does. */
   | { t: 'start' }
   /**
@@ -258,6 +271,8 @@ export interface SeatConfig {
   controller?: 'human' | 'cpu';
   difficulty?: AiDifficulty;
   name?: string;
+  /** Host-side character select — for CPU seats, mostly. A seated player uses `setAppearance`. */
+  appearance?: PlayerAppearance;
 }
 
 // ---------------------------------------------------------------------------
@@ -320,6 +335,7 @@ export type RoomErrorCode =
   | 'PROTOCOL' // unparseable, unknown, or wrong-version message
   | 'NOT_YOUR_SEAT' // the action's player is not this connection's seat
   | 'NOT_HOST' // a lobby command from someone who does not own the lobby
+  | 'NOT_SEATED' // a seat-owned command from a connection holding no seat
   | 'WRONG_PHASE' // right message, wrong moment (start twice, act in a lobby)
   | 'ROOM_FULL' // the room will not hold another connection
   | 'BAD_CONFIG' // lobby settings the engine would reject
@@ -334,6 +350,7 @@ export function parseClientMessage(raw: unknown): ClientMessage | null {
   switch (t) {
     case 'hello':
     case 'configure':
+    case 'setAppearance':
     case 'start':
     case 'takeOverRoom':
     case 'action':

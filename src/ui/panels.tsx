@@ -26,6 +26,7 @@ import {
   sideName,
 } from './meta';
 import { GardenIcon, UnitIcon } from './art';
+import { GnomeAvatar } from './appearance/gnome';
 import type { LogTurn } from './gameLog';
 import { groupByTurn, isPinnedToBottom, logLines } from './gameLog';
 
@@ -52,10 +53,10 @@ export function PlayerPanels({ state, takenOverSeats = [] }: { state: GameState;
           <div
             key={p.id}
             className={classes.join(' ')}
-            style={{ '--pc': playerColor(p.id) } as CSSProperties}
+            style={{ '--pc': playerColor(state, p.id) } as CSSProperties}
           >
             <div className="pp-head">
-              <span className="pp-dot" />
+              <GnomeAvatar appearance={p.appearance} className="pp-gnome" title={`${p.name}'s gnome`} />
               <span className="pp-name">{p.name}</span>
               <span
                 className="pp-ctl"
@@ -69,7 +70,8 @@ export function PlayerPanels({ state, takenOverSeats = [] }: { state: GameState;
               <div className="pp-stats">
                 <span title={`Wishes (cap ${cap})`}>✨ {p.wishes}/{cap}</span>
                 <span title="Gnomes on board / limit">
-                  <UnitIcon className="inline-art" /> {gnomesOnBoard(state, p.id)}/{gnomeBoardCap(state, p.id)}
+                  <GnomeAvatar appearance={p.appearance} className="inline-art" />{' '}
+                  {gnomesOnBoard(state, p.id)}/{gnomeBoardCap(state, p.id)}
                 </span>
                 <span title="Reserve gnomes remaining">📦 {reserveGnomes(state, p.id)}</span>
                 <span title="Cards in hand">🃏 {p.hand.length}</span>
@@ -340,13 +342,13 @@ function FightSideBadge({
   idx: 0 | 1;
 }) {
   const side = f.sides[idx];
-  const color = side.kind === 'player' ? playerColor(side.player) : '#3c7a3c';
+  const color = side.kind === 'player' ? playerColor(state, side.player) : '#3c7a3c';
   return (
     <span className="fight-side" style={{ '--pc': color } as CSSProperties}>
       {side.kind === 'flytrap' ? (
         <GardenIcon type="flytrap" className="inline-art" />
       ) : (
-        <UnitIcon className="inline-art" />
+        <GnomeAvatar appearance={state.players[side.player].appearance} className="inline-art" />
       )}{' '}
       {sideName(state, side)}
       <span className="side-role">{idx === 0 ? 'defender' : 'attacker'}</span>

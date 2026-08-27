@@ -7,8 +7,9 @@
 import type { CSSProperties } from 'react';
 import type { GameState, Pos, Unit } from '../engine';
 import { centerPos, posKey, samePos, unitsAt } from '../engine';
-import { GARDEN_META, playerColor } from './meta';
+import { GARDEN_META, playerColor, playerDisc } from './meta';
 import { GardenIcon, UnitIcon } from './art';
+import { GnomeAvatar } from './appearance/gnome';
 import { unitNameLive } from './gnomeNames';
 
 export type HighlightKind = 'move' | 'decision' | 'target' | 'picked';
@@ -70,7 +71,7 @@ export function Board({ state, highlights, selectedKey, onCellClick }: BoardProp
       if (selectedKey === key) classes.push('sel');
       const style: Record<string, string> = {};
       if (garden?.type === 'home' && garden.owner !== undefined) {
-        style['--pc'] = playerColor(garden.owner);
+        style['--pc'] = playerColor(state, garden.owner);
       }
 
       cells.push(
@@ -103,12 +104,18 @@ export function Board({ state, highlights, selectedKey, onCellClick }: BoardProp
                 <span
                   key={`${g.owner}:${g.kind}`}
                   className={`token ${g.kind}${g.allMoved ? ' moved' : ''}`}
-                  style={{ '--pc': playerColor(g.owner) } as CSSProperties}
+                  style={{ '--pc': playerColor(state, g.owner), '--pc-deep': playerDisc(state, g.owner) } as CSSProperties}
                   data-owner={g.owner}
                   data-kind={g.kind}
                   data-count={g.count}
                 >
-                  <UnitIcon kind={g.kind} className="token-face" />
+                  {/* A gnome wears its owner's look; the Immortal Snail is
+                      nobody's character, so it keeps the shipped art. */}
+                  {g.kind === 'gnome' ? (
+                    <GnomeAvatar appearance={state.players[g.owner].appearance} className="token-face" />
+                  ) : (
+                    <UnitIcon kind={g.kind} className="token-face" />
+                  )}
                   {g.count > 1 && <span className="token-count">{g.count}</span>}
                 </span>
               ))}

@@ -212,6 +212,9 @@ h2 {
 .seat-row {
   display: flex;
   align-items: center;
+  /* Wraps so character select can take a line of its own under the controls
+     rather than competing with them for the row's width. */
+  flex-wrap: wrap;
   gap: 10px;
   background: var(--panel-2);
   border: 1px solid var(--border);
@@ -221,7 +224,8 @@ h2 {
 .seat-row input[type='text'] {
   font: inherit;
   flex: 1;
-  min-width: 0;
+  /* Never squeezed to nothing by the controls beside it. */
+  min-width: 90px;
   padding: 4px 8px;
   border-radius: 8px;
   border: 1px solid var(--border);
@@ -772,7 +776,10 @@ h2 {
   width: clamp(18px, calc(60cqi / var(--n, 7)), 32px);
   height: clamp(18px, calc(60cqi / var(--n, 7)), 32px);
   border-radius: 50%;
-  background: var(--pc, #888);
+  /* Deliberately DARKER than any step of the seat's ramp (see palettes.ts), so
+     even the darkest beard keeps an edge against the disc it sits on. Falls
+     back to the accent for a token drawn before appearances existed. */
+  background: var(--pc-deep, var(--pc, #888));
   border: 2px solid rgba(255, 255, 255, 0.75);
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.35);
   display: flex;
@@ -1911,4 +1918,114 @@ h2 {
 }
 .rules-body th {
   background: var(--bg-accent);
+}
+
+
+/* ------------------------------------------------------------------ */
+/* Character select                                                    */
+/* ------------------------------------------------------------------ */
+
+/* A gnome standing in for the colour dot: same footprint, more to look at. */
+.seat-gnome,
+.pp-gnome {
+  width: 22px;
+  height: 22px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--pc-deep, var(--pc, #888));
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.35);
+}
+
+.seat-gnome-btn {
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  line-height: 0;
+  border-radius: 50%;
+}
+.seat-gnome-btn:focus-visible {
+  outline: 2px solid var(--pc, var(--accent));
+  outline-offset: 2px;
+}
+
+.char-picker {
+  /* A line of its own under the row it belongs to (`.seat-row` wraps). */
+  flex: 0 0 100%;
+  width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-start;
+  margin-top: 8px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--pc, var(--border));
+  border-radius: 8px;
+  background: var(--panel-2);
+}
+
+.cc-preview {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.cc-gnome {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: var(--pc-deep, var(--pc, #888));
+  box-shadow: inset 0 0 0 3px rgba(255, 255, 255, 0.3);
+}
+
+.cc-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+}
+
+.cc-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.cc-label {
+  min-width: 58px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.cc-swatches {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.cc-swatch {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+}
+.cc-swatch.sel {
+  border-color: var(--text);
+  box-shadow: 0 0 0 2px var(--panel-2);
+}
+/* A colour another seat holds: still shown, so the table can see who has what,
+   but visibly not yours to take. */
+.cc-swatch:disabled {
+  cursor: not-allowed;
+  opacity: 0.3;
+}
+.cc-swatch:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
 }

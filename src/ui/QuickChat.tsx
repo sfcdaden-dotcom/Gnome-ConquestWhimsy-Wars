@@ -140,7 +140,7 @@ function ChatTranscript({
     <div className="chat-transcript" ref={ref} aria-label="Chat" data-testid="chat-transcript">
       {lines.map((l) => (
         <div key={l.key} className="chat-line">
-          <b style={{ color: playerColor(l.player) }}>{pname(state, l.player)}</b>{' '}
+          <b style={{ color: playerColor(state, l.player) }}>{pname(state, l.player)}</b>{' '}
           {quickChatText(l.phraseId)}
         </div>
       ))}
@@ -313,10 +313,10 @@ export function QuickChatFeed({ state, bubbles }: { state: GameState; bubbles: r
         <div
           key={b.id}
           className="qc-bubble"
-          style={{ borderColor: playerColor(b.player) }}
+          style={{ borderColor: playerColor(state, b.player) }}
           data-testid={`quickchat-bubble-${b.phraseId}`}
         >
-          <b style={{ color: playerColor(b.player) }}>{pname(state, b.player)}</b>{' '}
+          <b style={{ color: playerColor(state, b.player) }}>{pname(state, b.player)}</b>{' '}
           {quickChatText(b.phraseId)}
         </div>
       ))}

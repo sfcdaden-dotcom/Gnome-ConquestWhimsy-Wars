@@ -117,6 +117,7 @@ export const MESSAGE_COST: Record<ClientMessage['t'], number> = {
   ping: 1,
   action: 2,
   configure: 4,
+  setAppearance: 4,
   start: 10,
   takeOverRoom: 10,
   hello: 10,

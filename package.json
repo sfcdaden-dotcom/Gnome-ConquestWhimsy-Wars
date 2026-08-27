@@ -9,6 +9,7 @@
     "build": "tsc -b && vite build",
     "cf-typegen": "wrangler types",
     "lint": "oxlint",
+    "art": "node scripts/art/build.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "preview": "npm run build && wrangler dev",

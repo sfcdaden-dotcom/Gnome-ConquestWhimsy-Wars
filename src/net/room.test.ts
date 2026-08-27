@@ -12,7 +12,7 @@
 
 import { describe, expect, it } from 'vitest';
 import type { GameSeal, MatchRecord } from '../engine';
-import { HIDDEN_CARD_ID, chooseAiAction, getPlayerToAct, replayMatch } from '../engine';
+import { HIDDEN_CARD_ID, chooseAiAction, getPlayerToAct, isPlayerAppearance, replayMatch } from '../engine';
 import { commitmentFor, verifySeal } from './commitment';
 import type { PersistedRoom, RoomConnection, RoomHost } from './room';
 import { Room, generateRoomCode } from './room';
@@ -463,6 +463,109 @@ describe('a room seats the people in it', () => {
 
     // Seated, so no longer the spectator's null view: seat 1 sees seat 1's hand.
     expect(c1.last('state')!.view.players[1].hand).toContain('rocket-gnome');
+  });
+});
+
+describe('character select', () => {
+  const LOOK = {
+    palette: 'teal' as const,
+    cap: 'wide' as const,
+    beard: 'wild' as const,
+    weapon: 'staff' as const,
+    accessory: 'lantern' as const,
+  };
+
+  it('gives every seat a settled gnome before anybody chooses', async () => {
+    const { room } = await lobby(['human', 'cpu', 'cpu', 'cpu']);
+    const seats = room.snapshot().seats;
+    for (const s of seats) expect(isPlayerAppearance(s.appearance)).toBe(true);
+    expect(new Set(seats.map((s) => s.appearance.palette)).size).toBe(seats.length);
+  });
+
+  it('lets a player dress their OWN seat without being host', async () => {
+    const { room } = await lobby(['human', 'human']);
+    const c1 = new FakeConn('c1');
+    await room.hello(c1, { ...HELLO });
+
+    await room.handle('c1', { t: 'setAppearance', appearance: LOOK });
+
+    expect(c1.errors()).toEqual([]);
+    expect(room.snapshot().seats[1].appearance).toEqual(LOOK);
+  });
+
+  it('refuses a palette another seat already holds, out loud', async () => {
+    const { room } = await lobby(['human', 'human']);
+    const c1 = new FakeConn('c1');
+    await room.hello(c1, { ...HELLO });
+
+    await room.handle('c0', { t: 'setAppearance', appearance: LOOK });
+    await room.handle('c1', { t: 'setAppearance', appearance: LOOK });
+
+    expect(c1.last('error')?.code).toBe('BAD_CONFIG');
+    // Silently reassigning would leave the player staring at a colour they did
+    // not pick with no explanation.
+    expect(room.snapshot().seats[1].appearance.palette).not.toBe('teal');
+    expect(room.snapshot().seats[0].appearance).toEqual(LOOK);
+  });
+
+  it('refuses a gnome outside the catalogue', async () => {
+    const { room, c0 } = await lobby();
+    await room.handle('c0', {
+      t: 'setAppearance',
+      appearance: { ...LOOK, cap: 'sombrero' },
+    } as unknown as ClientMessage);
+    expect(c0.last('error')?.code).toBe('BAD_CONFIG');
+  });
+
+  it('refuses a spectator, who has no seat to dress', async () => {
+    const { room } = await lobby(['human', 'cpu']);
+    const spec = new FakeConn('spec');
+    await room.hello(spec, { ...HELLO });
+
+    await room.handle('spec', { t: 'setAppearance', appearance: LOOK });
+    expect(spec.last('error')?.code).toBe('NOT_SEATED');
+  });
+
+  it('refuses character select once the game has started', async () => {
+    const { room, c0 } = await lobby();
+    await room.handle('c0', { t: 'start' });
+    await room.handle('c0', { t: 'setAppearance', appearance: LOOK });
+    expect(c0.last('error')?.code).toBe('WRONG_PHASE');
+  });
+
+  it('lets the host dress a CPU seat through configure', async () => {
+    const { room, c0 } = await lobby(['human', 'cpu']);
+    await room.handle('c0', { t: 'configure', seats: [{ index: 1, appearance: LOOK }] });
+    expect(c0.errors()).toEqual([]);
+    expect(room.snapshot().seats[1].appearance).toEqual(LOOK);
+  });
+
+  it('deals exactly the gnomes the lobby showed', async () => {
+    // The load-bearing promise of resolving in the room rather than letting
+    // createGame derive its own: what people picked is what they play.
+    const { room, c0 } = await lobby(['human', 'cpu']);
+    await room.handle('c0', { t: 'setAppearance', appearance: LOOK });
+    const shown = room.snapshot().seats.map((s) => s.appearance);
+
+    await room.handle('c0', { t: 'start' });
+
+    const view = c0.last('state')?.view;
+    expect(view?.players.map((p) => p.appearance)).toEqual(shown);
+  });
+
+  it('keeps a seat\'s gnome across a reconnect', async () => {
+    const { room } = await lobby(['human', 'human']);
+    const c1 = new FakeConn('c1');
+    await room.hello(c1, { ...HELLO });
+    await room.handle('c1', { t: 'setAppearance', appearance: LOOK });
+    const token = c1.last('welcome')?.you.token;
+
+    room.disconnect('c1');
+    const again = new FakeConn('c1b');
+    await room.hello(again, { ...HELLO, token });
+
+    expect(again.last('welcome')?.you.seat).toBe(1);
+    expect(room.snapshot().seats[1].appearance).toEqual(LOOK);
   });
 });
 

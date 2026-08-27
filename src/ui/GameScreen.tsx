@@ -751,7 +751,7 @@ function TargetChip({
       <button
         type="button"
         className="btn small"
-        style={{ borderColor: playerColor(target.playerId) }}
+        style={{ borderColor: playerColor(state, target.playerId) }}
         onClick={() => onSelect(target)}
       >
         {pname(state, target.playerId)}
@@ -786,7 +786,7 @@ function PassOverlay({
       <div className="overlay-card pass-card">
         <div className="pass-emoji">🤝</div>
         <h2>
-          Pass the device to <span style={{ color: playerColor(seat) }}>{pname(state, seat)}</span>
+          Pass the device to <span style={{ color: playerColor(state, seat) }}>{pname(state, seat)}</span>
         </h2>
         <p className="muted">Hands stay hidden until they take over.</p>
         <button type="button" className="btn accent big" data-testid="pass-confirm" onClick={onConfirm}>
@@ -816,7 +816,7 @@ function EndOverlay({
         <h2>
           {w !== null ? (
             <>
-              <span style={{ color: playerColor(w) }}>{pname(state, w)}</span> wins Whimsy Wars!
+              <span style={{ color: playerColor(state, w) }}>{pname(state, w)}</span> wins Whimsy Wars!
             </>
           ) : (
             'Nobody wins — the garden falls silent.'
