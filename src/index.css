@@ -1912,3 +1912,184 @@ h2 {
 .rules-body th {
   background: var(--bg-accent);
 }
+
+/* ------------------------------------------------------------------ */
+/* Custom gnomes & the character creator                               */
+/* ------------------------------------------------------------------ */
+
+/* A gnome wearing its player's colours does not need a disc behind it to say
+   whose it is — the clothes do that now (see gnomeLook.ts). Stripping the disc
+   is also what gives the character room: on a 7x7 board a token is ~25px, and
+   the old art only got 78% of that. The snail keeps its disc, because there is
+   only one snail drawing and nothing else marks its owner. */
+.token.gnome:has(.custom-gnome) {
+  background: none;
+  border: none;
+  box-shadow: none;
+}
+.token .custom-gnome {
+  width: 100%;
+  height: 100%;
+  /* The art is 48x64. Letting it fill the height keeps the gnome as large as
+     the cell allows; `contain` handles the width. */
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.45));
+}
+
+/* Pixel art, so no smoothing anywhere it is scaled UP. Downscaling to token
+   size is left smooth on purpose: nearest-neighbour at 48->25 drops whole rows
+   of pixels and eats the eyes. */
+.gnome-portrait {
+  object-fit: contain;
+  -webkit-user-select: none;
+  user-select: none;
+  flex: none;
+  display: block;
+  aspect-ratio: 48 / 64;
+}
+.gnome-portrait.pending {
+  background: color-mix(in srgb, var(--pc, #888) 25%, transparent);
+  border-radius: 6px;
+}
+.gnome-portrait.big {
+  width: 168px;
+  image-rendering: pixelated;
+}
+.gnome-portrait.tiny {
+  width: 26px;
+}
+
+/* The seat row's gnome: a button that looks like the character, not like a
+   button, because the character is the label. */
+.gnome-chip {
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--pc, #888) 12%, var(--cell));
+  cursor: pointer;
+  line-height: 0;
+  flex: none;
+}
+.gnome-chip:hover,
+.gnome-chip:focus-visible {
+  border-color: var(--pc, #888);
+}
+.gnome-chip .gnome-portrait {
+  width: 30px;
+}
+
+.gnome-card {
+  max-width: min(680px, 94vw);
+  text-align: left;
+  align-items: stretch;
+  max-height: min(90vh, 820px);
+  overflow: hidden;
+}
+.gnome-creator-body {
+  display: flex;
+  gap: 18px;
+  min-height: 0;
+  overflow-y: auto;
+}
+.gnome-stage {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  flex: none;
+  padding-top: 4px;
+}
+.gnome-scale-check {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+.gnome-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+.gnome-carousel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  /* Capped so the two arrows stay within a thumb's reach of the name between
+     them; without it the row stretches to the card and the controls end up at
+     opposite ends of the screen. */
+  max-width: 360px;
+}
+.gnome-carousel .setup-label {
+  width: 84px;
+  flex: none;
+}
+.gnome-variant {
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.swatch-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.swatch {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--sw, #888);
+  border: 2px solid var(--border);
+  cursor: pointer;
+  padding: 0;
+}
+.swatch.picked {
+  border-color: var(--fg);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--fg) 35%, transparent);
+}
+.swatch:focus-visible {
+  outline: 2px solid var(--fg);
+  outline-offset: 2px;
+}
+
+.gnome-actions {
+  align-items: center;
+}
+.gnome-actions .spacer {
+  flex: 1;
+}
+
+/* Narrow screens: the preview goes above the controls rather than beside
+   them, so neither gets squeezed to nothing. */
+@media (max-width: 560px) {
+  .gnome-creator-body {
+    flex-direction: column;
+    align-items: center;
+  }
+  .gnome-stage {
+    flex-direction: row;
+    align-items: flex-end;
+    gap: 14px;
+  }
+  .gnome-portrait.big {
+    width: 120px;
+  }
+}
+
+/* The gnome picker on the online menu sits on one line with its label and the
+   note explaining that the clothes follow the seat, not the choice. */
+.online-gnome {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.lobby-gnome {
+  width: 26px;
+  height: 26px;
+  flex: none;
+}

@@ -20,6 +20,8 @@ import { OnlineScreen } from './ui/OnlineScreen';
 import { RulesScreen } from './ui/RulesScreen';
 import { SetupScreen } from './ui/SetupScreen';
 import { useGame } from './ui/useGame';
+import { GnomeLooksContext } from './ui/gnomeLooks';
+import type { GnomeLook } from './ui/gnomeLook';
 import { randomSeed } from './ui/meta';
 
 type Screen = 'home' | 'local' | 'online' | 'rules';
@@ -28,6 +30,9 @@ interface Session {
   options: CreateGameOptions;
   seed: number;
   run: number;
+  /** Each seat's gnome, by seat index. Survives "play again" — rebuilding
+   *  four characters between rounds is not what anyone wants. */
+  looks: GnomeLook[];
 }
 
 export default function App() {
@@ -43,7 +48,7 @@ export default function App() {
     if (!session) {
       return (
         <SetupScreen
-          onStart={({ options, seed }) => setSession({ options, seed, run: 0 })}
+          onStart={({ options, seed, looks }) => setSession({ options, seed, looks, run: 0 })}
           onBack={() => setScreen('home')}
         />
       );
@@ -53,6 +58,7 @@ export default function App() {
         key={`${session.run}-${session.seed}`}
         options={session.options}
         seed={session.seed}
+        looks={session.looks}
         onPlayAgain={() =>
           setSession((s) => (s ? { ...s, seed: randomSeed(), run: s.run + 1 } : s))
         }
@@ -79,14 +85,20 @@ export default function App() {
 function LocalGame({
   options,
   seed,
+  looks,
   onPlayAgain,
   onQuit,
 }: {
   options: CreateGameOptions;
   seed: number;
+  looks: GnomeLook[];
   onPlayAgain: () => void;
   onQuit: () => void;
 }) {
   const game = useGame(options, seed);
-  return <GameScreen game={game} onPlayAgain={onPlayAgain} onQuit={onQuit} />;
+  return (
+    <GnomeLooksContext value={looks}>
+      <GameScreen game={game} onPlayAgain={onPlayAgain} onQuit={onQuit} />
+    </GnomeLooksContext>
+  );
 }

@@ -25,6 +25,7 @@ import {
   EMPTY_ROOM_REAP_MS,
   HOST_GRACE_MS,
   ROOM_CODE_ALPHABET,
+  PROTOCOL_VERSION,
   SHOT_CLOCK_MS,
   TAKEOVER_AFTER_TIMEOUTS,
   TOMBSTONE_TTL_MS,
@@ -148,7 +149,7 @@ function makeHost(): RoomHost & {
   return h;
 }
 
-const HELLO = { t: 'hello', protocol: 1 } as const;
+const HELLO = { t: 'hello', protocol: PROTOCOL_VERSION } as const;
 
 type FakeHost = ReturnType<typeof makeHost>;
 
@@ -938,7 +939,7 @@ describe('reconnect and hibernation', () => {
     room.disconnect('c0');
 
     const again = new FakeConn('c0-again');
-    await room.hello(again, { t: 'hello', protocol: 1, token });
+    await room.hello(again, { t: 'hello', protocol: PROTOCOL_VERSION, token });
 
     expect(again.last('welcome')?.you.seat).toBe(0);
     expect(again.last('welcome')?.you.isHost).toBe(true);
@@ -949,7 +950,7 @@ describe('reconnect and hibernation', () => {
   it('does not hand a seat to someone presenting an unknown token', async () => {
     const { room } = await lobby(['human', 'cpu']);
     const stranger = new FakeConn('x');
-    await room.hello(stranger, { t: 'hello', protocol: 1, token: 'not-a-real-token' });
+    await room.hello(stranger, { t: 'hello', protocol: PROTOCOL_VERSION, token: 'not-a-real-token' });
 
     // Seat 0 is taken and seat 1 is a CPU, so there is nothing to claim.
     expect(stranger.last('welcome')?.you.seat).toBeNull();
@@ -960,7 +961,7 @@ describe('reconnect and hibernation', () => {
     const token = c0.last('welcome')!.you.token;
 
     const second = new FakeConn('c0-second');
-    await room.hello(second, { t: 'hello', protocol: 1, token });
+    await room.hello(second, { t: 'hello', protocol: PROTOCOL_VERSION, token });
 
     expect(second.last('welcome')?.you.seat).toBe(0);
     expect(c0.closed).not.toBeNull();

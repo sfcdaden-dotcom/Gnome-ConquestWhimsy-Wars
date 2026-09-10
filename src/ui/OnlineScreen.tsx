@@ -27,6 +27,12 @@ import { useEffect, useState } from 'react';
 import { CLASSIC_PRESETS, MODE_PRESETS } from '../engine';
 import type { AiDifficulty, GardenPreset } from '../engine';
 import { GameScreen } from './GameScreen';
+import { UnitIcon } from './art';
+import { GnomeCreator, GnomePortrait } from './GnomeCreator';
+import { defaultLook, sanitizeLook } from './gnomeArt';
+import type { GnomeLook } from './gnomeLook';
+import { GnomeLooksContext } from './gnomeLooks';
+import type { SeatLooks } from './gnomeLooks';
 import { useNetGame } from './useNetGame';
 import { hostKeyStore, NAME_KEY, recentRoom, roomCodeFromSearch, roomHref } from './netClient';
 import { HOST_GRACE_MS, ROOM_CODE_LENGTH } from '../net/protocol';
@@ -48,6 +54,12 @@ export function OnlineScreen({ onBack }: { onBack: () => void }) {
   // A reload (or a link a friend sent) puts us straight back in the room.
   const [code, setCode] = useState<string | null>(() => roomCodeFromSearch(window.location.search));
   const [name, setName] = useState(() => localStorage.getItem(NAME_KEY) ?? '');
+  // Built on the menu, before the room knows which seat you get. That is the
+  // same moment you choose a name, and for the same reason: the room only ever
+  // learns either of them on `hello`. A look stores palette INDICES rather
+  // than colours, so it simply re-renders in whichever seat's colour you land
+  // in — see gnomeLook.ts.
+  const [look, setLook] = useState<GnomeLook>(defaultLook);
 
   useEffect(() => {
     syncUrl(code);
@@ -58,6 +70,7 @@ export function OnlineScreen({ onBack }: { onBack: () => void }) {
       <RoomView
         code={code}
         name={name.trim() || 'Gnome'}
+        look={look}
         onLeave={() => setCode(null)}
       />
     );
@@ -69,6 +82,8 @@ export function OnlineScreen({ onBack }: { onBack: () => void }) {
         setName(n);
         localStorage.setItem(NAME_KEY, n);
       }}
+      look={look}
+      setLook={setLook}
       onEnter={setCode}
       onBack={onBack}
     />
@@ -78,14 +93,19 @@ export function OnlineScreen({ onBack }: { onBack: () => void }) {
 function OnlineMenu({
   name,
   setName,
+  look,
+  setLook,
   onEnter,
   onBack,
 }: {
   name: string;
   setName: (n: string) => void;
+  look: GnomeLook;
+  setLook: (l: GnomeLook) => void;
   onEnter: (code: string) => void;
   onBack: () => void;
 }) {
+  const [gnomeOpen, setGnomeOpen] = useState(false);
   const [joining, setJoining] = useState(false);
   const [joinCode, setJoinCode] = useState('');
   const [busy, setBusy] = useState(false);
@@ -138,6 +158,34 @@ function OnlineMenu({
             onChange={(e) => setName(e.target.value)}
           />
         </label>
+
+        <div className="field online-gnome">
+          <span>Your gnome</span>
+          <button
+            type="button"
+            className="gnome-chip"
+            data-testid="online-gnome"
+            onClick={() => setGnomeOpen(true)}
+          >
+            <GnomePortrait look={look} seatId={0} />
+          </button>
+          <span className="muted small">
+            Your clothes take your seat&apos;s colour once you sit down.
+          </span>
+        </div>
+
+        {gnomeOpen && (
+          <GnomeCreator
+            seatId={0}
+            seatName={name.trim()}
+            value={look}
+            onSave={(l) => {
+              setLook(l);
+              setGnomeOpen(false);
+            }}
+            onCancel={() => setGnomeOpen(false)}
+          />
+        )}
 
         {error && (
           <p className="form-error" role="alert" data-testid="online-error">
@@ -226,8 +274,24 @@ function OnlineMenu({
 // In a room
 // ---------------------------------------------------------------------------
 
-function RoomView({ code, name, onLeave }: { code: string; name: string; onLeave: () => void }) {
-  const net = useNetGame(code, name);
+function RoomView({
+  code,
+  name,
+  look,
+  onLeave,
+}: {
+  code: string;
+  name: string;
+  look: GnomeLook;
+  onLeave: () => void;
+}) {
+  const net = useNetGame(code, name, look);
+  // Everyone's gnome, straight off the room snapshot, indexed by seat. A seat
+  // whose player has not sent one yet is simply absent, and `UnitIcon` draws
+  // the stock gnome for it.
+  const looks: SeatLooks = (net.room?.seats ?? []).map((s) =>
+    s.look ? sanitizeLook(s.look) : undefined,
+  );
 
   // A closed room is not a lobby with a problem — there is nothing left to
   // render and nothing to reconnect to.
@@ -238,10 +302,18 @@ function RoomView({ code, name, onLeave }: { code: string; name: string; onLeave
   if (net.status === 'playing' || (net.status === 'finished' && net.game)) {
     // No "play again": a room's next game is the host's call, not a button
     // that would silently re-deal for everyone.
-    return <GameScreen game={net.game!} onQuit={onLeave} />;
+    return (
+      <GnomeLooksContext value={looks}>
+        <GameScreen game={net.game!} onQuit={onLeave} />
+      </GnomeLooksContext>
+    );
   }
 
-  return <Lobby net={net} code={code} onLeave={onLeave} />;
+  return (
+    <GnomeLooksContext value={looks}>
+      <Lobby net={net} code={code} onLeave={onLeave} />
+    </GnomeLooksContext>
+  );
 }
 
 function RoomClosed({
@@ -351,6 +423,10 @@ function Lobby({
               {room.seats.map((seat) => (
                 <div className="lobby-seat" key={seat.index} data-testid={`lobby-seat-${seat.index}`}>
                   <span className="seat-dot" style={{ background: playerColor(seat.index) }} />
+                  {/* Whoever is sitting here, as they will look on the board.
+                      Seats nobody has claimed have no gnome yet and show the
+                      stock one. */}
+                  <UnitIcon owner={seat.index} className="lobby-gnome" />
                   <span className="seat-name">
                     {seat.name}
                     {you?.seat === seat.index && <span className="muted small"> (you)</span>}

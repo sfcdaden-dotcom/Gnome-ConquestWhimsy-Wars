@@ -116,6 +116,18 @@ survives a reload) with a heartbeat claim in `localStorage` beside it, so a
 closed tab's seat can be reclaimed but a live tab's cannot be taken. Two tabs
 are two people at the table — which is how anyone tries a room out alone.
 
+**A player's gnome travels with their name.** Both are set on the online menu,
+before the room knows which seat you get, and both reach the room the same way:
+on `hello`, on every dial, so a reconnect restores the character along with the
+seat and the hand. The room stores the look verbatim and republishes it on the
+seat — it never interprets one, because appearance is the clients' business and
+a room that validated hat ids would need redeploying every time somebody drew a
+hat. Validation is the receiver's job instead (`sanitizeLook`), so an unknown
+variant from a stranger's build cannot leave a hole in your board. A look
+carries palette *indices* rather than colours, which is what lets it render in
+whichever seat's colour you end up sitting in. Adding it took the protocol from
+1 to 2.
+
 **The host is static.** `POST /api/rooms` mints a `hostKey` and hands it to
 whoever opened the room; the first `hello` that presents it binds `hostToken`,
 and nothing the room does on its own moves it afterwards. A host can drop,
