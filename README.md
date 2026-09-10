@@ -44,27 +44,86 @@ board looks the same on every platform. `src/ui/art.tsx` shows them as
 `<GardenIcon>` and `<UnitIcon>`; sizing is left to the stylesheet, because an
 icon is a board fixture in one place and a word in a sentence in another.
 
-To replace a picture, overwrite the file — the filenames are the whole
-contract, and `src/ui/artAssets.ts` is the one place that maps them to game
-types (edit it to change a name or use another format Vite handles: SVG, WebP,
-JPEG).
-
 ```
 src/assets/art/
-  garden-home.png       garden-maize.png      unit-gnome.png
-  garden-dandelion.png  garden-slippery.png   unit-snail.png
-  garden-mushroom.png   garden-tunnel.png
-  garden-flytrap.png
+  Gardens/                    unit-gnome.png      (the stock gnome; a
+    garden-home.png             unit-snail.png     placeholder while a custom
+    garden-dandelion.png                           one composites, and what
+    garden-mushroom.png                            shows where no seat owns
+    garden-flytrap.png                             the gnome on screen)
+    garden-maize.png
+    garden-slippery.png
+    garden-tunnel.png
+  Gnome Assets/               one folder per layer — see below
 ```
 
-What the art has to survive: square and transparent, 128–256px (they render at
-14–24px in a board cell, ~40px in a token — anything fiddly turns to mush at
-that size; non-square is allowed but letterboxes, since the CSS uses
-`object-fit: contain`). **Unit art** sits on a disc filled with its seat's
-colour — red, blue, yellow or purple — so it needs a light outline or halo to
-stay legible on all four. **Garden art** appears at two very different scales:
-tucked into a cell's top-left corner during play, and filling the whole cell in
-the setup preview and the preset editor.
+To replace a garden or the stock gnome, overwrite the file: the filenames are
+the whole contract, and `src/ui/artAssets.ts` is the one place that maps them to
+game types (edit it to change a name or use another format Vite handles: SVG,
+WebP, JPEG).
+
+**Garden art** must be square and transparent, 128–256px, and read at two very
+different scales: tucked into a cell's top-left corner during play, and filling
+the whole cell in the setup preview and the preset editor. Non-square is allowed
+but letterboxes, since the CSS uses `object-fit: contain`.
+
+### Custom gnomes
+
+A gnome on the board is not one drawing but seven, composited and recoloured at
+runtime from the player's choices in the character creator (the modal behind
+each seat's gnome on the setup screen). `src/ui/gnomeLook.ts` holds the model
+and the palette, `src/ui/gnomeArt.ts` the catalogue and the canvas work, and
+`src/ui/GnomeCreator.tsx` the creator itself.
+
+```
+src/assets/art/Gnome Assets/
+  Torso/  Faces/  Shoes/  Beards/  Hair/  Hats/  Accessories/
+```
+
+The catalogue is the folder tree: the folder is the layer, the filename is the
+variant, and adding a hat is dropping a PNG into `Hats/` — no code change. The
+paint order is back to front `torso → face → shoes → beard → hair → cap →
+accessory`, and **hair and beard are the only optional layers**. A layer with
+one drawing (Shoes, today) is drawn on every gnome and never offered as a
+choice; it rejoins the carousel as soon as it has a second.
+
+What a layer has to survive:
+
+- **48×64, transparent, and already in position.** Every layer shares one
+  canvas, so nothing is offset at render time — a hat has to sit where a hat
+  goes. Tokens are ~14–25px on the board, so anything fiddly turns to mush.
+- **Flat colour, no anti-aliasing.** The recolour swaps pixels by exact value;
+  a blended edge pixel is not in the table and stays the colour it was drawn.
+- **Drawn in the filler palette**, because that is what gets swapped:
+
+  | Filler | Becomes |
+  | --- | --- |
+  | `#37474f` `#3d2f3d` `#424242` | the garment ramp's darkest shade |
+  | `#616161` `#757575` `#78909c` | its medium-dark shade |
+  | `#90a4ae` | its medium shade |
+  | `#e0e0e0` | the hair colour — **hair and beard layers only**, because the same hex is the whites of the eyes on a face |
+  | `#e5aa7a` and its shadows | the skin tone |
+
+  Everything else is left exactly as drawn: the brown shoes and tool shafts,
+  the gold belt buckle, the orb's glass, the white cap dots, the black eyes.
+  Those are the only high-contrast pixels left at token size. `ART_COLORS` in
+  `src/ui/gnomeLook.test.ts` lists every colour the drawings actually use, and
+  the tests fail if a new layer introduces one nothing recolours.
+
+**The clothes are the ownership signal.** Board tokens used to sit on a disc
+filled with the seat's colour; a custom gnome replaces the disc, so the garment
+ramp is derived from the seat's own colour and a player picks only which
+*variation* of it to wear. Two red gnomes may differ; a red gnome and a blue one
+never look alike. Hair and skin are unrestricted, since neither carries that
+signal. The snail keeps its disc — there is one snail drawing and nothing else
+marks its owner.
+
+Looks are cosmetic and never enter the engine: no `PlayerState.look`, nothing in
+encode/decode, nothing in a recorded match. They reach the screen through
+`GnomeLooksContext`, filled from the setup screen locally and from the room
+snapshot online, and they last for the session rather than being saved. Online
+they ride alongside the seat's name (`GnomeLookWire` in `src/net/protocol.ts`)
+and every arriving look goes through `sanitizeLook` before anything is drawn.
 
 ## Architecture in one paragraph
 
@@ -95,8 +154,10 @@ src/ui/       App shell + screen router, home screen, rules viewer, setup
               screen (difficulty + preset picker + advanced settings), online
               menu/lobby, game screen, board, panels, decision panel, quick
               chat, preset editor, error boundary, meta text, art (icon
-              components); the local (useGame) and networked (useNetGame)
-              sessions behind one GameSession shape
+              components), the gnome character creator (gnomeLook model +
+              palette, gnomeArt catalogue + canvas recolour, GnomeCreator);
+              the local (useGame) and networked (useNetGame) sessions behind
+              one GameSession shape
 src/assets/   the game's picture assets (see Art above)
 e2e/          Playwright browser tests (play the real app through the DOM)
 RULES.md      tabletop rules (with [RULING] clarifications)

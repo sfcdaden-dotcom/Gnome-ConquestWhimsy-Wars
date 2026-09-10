@@ -62,7 +62,7 @@ export function DecisionPanel({ state, decision, legal, interactive, act, onResp
                   '✨ Take 1 Wish'
                 ) : (
                   <>
-                    <UnitIcon className="btn-icon" /> Spawn a Gnome
+                    <UnitIcon owner={decision.player} className="btn-icon" /> Spawn a Gnome
                   </>
                 )}
               </button>

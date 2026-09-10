@@ -437,7 +437,7 @@ export function GameScreen({ game: g, onPlayAgain, onQuit }: GameScreenProps) {
               <div className="action-bar" data-testid="action-bar">
                 {selectedUnit && !openSubmenu && (
                   <span className="selected-unit" data-testid="selected-unit-name">
-                    <UnitIcon kind={selectedUnit.kind} className="inline-art" />{' '}
+                    <UnitIcon kind={selectedUnit.kind} owner={selectedUnit.owner} className="inline-art" />{' '}
                     {unitNameLive(state, selectedUnit.id)}
                   </span>
                 )}

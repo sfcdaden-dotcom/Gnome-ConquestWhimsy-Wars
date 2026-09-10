@@ -19,13 +19,13 @@
 
 import type { GardenType, UnitKind } from '../engine';
 
-import gardenHome from '../assets/art/garden-home.png';
-import gardenDandelion from '../assets/art/garden-dandelion.png';
-import gardenMushroom from '../assets/art/garden-mushroom.png';
-import gardenFlytrap from '../assets/art/garden-flytrap.png';
-import gardenMaize from '../assets/art/garden-maize.png';
-import gardenSlippery from '../assets/art/garden-slippery.png';
-import gardenTunnel from '../assets/art/garden-tunnel.png';
+import gardenHome from '../assets/art/Gardens/garden-home.png';
+import gardenDandelion from '../assets/art/Gardens/garden-dandelion.png';
+import gardenMushroom from '../assets/art/Gardens/garden-mushroom.png';
+import gardenFlytrap from '../assets/art/Gardens/garden-flytrap.png';
+import gardenMaize from '../assets/art/Gardens/garden-maize.png';
+import gardenSlippery from '../assets/art/Gardens/garden-slippery.png';
+import gardenTunnel from '../assets/art/Gardens/garden-tunnel.png';
 import unitGnome from '../assets/art/unit-gnome.png';
 import unitSnail from '../assets/art/unit-snail.png';
 

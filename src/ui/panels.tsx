@@ -69,7 +69,7 @@ export function PlayerPanels({ state, takenOverSeats = [] }: { state: GameState;
               <div className="pp-stats">
                 <span title={`Wishes (cap ${cap})`}>✨ {p.wishes}/{cap}</span>
                 <span title="Gnomes on board / limit">
-                  <UnitIcon className="inline-art" /> {gnomesOnBoard(state, p.id)}/{gnomeBoardCap(state, p.id)}
+                  <UnitIcon owner={p.id} className="inline-art" /> {gnomesOnBoard(state, p.id)}/{gnomeBoardCap(state, p.id)}
                 </span>
                 <span title="Reserve gnomes remaining">📦 {reserveGnomes(state, p.id)}</span>
                 <span title="Cards in hand">🃏 {p.hand.length}</span>
@@ -346,7 +346,7 @@ function FightSideBadge({
       {side.kind === 'flytrap' ? (
         <GardenIcon type="flytrap" className="inline-art" />
       ) : (
-        <UnitIcon className="inline-art" />
+        <UnitIcon owner={side.kind === 'player' ? side.player : undefined} className="inline-art" />
       )}{' '}
       {sideName(state, side)}
       <span className="side-role">{idx === 0 ? 'defender' : 'attacker'}</span>

@@ -30,7 +30,7 @@ import type { Action, PlayerId, PlayerView } from '../engine';
 import { getPlayerToAct } from '../engine';
 import type { GameSeal, MatchRecord } from '../engine';
 import { verifySeal } from '../net/commitment';
-import type { ClientMessage, RoomSnapshot, SeatConfig } from '../net/protocol';
+import type { ClientMessage, GnomeLookWire, RoomSnapshot, SeatConfig } from '../net/protocol';
 import {
   CLOSE_RATE_LIMITED,
   CLOSE_ROOM_CLOSED,
@@ -96,7 +96,7 @@ export interface NetGame {
   toasts: GameSession['toasts'];
 }
 
-export function useNetGame(code: string, name: string): NetGame {
+export function useNetGame(code: string, name: string, look?: GnomeLookWire): NetGame {
   const [room, setRoom] = useState<RoomSnapshot | null>(null);
   const [you, setYou] = useState<{ seat: number | null; isHost: boolean } | null>(null);
   const [view, setView] = useState<PlayerView | null>(null);
@@ -118,6 +118,11 @@ export function useNetGame(code: string, name: string): NetGame {
   // "as of now" — rather than as of the first dial — comes through a ref.
   const roomRef = useRef<RoomSnapshot | null>(null);
   roomRef.current = room;
+  // The socket effect is built once, so the gnome reaches `hello` through a
+  // ref rather than a dependency — re-dialling on a hat change would drop the
+  // player out of the room to put a hat on them.
+  const lookRef = useRef<GnomeLookWire | undefined>(look);
+  lookRef.current = look;
 
   const send = useCallback((message: ClientMessage) => {
     const ws = wsRef.current;
@@ -150,6 +155,9 @@ export function useNetGame(code: string, name: string): NetGame {
           // costs nothing and covers a first dial that failed.
           hostKey: hostKeyStore.load(localStorage, code),
           name,
+          // Sent on every dial for the same reason the name is: a reconnect
+          // has to put the player's gnome back, not just their seat.
+          look: lookRef.current,
         });
         ping = window.setInterval(() => send({ t: 'ping' }), PING_MS);
       };
