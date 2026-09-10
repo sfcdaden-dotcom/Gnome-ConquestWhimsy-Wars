@@ -248,6 +248,80 @@ describe('seats and identity', () => {
     expect(c.closed).not.toBeNull();
   });
 
+  /**
+   * Appearance is the clients' business: the room stores a look verbatim and
+   * republishes it, so everyone at the table draws the same gnome from the same
+   * snapshot. What matters here is that it survives the round trip and a
+   * reconnect — not that the room understands any of it.
+   */
+  describe('gnomes', () => {
+    const LOOK = {
+      torso: 'torso-overalls',
+      face: 'b-face',
+      shoes: 'shoes',
+      beard: 'lush-beard',
+      hair: null,
+      cap: 'wide-cap',
+      accessory: 'scythe-accessory',
+      garment: 3,
+      hair_color: 2,
+      skin: 5,
+    } as const;
+
+    it('publishes the look a player arrives with, on their seat', async () => {
+      const host = makeHost();
+      const room = await Room.open(host, 'ABC123');
+      const c0 = new FakeConn('c0');
+      await room.hello(c0, { ...HELLO, look: { ...LOOK } });
+
+      expect(c0.last('room')?.room.seats[0].look).toEqual(LOOK);
+    });
+
+    it('shows it to everyone else in the room, not just its owner', async () => {
+      const host = makeHost();
+      const room = await Room.open(host, 'ABC123');
+      const c0 = new FakeConn('c0');
+      const c1 = new FakeConn('c1');
+      await room.hello(c0, { ...HELLO, look: { ...LOOK } });
+      await room.handle('c0', { t: 'configure', seats: [{ index: 1, controller: 'human' }] });
+      await room.hello(c1, { ...HELLO });
+
+      expect(c1.last('room')?.room.seats[0].look).toEqual(LOOK);
+    });
+
+    it('leaves a seat without one alone rather than inventing a gnome', async () => {
+      const { c0 } = await lobby();
+      expect(c0.last('room')?.room.seats[0].look).toBeUndefined();
+    });
+
+    it('restores it on reconnect, along with the seat', async () => {
+      const host = makeHost();
+      const room = await Room.open(host, 'ABC123');
+      const c0 = new FakeConn('c0');
+      await room.hello(c0, { ...HELLO, look: { ...LOOK } });
+      const token = c0.last('welcome')?.you.token;
+
+      const again = new FakeConn('c0b');
+      await room.hello(again, { ...HELLO, token, look: { ...LOOK } });
+
+      expect(again.last('welcome')?.you.seat).toBe(0);
+      expect(again.last('room')?.room.seats[0].look).toEqual(LOOK);
+    });
+
+    it('lets the host give a CPU seat one, since no player will', async () => {
+      const host = makeHost();
+      const room = await Room.open(host, 'ABC123');
+      const c0 = new FakeConn('c0');
+      await room.hello(c0, { ...HELLO });
+      await room.handle('c0', {
+        t: 'configure',
+        seats: [{ index: 1, controller: 'cpu', look: { ...LOOK } }],
+      });
+
+      expect(c0.last('room')?.room.seats[1].look).toEqual(LOOK);
+    });
+  });
+
   it('generates room codes from the unambiguous alphabet', () => {
     const code = generateRoomCode((n) => new Uint8Array(Array.from({ length: n }, (_, i) => i * 7 + 3)));
     expect(code).toHaveLength(6);

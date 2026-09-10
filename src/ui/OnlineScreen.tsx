@@ -29,7 +29,7 @@ import type { AiDifficulty, GardenPreset } from '../engine';
 import { GameScreen } from './GameScreen';
 import { UnitIcon } from './art';
 import { GnomeCreator, GnomePortrait } from './GnomeCreator';
-import { defaultLook, sanitizeLook } from './gnomeArt';
+import { defaultLook, randomLook, sanitizeLook } from './gnomeArt';
 import type { GnomeLook } from './gnomeLook';
 import { GnomeLooksContext } from './gnomeLooks';
 import type { SeatLooks } from './gnomeLooks';
@@ -461,7 +461,15 @@ function Lobby({
                           type="button"
                           className={`btn chip ${seat.controller === 'cpu' ? 'on' : ''}`}
                           data-testid={`lobby-seat-${seat.index}-cpu`}
-                          onClick={() => net.configure({ seats: [{ index: seat.index, controller: 'cpu' }] })}
+                          onClick={() =>
+                            net.configure({
+                              // A CPU seat has no player to build it a gnome,
+                              // so the host rolls one with the flip — the same
+                              // bargain local setup makes. Sent once and stored
+                              // on the seat, so every client draws the same bot.
+                              seats: [{ index: seat.index, controller: 'cpu', look: randomLook() }],
+                            })
+                          }
                         >
                           CPU
                         </button>
