@@ -32,6 +32,7 @@ import {
   GNOME_LAYERS,
   GARMENT_VARIANTS,
   HAIR_COLORS,
+  HAIR_TINTED_LAYERS,
   SKIN_TONES,
   garmentAndSkinSwap,
   hairSwap,
@@ -321,6 +322,7 @@ async function render(look: GnomeLook, seatId: number): Promise<string> {
   const base = garmentAndSkinSwap(look, seatId);
   const shared = swapMap(base);
   const hair = swapMap({ ...base, ...hairSwap(look) });
+  const hairTinted = new Set<GnomeLayer>(HAIR_TINTED_LAYERS);
 
   for (const layer of GNOME_LAYERS) {
     const id = look[layer];
@@ -328,9 +330,9 @@ async function render(look: GnomeLook, seatId: number): Promise<string> {
     const variant = GNOME_CATALOGUE[layer].find((v) => v.id === id);
     if (!variant) continue;
     const img = await loadImage(variant.url);
-    // `#e0e0e0` is hair on a hair layer and the whites of the eyes on a face,
-    // so only the hair and beard layers get the hair swap.
-    drawRecoloured(ctx, img, layer === 'hair' || layer === 'beard' ? hair : shared);
+    // Only some layers have hair in them — the face's eyebrows count, the cap's
+    // polka dots would not if they were this grey. See HAIR_TINTED_LAYERS.
+    drawRecoloured(ctx, img, hairTinted.has(layer) ? hair : shared);
   }
   return canvas.toDataURL('image/png');
 }
