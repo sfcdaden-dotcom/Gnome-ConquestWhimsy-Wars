@@ -30,6 +30,13 @@ async function openEditor(page: Page): Promise<void> {
   await expect(page.getByTestId('preset-play')).toBeVisible();
 }
 
+/** Set the board size from the advanced panel. */
+async function setBoardSize(page: Page, size: number): Promise<void> {
+  await page.getByTestId('open-advanced').click();
+  await page.getByTestId(`board-size-${size}`).click();
+  await page.getByTestId('advanced-done').click();
+}
+
 /** Pick one of the classic fixed layouts, revealing that group first. */
 async function selectClassic(page: Page, id: string): Promise<void> {
   await showClassicPresets(page);
@@ -316,4 +323,64 @@ test('saving still exports a file, and the export imports back in', async ({ pag
   await openSetup(page);
   await page.getByLabel('Import a garden preset file').setInputFiles(file!);
   await expect(select(page).locator('option:checked')).toHaveText('Twin Rivers');
+});
+
+test('the editor draws the board the game is set up to play, not a fixed 7×7', async ({ page }) => {
+  await openSetup(page);
+  await select(page).selectOption('fresh');
+  await setBoardSize(page, 13);
+
+  await openEditor(page);
+  const board = page.getByLabel('Preset editor board');
+  await expect(board.locator('.cell')).toHaveCount(13 * 13);
+  // Homes sit on the 13×13 edge midpoints, which do not exist on a 7×7 grid.
+  await expect(page.getByRole('button', { name: 'Space 0,6, Home 1' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Space 12,6, Home 3' })).toBeVisible();
+
+  // A garden painted out past the old grid survives the round trip.
+  await paint(page, 'Space 11,11');
+  await page.getByTestId('preset-play').click();
+  await expect(page.locator('.preset-preview .cell')).toHaveCount(13 * 13);
+  await expect(page.locator('.preset-preview .cell.g-tunnel')).toHaveCount(1);
+});
+
+test('the board zooms and pans under the HUD, which keeps its own size', async ({ page }) => {
+  await openSetup(page);
+  await setBoardSize(page, 13);
+  await openEditor(page);
+
+  const content = page.locator('.panzoom-content');
+  const hud = page.locator('.editor-panel-top');
+  // The rendered scale, read in the page (DOMMatrix is a browser API).
+  const scaleOf = () => content.evaluate((el) => new DOMMatrix(getComputedStyle(el).transform).a);
+
+  // A 13×13 board opens fitted: all of it on screen, at less than full size.
+  const fitted = await scaleOf();
+  expect(fitted).toBeLessThan(1);
+  const hudBefore = await hud.boundingBox();
+
+  await page.getByRole('button', { name: 'Zoom in' }).click();
+  const zoomed = await scaleOf();
+  expect(zoomed).toBeGreaterThan(fitted);
+
+  // The HUD is a sibling of the viewport, so zooming the board leaves it alone.
+  expect(await hud.boundingBox()).toEqual(hudBefore);
+
+  // Zoom in far enough that the board outgrows the screen and has somewhere
+  // to be panned to.
+  for (let i = 0; i < 8; i += 1) await page.getByRole('button', { name: 'Zoom in' }).click();
+
+  // Dragging the board pans it rather than painting the cell it starts on.
+  const before = await content.boundingBox();
+  await page.mouse.move(before!.x + before!.width / 2, before!.y + before!.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(before!.x + before!.width / 2 - 80, before!.y + before!.height / 2, { steps: 6 });
+  await page.mouse.up();
+  const after = await content.boundingBox();
+  expect(after!.x).toBeLessThan(before!.x);
+  await expect(page.locator('.editor-board .cell[class*=" g-"]')).toHaveCount(0);
+
+  // Fit puts it back.
+  await page.getByRole('button', { name: 'Fit board to screen' }).click();
+  expect(await scaleOf()).toBeCloseTo(fitted, 3);
 });

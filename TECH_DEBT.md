@@ -84,6 +84,18 @@ handful of things anyone actually needs to do.
   met — the advanced setup panel (2026-08-25) offers 5/7/9/11/13 — so this is
   P2: it is shipped-and-unverified rather than a gate on unshipped work.
 
+  The EDITOR half is done (2026-09-11). Two faults, one visual and one a bug:
+  the preset editor drew a hardcoded 7×7 whatever the game was set up to play,
+  so editing an 11×11 or 13×13 layout silently cropped every garden and home
+  outside the top-left 7×7; and even once drawn, a board that size inside a
+  560px card is unusable. It now draws the real board at a constant 64px cell
+  on a pan-and-zoom stage (`src/ui/PanZoom.tsx`, maths in `panZoom.ts`) that
+  fills the screen, with the naming fields, palette and exits floating over it
+  as HUD panels — so the zoom magnifies the board and nothing else, and the fit
+  aims at the gap the panels leave rather than the raw viewport. Still owed:
+  the same pass for the GAME screen, where a 13×13 board is squeezed into the
+  middle column between the side panels.
+
 ### P3
 
 - **Rate limiting has two ends and nothing in between (Milestone 11).** Shipped

@@ -1,6 +1,6 @@
 /**
- * In-game garden-preset editor: paint a layout on a fixed 7×7 grid, name it,
- * and either play it or keep it.
+ * In-game garden-preset editor: paint a layout on the board the game is set
+ * to play, name it, and either play it or keep it.
  *
  * The two exits share one validated result and differ only in whether a file
  * is written: "Play without saving" hands the finished preset straight back to
@@ -17,16 +17,26 @@
  * empty space to drop it. There are always exactly 4 (seat order
  * west/north/east/south by convention) — 2-player games use Home 1 & Home 3,
  * matching how the engine's default layout already picks the opposite pair.
+ *
+ * The board is drawn at a constant cell size on a pan-and-zoom stage that
+ * fills the screen, with the naming fields, the palette and the exits floating
+ * over it as HUD panels. A 13×13 board therefore gets 13×13 full-size cells
+ * you scroll around rather than a postage stamp squeezed inside a card, and
+ * zooming magnifies the board alone — the HUD keeps its own scale.
  */
 
-import { useState } from 'react';
-import type { CSSProperties } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
+import type { CSSProperties, RefObject } from 'react';
 import type { GardenPresetDef, PlantableGardenType, Pos } from '../engine';
 import { PLANTABLE_GARDEN_TYPES, posKey } from '../engine';
 import { GARDEN_META } from './meta';
 import { GardenIcon } from './art';
+import { PanZoom } from './PanZoom';
+import type { Insets } from './panZoom';
 import {
   CUSTOM_EDITOR_BOARD_SIZE,
+  editorBoardPx,
+  maxPerType,
   PRESET_DESCRIPTION_MAX_LENGTH,
   PRESET_LABEL_MAX_LENGTH,
   buildCustomPresetDef,
@@ -39,14 +49,6 @@ import {
 type Tool = PlantableGardenType | 'erase';
 
 /**
- * Editor sanity cap per garden type. Preset gardens are WILD tiles (they come
- * from no player's supply — see RULES.md "Per-player supply"), so this is a
- * layout-design limit, not a supply constraint. Kept at the old shared-supply
- * value so every existing preset stays valid.
- */
-const PRESET_MAX_PER_TYPE = 8;
-
-/**
  * A layout to open the editor on, already resolved to concrete spaces — any
  * preset can produce one (see `SetupScreen.selectionAsDraft`), which is what
  * lets ✏️ Edit start from a built-in as readily as from a session preset.
@@ -56,6 +58,8 @@ export interface PresetDraft {
   id?: string;
   label: string;
   description: string;
+  /** The board these positions were drawn on — anything else would crop them. */
+  boardSize: number;
   gardens: Array<{ pos: Pos; type: PlantableGardenType }>;
   homes: Pos[];
 }
@@ -63,9 +67,40 @@ export interface PresetDraft {
 export interface PresetEditorProps {
   /** Layout to start from; omit to start on a blank board. */
   initial?: PresetDraft;
+  /**
+   * Board to draw on when starting blank. A draft brings its own size, which
+   * wins — a layout must be edited on the board it was drawn for, or the
+   * gardens outside a smaller grid would silently vanish.
+   */
+  boardSize?: number;
   onCancel: () => void;
   /** Hand the finished layout back to setup, which selects it and closes the editor. */
   onApply: (def: GardenPresetDef) => void;
+}
+
+/**
+ * How tall an element currently is, tracked as it changes. The stage fits the
+ * board into the space the HUD leaves, and the HUD's height depends on the
+ * palette wrapping — which depends on the window — so it has to be measured
+ * rather than assumed.
+ */
+/** The HUD's own padding, and the width of the zoom cluster — both from index.css. */
+const HUD_EDGE_PX = 12;
+const ZOOM_CLUSTER_PX = 56;
+
+function useHeight(ref: RefObject<HTMLElement | null>): number {
+  const [height, setHeight] = useState(0);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const measure = () => setHeight(el.getBoundingClientRect().height);
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [ref]);
+  return height;
 }
 
 function initialGardens(initial: PresetEditorProps['initial']): Map<string, PlantableGardenType> {
@@ -75,8 +110,10 @@ function initialGardens(initial: PresetEditorProps['initial']): Map<string, Plan
   return map;
 }
 
-export function PresetEditor({ initial, onCancel, onApply }: PresetEditorProps) {
-  const n = CUSTOM_EDITOR_BOARD_SIZE;
+export function PresetEditor({ initial, boardSize, onCancel, onApply }: PresetEditorProps) {
+  const n = initial?.boardSize ?? boardSize ?? CUSTOM_EDITOR_BOARD_SIZE;
+  const maxThisType = maxPerType(n);
+  const boardPx = editorBoardPx(n);
   const [label, setLabel] = useState(initial?.label ?? '');
   const [description, setDescription] = useState(initial?.description ?? '');
   const [gardens, setGardens] = useState<Map<string, PlantableGardenType>>(() => initialGardens(initial));
@@ -84,6 +121,17 @@ export function PresetEditor({ initial, onCancel, onApply }: PresetEditorProps) 
   const [pickedHome, setPickedHome] = useState<number | null>(null);
   const [tool, setTool] = useState<Tool>('tunnel');
   const [error, setError] = useState<string | null>(null);
+
+  // The HUD's footprint, so the stage can fit the board into the gap between
+  // the panels instead of parking half of it underneath one.
+  const topPanel = useRef<HTMLDivElement>(null);
+  const bottomPanel = useRef<HTMLDivElement>(null);
+  const insets: Insets = {
+    top: useHeight(topPanel) + HUD_EDGE_PX,
+    bottom: useHeight(bottomPanel) + HUD_EDGE_PX,
+    left: 0,
+    right: ZOOM_CLUSTER_PX,
+  };
 
   const counts: Record<PlantableGardenType, number> = {
     dandelion: 0,
@@ -133,7 +181,7 @@ export function PresetEditor({ initial, onCancel, onApply }: PresetEditorProps) 
         next.delete(key); // clicking the same type again clears it
         return next;
       }
-      if (counts[tool] >= PRESET_MAX_PER_TYPE && next.get(key) !== tool) {
+      if (counts[tool] >= maxThisType && next.get(key) !== tool) {
         return prev; // at supply cap for this type
       }
       next.set(key, tool);
@@ -188,134 +236,161 @@ export function PresetEditor({ initial, onCancel, onApply }: PresetEditorProps) 
   }
 
   return (
-    <div className="setup-screen">
-      <div className="setup-card">
-        <h1 className="game-title">🎨 Garden Preset Editor</h1>
-        <p className="tagline">
-          Paint a layout on the board, then play it straight away — or save it as a .json file to load back in any time.
-        </p>
-
-        <div className="setup-row">
-          <span className="setup-label">Name</span>
-          <input
-            type="text"
-            className="editor-input"
-            value={label}
-            maxLength={PRESET_LABEL_MAX_LENGTH}
-            placeholder="e.g. Twin Rivers"
-            onChange={(e) => setLabel(e.target.value)}
-            aria-label="Preset name"
-          />
+    <div className="editor-screen">
+      {/* The board is the backdrop: it pans and zooms under the HUD, which
+          keeps its own scale so the palette stays readable at any zoom. */}
+      <PanZoom
+        className="editor-stage"
+        label="Board viewport"
+        contentWidth={boardPx}
+        contentHeight={boardPx}
+        insets={insets}
+      >
+        <div
+          className="board editor-board"
+          style={{ '--n': n, width: `${boardPx}px`, height: `${boardPx}px` } as CSSProperties}
+          role="grid"
+          aria-label="Preset editor board"
+        >
+          {Array.from({ length: n * n }, (_, i) => {
+            const pos = { x: i % n, y: Math.floor(i / n) };
+            const key = posKey(pos);
+            const homeIdx = homes.findIndex((h) => posKey(h) === key);
+            const type = gardens.get(key);
+            const classes = ['cell'];
+            if (type) classes.push(`g-${type}`);
+            if (homeIdx !== -1) classes.push('editor-home');
+            if (pickedHome === homeIdx && homeIdx !== -1) classes.push('picked');
+            const label =
+              homeIdx !== -1
+                ? `Home ${homeIdx + 1}${pickedHome === homeIdx ? ' (selected — click a space to move it)' : ''}`
+                : type
+                  ? GARDEN_META[type].label
+                  : null;
+            return (
+              <button
+                key={key}
+                type="button"
+                className={classes.join(' ')}
+                onClick={() => cellClick(pos)}
+                aria-label={`Space ${key}${label ? `, ${label}` : ''}`}
+                title={label ?? `Space ${key}`}
+              >
+                {homeIdx !== -1 && (
+                  <>
+                    <GardenIcon type="home" className="garden-icon" />
+                    <span className="home-index">{homeIdx + 1}</span>
+                  </>
+                )}
+                {type && <GardenIcon type={type} className="garden-icon" />}
+              </button>
+            );
+          })}
         </div>
-        <div className="setup-row">
-          <span className="setup-label">Blurb</span>
-          <input
-            type="text"
-            className="editor-input"
-            value={description}
-            maxLength={PRESET_DESCRIPTION_MAX_LENGTH}
-            placeholder="One line describing the layout (optional)"
-            onChange={(e) => setDescription(e.target.value)}
-            aria-label="Preset description"
-          />
-        </div>
+      </PanZoom>
 
-        <div className="editor-palette" role="toolbar" aria-label="Garden type to paint">
-          {PLANTABLE_GARDEN_TYPES.map((type) => (
+      {/* HUD: the layer itself is click-through, so dragging in the gaps
+          between panels pans the board; the panels themselves are not. */}
+      <div className="editor-hud">
+        <div className="editor-panel editor-panel-top" ref={topPanel}>
+          <div className="editor-heading">
+            <h1 className="editor-title">🎨 Garden Preset Editor</h1>
+            <span className="muted small">
+              {n}×{n} board · drag to pan, scroll to zoom
+            </span>
+          </div>
+
+          <div className="setup-row">
+            <span className="setup-label">Name</span>
+            <input
+              type="text"
+              className="editor-input"
+              value={label}
+              maxLength={PRESET_LABEL_MAX_LENGTH}
+              placeholder="e.g. Twin Rivers"
+              onChange={(e) => setLabel(e.target.value)}
+              aria-label="Preset name"
+            />
+          </div>
+          <div className="setup-row">
+            <span className="setup-label">Blurb</span>
+            <input
+              type="text"
+              className="editor-input"
+              value={description}
+              maxLength={PRESET_DESCRIPTION_MAX_LENGTH}
+              placeholder="One line describing the layout (optional)"
+              onChange={(e) => setDescription(e.target.value)}
+              aria-label="Preset description"
+            />
+          </div>
+
+          <div className="editor-palette" role="toolbar" aria-label="Garden type to paint">
+            {PLANTABLE_GARDEN_TYPES.map((type) => (
+              <button
+                key={type}
+                type="button"
+                className={`btn small${tool === type ? ' accent' : ''}`}
+                onClick={() => setTool(type)}
+                disabled={counts[type] >= maxThisType && tool !== type}
+                title={GARDEN_META[type].blurb}
+              >
+                <GardenIcon type={type} className="btn-icon" /> {GARDEN_META[type].label} ({counts[type]}/
+                {maxThisType})
+              </button>
+            ))}
             <button
-              key={type}
               type="button"
-              className={`btn small${tool === type ? ' accent' : ''}`}
-              onClick={() => setTool(type)}
-              disabled={counts[type] >= PRESET_MAX_PER_TYPE && tool !== type}
-              title={GARDEN_META[type].blurb}
+              className={`btn small${tool === 'erase' ? ' accent' : ''}`}
+              onClick={() => setTool('erase')}
+              title="Clear a space"
             >
-              <GardenIcon type={type} className="btn-icon" /> {GARDEN_META[type].label} ({counts[type]}/
-              {PRESET_MAX_PER_TYPE})
+              🧹 Erase
             </button>
-          ))}
-          <button
-            type="button"
-            className={`btn small${tool === 'erase' ? ' accent' : ''}`}
-            onClick={() => setTool('erase')}
-            title="Clear a space"
-          >
-            🧹 Erase
-          </button>
-          <button type="button" className="btn small" onClick={() => setGardens(new Map())} title="Clear all planted gardens">
-            🗑️ Clear board
-          </button>
-          <button
-            type="button"
-            className="btn small"
-            onClick={() => {
-              setHomes(reservedHomePositions(n));
-              setPickedHome(null);
-            }}
-            title="Put all 4 Home Gardens back at their default spaces"
-          >
-            ↺ Reset homes
-          </button>
-        </div>
-
-        <div className="board-wrap">
-          <div className="board editor-board" style={{ '--n': n } as CSSProperties} role="grid" aria-label="Preset editor board">
-            {Array.from({ length: n * n }, (_, i) => {
-              const pos = { x: i % n, y: Math.floor(i / n) };
-              const key = posKey(pos);
-              const homeIdx = homes.findIndex((h) => posKey(h) === key);
-              const type = gardens.get(key);
-              const classes = ['cell'];
-              if (type) classes.push(`g-${type}`);
-              if (homeIdx !== -1) classes.push('editor-home');
-              if (pickedHome === homeIdx && homeIdx !== -1) classes.push('picked');
-              const label =
-                homeIdx !== -1
-                  ? `Home ${homeIdx + 1}${pickedHome === homeIdx ? ' (selected — click a space to move it)' : ''}`
-                  : type
-                    ? GARDEN_META[type].label
-                    : null;
-              return (
-                <button
-                  key={key}
-                  type="button"
-                  className={classes.join(' ')}
-                  onClick={() => cellClick(pos)}
-                  aria-label={`Space ${key}${label ? `, ${label}` : ''}`}
-                  title={label ?? `Space ${key}`}
-                >
-                  {homeIdx !== -1 && (
-                    <>
-                      <GardenIcon type="home" className="garden-icon" />
-                      <span className="home-index">{homeIdx + 1}</span>
-                    </>
-                  )}
-                  {type && <GardenIcon type={type} className="garden-icon" />}
-                </button>
-              );
-            })}
+            <button
+              type="button"
+              className="btn small"
+              onClick={() => setGardens(new Map())}
+              title="Clear all planted gardens"
+            >
+              🗑️ Clear board
+            </button>
+            <button
+              type="button"
+              className="btn small"
+              onClick={() => {
+                setHomes(reservedHomePositions(n));
+                setPickedHome(null);
+              }}
+              title="Put all 4 Home Gardens back at their default spaces"
+            >
+              ↺ Reset homes
+            </button>
           </div>
         </div>
-        <p className="preset-description muted small">
-          {pickedHome !== null
-            ? `Moving Home ${pickedHome + 1} — click an empty space to drop it, or click it again to cancel.`
-            : 'Click a Home Garden to move it. 2-player games use Home 1 & Home 3; 4-player games use all four.'}
-        </p>
 
-        {error && <div className="setup-error">{error}</div>}
+        <div className="editor-panel editor-panel-bottom" ref={bottomPanel}>
+          <p className="preset-description muted small">
+            {pickedHome !== null
+              ? `Moving Home ${pickedHome + 1} — click an empty space to drop it, or click it again to cancel.`
+              : 'Click a Home Garden to move it. 2-player games use Home 1 & Home 3; 4-player games use all four.'}
+          </p>
 
-        <div className="btn-row editor-actions">
-          <button type="button" className="btn ghost" data-testid="preset-cancel" onClick={onCancel}>
-            Cancel
-          </button>
-          {/* The two ways to use the layout stay together when the row wraps. */}
-          <div className="btn-row editor-exits">
-            <button type="button" className="btn" data-testid="preset-save" onClick={saveAndExport}>
-              💾 Save &amp; Export
+          {error && <div className="setup-error">{error}</div>}
+
+          <div className="btn-row editor-actions">
+            <button type="button" className="btn ghost" data-testid="preset-cancel" onClick={onCancel}>
+              Cancel
             </button>
-            <button type="button" className="btn accent" data-testid="preset-play" onClick={playWithoutSaving}>
-              ▶️ Play Without Saving
-            </button>
+            {/* The two ways to use the layout stay together when the row wraps. */}
+            <div className="btn-row editor-exits">
+              <button type="button" className="btn" data-testid="preset-save" onClick={saveAndExport}>
+                💾 Save &amp; Export
+              </button>
+              <button type="button" className="btn accent" data-testid="preset-play" onClick={playWithoutSaving}>
+                ▶️ Play Without Saving
+              </button>
+            </div>
           </div>
         </div>
       </div>

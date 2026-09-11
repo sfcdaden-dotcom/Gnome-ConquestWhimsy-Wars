@@ -278,6 +278,7 @@ export function SetupScreen({
       ...(own ? { id: presetDef.id } : {}),
       label: own ? presetDef.label : `${presetDef.label} (copy)`.slice(0, PRESET_LABEL_MAX_LENGTH),
       description: presetDef.description,
+      boardSize: previewLayout.boardSize,
       gardens: previewLayout.gardens,
       homes: previewLayout.homes,
     };
@@ -442,6 +443,9 @@ export function SetupScreen({
     return (
       <PresetEditor
         initial={editorTarget.mode === 'edit' ? editorTarget.draft : undefined}
+        // A draft is edited on the board it was drawn for; a blank one is drawn
+        // on the board this game is set up to play, not on a fixed 7×7.
+        boardSize={settings.boardSize}
         onCancel={() => setEditorTarget(null)}
         onApply={addOrUpdateCustomPreset}
       />
