@@ -16,8 +16,10 @@
  * anyone's in particular.
  */
 
+import type { CSSProperties } from 'react';
 import type { GardenType, UnitKind } from '../engine';
 import { GARDEN_ART, UNIT_ART } from './artAssets';
+import { POOF_FX } from './fxAssets';
 import { useGnomeSprite } from './gnomeArt';
 import { useSeatLook } from './gnomeLooks';
 
@@ -68,6 +70,43 @@ export function UnitIcon({
       draggable={false}
       data-art={`unit-${kind}`}
       data-custom={sprite ? 'true' : undefined}
+    />
+  );
+}
+
+/**
+ * One puff of smoke, played once and then gone — the caller decides when it
+ * stops existing (see `poofs` in sessionFx.ts), because an element that has
+ * finished its animation still sits in the layout.
+ *
+ * The sprite is a mask, not a picture: the strip is white-on-transparent, so
+ * masking a `--pc`-coloured box with it tints the puff to whoever just died.
+ * Frame count and cell width live in the custom properties the CSS reads.
+ */
+export function Poof({
+  variant,
+  color,
+  className,
+}: {
+  /** Index into POOF_FX; out-of-range falls back to the first. */
+  variant: number;
+  /** The puff's colour — a seat colour at every call site today. */
+  color: string;
+  className?: string;
+}) {
+  const fx = POOF_FX[variant] ?? POOF_FX[0];
+  return (
+    <span
+      className={`poof${className ? ` ${className}` : ''}`}
+      data-testid="poof"
+      aria-hidden="true"
+      style={
+        {
+          '--poof-src': `url(${fx.src})`,
+          '--poof-frames': String(fx.frames),
+          '--pc': color,
+        } as CSSProperties
+      }
     />
   );
 }

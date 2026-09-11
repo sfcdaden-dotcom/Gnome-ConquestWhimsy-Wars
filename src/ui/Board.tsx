@@ -8,8 +8,9 @@ import type { CSSProperties } from 'react';
 import type { GameState, Pos, Unit } from '../engine';
 import { centerPos, posKey, samePos, unitsAt } from '../engine';
 import { GARDEN_META, playerColor } from './meta';
-import { GardenIcon, UnitIcon } from './art';
+import { GardenIcon, Poof, UnitIcon } from './art';
 import { unitNameLive } from './gnomeNames';
+import type { UnitPoof } from './sessionFx';
 
 export type HighlightKind = 'move' | 'decision' | 'target' | 'picked';
 
@@ -19,6 +20,8 @@ export interface BoardProps {
   highlights: ReadonlyMap<string, HighlightKind>;
   /** posKey of the currently selected unit's space (ring marker). */
   selectedKey: string | null;
+  /** Deaths on screen right now, keyed to the space they happened on. */
+  poofs?: readonly UnitPoof[];
   onCellClick: (pos: Pos) => void;
 }
 
@@ -50,7 +53,7 @@ function groupUnits(state: GameState, units: Unit[]): StackGroup[] {
   return [...map.values()];
 }
 
-export function Board({ state, highlights, selectedKey, onCellClick }: BoardProps) {
+export function Board({ state, highlights, selectedKey, poofs = [], onCellClick }: BoardProps) {
   const n = state.config.boardSize;
   const center = centerPos(state);
   const cells = [];
@@ -61,14 +64,26 @@ export function Board({ state, highlights, selectedKey, onCellClick }: BoardProp
       const key = posKey(pos);
       const garden = state.gardens[key] ?? null;
       const units = unitsAt(state, pos);
+      const groups = groupUnits(state, units);
+      const cellPoofs = poofs.filter((p) => p.key === key);
       const hl = highlights.get(key);
       const isCenter = state.config.centerStar && samePos(pos, center);
+      // Two seats on one space is a standoff worth seeing: the square grows to
+      // give both gnomes their full size rather than shrinking them to share a
+      // cell, and rides over its neighbours while it lasts. One seat's own
+      // units keep stacking the way they always have.
+      const seats = new Set(groups.map((g) => g.owner));
+      const contested = seats.size > 1 ? seats.size : 0;
 
       const classes = ['cell'];
       if (garden) classes.push(`g-${garden.type}`);
       if (hl) classes.push(`hl-${hl}`);
       if (selectedKey === key) classes.push('sel');
+      if (contested) classes.push('contested');
       const style: Record<string, string> = {};
+      // How many ways the space is split, so the CSS can share the widened
+      // square out between them without a rule per seat count.
+      if (contested) style['--seats'] = String(contested);
       if (garden?.type === 'home' && garden.owner !== undefined) {
         style['--pc'] = playerColor(garden.owner);
       }
@@ -81,6 +96,7 @@ export function Board({ state, highlights, selectedKey, onCellClick }: BoardProp
           style={style as CSSProperties}
           data-testid={`cell-${key}`}
           data-highlight={hl ?? ''}
+          data-contested={contested || undefined}
           data-selected={selectedKey === key ? 'true' : 'false'}
           onClick={() => onCellClick(pos)}
           aria-label={`Space ${key}${garden ? `, ${garden.upgraded ? GARDEN_META[garden.type].upgradeLabel : GARDEN_META[garden.type].label}` : ''}`}
@@ -99,7 +115,7 @@ export function Board({ state, highlights, selectedKey, onCellClick }: BoardProp
           {isCenter && <span className="star">⭐</span>}
           {units.length > 0 && (
             <span className="tokens" data-testid={`units-${key}`} data-count={units.length}>
-              {groupUnits(state, units).map((g) => (
+              {groups.map((g) => (
                 <span
                   key={`${g.owner}:${g.kind}`}
                   className={`token ${g.kind}${g.allMoved ? ' moved' : ''}`}
@@ -114,6 +130,9 @@ export function Board({ state, highlights, selectedKey, onCellClick }: BoardProp
               ))}
             </span>
           )}
+          {cellPoofs.map((p) => (
+            <Poof key={p.id} variant={p.variant} color={playerColor(p.player)} className="board-poof" />
+          ))}
         </button>,
       );
     }

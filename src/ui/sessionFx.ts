@@ -12,7 +12,9 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { GameEvent, GameState, PlayerId, QuickChatId } from '../engine';
+import type { GameEvent, GameState, PlayerId, QuickChatId, UnitId } from '../engine';
+import { posKey } from '../engine';
+import { POOF_MS, randomPoofVariant } from './fxAssets';
 
 // ---------------------------------------------------------------------------
 // Event diffing
@@ -60,8 +62,29 @@ export function useToasts() {
 }
 
 // ---------------------------------------------------------------------------
-// Fight playback
+// Fight playback + death poofs
 // ---------------------------------------------------------------------------
+
+/**
+ * A unit that just died, on screen as a puff of smoke until its timer is up.
+ *
+ * One poof is drawn twice — once over the fight card's clash, once on the
+ * board space — so what is stored is the fact of the death (where, whose,
+ * which sprite), not a place on screen. `variant` is fixed when the poof is
+ * created rather than picked at render, so the two drawings agree and a
+ * re-render cannot reshuffle the smoke mid-puff.
+ */
+export interface UnitPoof {
+  id: number;
+  /** posKey of the space it died on. */
+  key: string;
+  unitId: UnitId;
+  player: PlayerId;
+  /** Index into POOF_FX. */
+  variant: number;
+}
+
+let poofSeq = 1;
 
 export interface FightPlayback {
   /** Fight-related events appended by the last action, replayed stepwise. */
@@ -85,21 +108,63 @@ const FIGHT_EVENT_TYPES = new Set<GameEvent['type']>([
 
 export function useFightPlayback(fastForward: boolean) {
   const [playback, setPlayback] = useState<FightPlayback | null>(null);
+  const [poofs, setPoofs] = useState<UnitPoof[]>([]);
   const fastRef = useRef(fastForward);
   fastRef.current = fastForward;
+
+  /** Put one death on screen, and take it off again when the smoke clears. */
+  const addPoof = useCallback((ev: Extract<GameEvent, { type: 'unitDestroyed' }>) => {
+    const id = poofSeq++;
+    setPoofs((ps) => [
+      ...ps,
+      { id, key: posKey(ev.pos), unitId: ev.unitId, player: ev.player, variant: randomPoofVariant() },
+    ]);
+    window.setTimeout(() => setPoofs((ps) => ps.filter((p) => p.id !== id)), POOF_MS);
+  }, []);
 
   /**
    * Called with each new state's added events. Starts a step-through when they
    * contain dice, unless fast-forwarding or the engine stopped inside the
    * fight anyway (a live Respond window shows its own panel).
+   *
+   * Deaths poof either way: a replay puffs them as the replay reaches them
+   * (below), and everything else — a fast-forwarded fight, a card that kills
+   * outright — puffs the moment the state lands, which is when the token
+   * disappears from the board.
    */
-  const noticeFightEvents = useCallback((added: GameEvent[], next: GameState) => {
-    if (fastRef.current || next.pendingDecision?.kind === 'fightRespond') return;
-    const fightEvents = added.filter((e) => FIGHT_EVENT_TYPES.has(e.type));
-    if (fightEvents.some((e) => e.type === 'fightRolled')) {
-      setPlayback({ events: fightEvents, shown: 1 });
-    }
-  }, []);
+  const noticeFightEvents = useCallback(
+    (added: GameEvent[], next: GameState) => {
+      const fightEvents = added.filter((e) => FIGHT_EVENT_TYPES.has(e.type));
+      const replaying =
+        !fastRef.current &&
+        next.pendingDecision?.kind !== 'fightRespond' &&
+        fightEvents.some((e) => e.type === 'fightRolled');
+      if (replaying) {
+        setPlayback({ events: fightEvents, shown: 1 });
+        return;
+      }
+      for (const ev of added) if (ev.type === 'unitDestroyed') addPoof(ev);
+    },
+    [addPoof],
+  );
+
+  /**
+   * Poof whatever the replay just revealed. The guard is what keeps a death to
+   * one puff: this effect re-runs on every step, and only a step that moved
+   * FORWARD through a given event list is new. A fresh playback brings a new
+   * `events` array, so its first step always counts as forward.
+   */
+  const poofedRef = useRef<{ events: GameEvent[]; index: number }>({ events: [], index: -1 });
+  useEffect(() => {
+    if (!playback) return;
+    const index = playback.shown - 1;
+    const ev = playback.events[index];
+    if (!ev) return;
+    const last = poofedRef.current;
+    if (last.events === playback.events && last.index >= index) return;
+    poofedRef.current = { events: playback.events, index };
+    if (ev.type === 'unitDestroyed') addPoof(ev);
+  }, [playback, addPoof]);
 
   // Auto-advance; linger briefly on the final step, then dismiss.
   useEffect(() => {
@@ -119,7 +184,7 @@ export function useFightPlayback(fastForward: boolean) {
 
   const skipPlayback = useCallback(() => setPlayback(null), []);
 
-  return { playback, noticeFightEvents, skipPlayback };
+  return { playback, poofs, noticeFightEvents, skipPlayback };
 }
 
 // ---------------------------------------------------------------------------

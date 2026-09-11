@@ -108,7 +108,7 @@ export function useNetGame(code: string, name: string, look?: GnomeLookWire): Ne
   const [dial, setDial] = useState(0);
 
   const { toasts, pushToast, dismissToast } = useToasts();
-  const { playback, noticeFightEvents, skipPlayback } = useFightPlayback(false);
+  const { playback, poofs, noticeFightEvents, skipPlayback } = useFightPlayback(false);
   const { chatBubbles, chatMuted, toggleChatMuted, noticeChatEvents } = useChatBubbles();
 
   const wsRef = useRef<WebSocket | null>(null);
@@ -342,6 +342,7 @@ export function useNetGame(code: string, name: string, look?: GnomeLookWire): Ne
       canFastForward: false,
       playback,
       skipPlayback,
+      poofs,
       chatBubbles,
       chatMuted,
       toggleChatMuted,
@@ -365,6 +366,7 @@ export function useNetGame(code: string, name: string, look?: GnomeLookWire): Ne
     dismissToast,
     playback,
     skipPlayback,
+    poofs,
     chatBubbles,
     chatMuted,
     toggleChatMuted,

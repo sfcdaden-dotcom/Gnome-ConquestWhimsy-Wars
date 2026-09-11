@@ -5,27 +5,27 @@
 
 import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
-import type { CardId, GameEvent, GameState, PlayerId } from '../engine';
+import type { CardId, FightSide, GameEvent, GameState, PlayerId, Pos } from '../engine';
 import {
   getCardDef,
   getPlayerToAct,
+  posKey,
   gnomeBoardCap,
   gnomesOnBoard,
   reserveGnomes,
   wishCap,
 } from '../engine';
-import type { FightPlayback } from './useGame';
+import type { FightPlayback, UnitPoof } from './useGame';
 import {
   cardName,
   describeEvent,
-  dieFace,
   playHint,
   playerColor,
   pname,
   posStr,
   sideName,
 } from './meta';
-import { GardenIcon, UnitIcon } from './art';
+import { GardenIcon, Poof, UnitIcon } from './art';
 import type { LogTurn } from './gameLog';
 import { groupByTurn, isPinnedToBottom, logLines } from './gameLog';
 
@@ -261,6 +261,91 @@ export function HandPanel({ state, seat, playable, onPlay, blocked }: HandPanelP
 }
 
 // ---------------------------------------------------------------------------
+// Fight: the clash
+//
+// What a roll LOOKS like. The dice themselves were never the interesting part
+// — two gnomes squaring up and throwing themselves at each other is, so the
+// combatants stand on either side and lunge at the middle once per roll, with
+// the number each of them rolled underneath. A reroll (a tie) is another
+// lunge, which is exactly what a tie feels like.
+//
+// Restarting the lunge is the caller's job: pass a `seq` that changes on every
+// roll, because CSS animations restart when the ELEMENT is replaced, not when
+// its props change, and `key` is the only thing that replaces an element.
+// ---------------------------------------------------------------------------
+
+interface FightClashProps {
+  state: GameState;
+  /** [defender, attacker], as everywhere else. */
+  sides: [FightSide, FightSide];
+  /** Where the fight is. A poof counts as this fight's only if it happened here. */
+  pos: Pos;
+  /** The roll being shown, or null before the first one lands. */
+  roll: { rolls: [number, number]; tie: boolean } | null;
+  /** Changes per roll; restarts the lunge. */
+  seq: number;
+  /** Label each side defender/attacker — worth the room in the live panel. */
+  showRoles?: boolean;
+  /** Deaths currently on screen — a side whose player is in here puffs out. */
+  poofs: readonly UnitPoof[];
+}
+
+export function FightClash({
+  state,
+  sides,
+  pos,
+  roll,
+  seq,
+  poofs,
+  showRoles = false,
+}: FightClashProps) {
+  const here = posKey(pos);
+  return (
+    <div className="fight-clash" data-testid="fight-clash" key={seq}>
+      {([0, 1] as const).map((idx) => {
+        const side = sides[idx];
+        const mine = side.kind === 'player' ? side.player : null;
+        // Space AND seat: a gnome dying to a card across the board is that
+        // player's death too, and it is not this fight's.
+        const dying =
+          mine !== null ? poofs.find((p) => p.player === mine && p.key === here) ?? null : null;
+        const roll0 = roll?.rolls[idx] ?? null;
+        const other = roll?.rolls[idx === 0 ? 1 : 0] ?? null;
+        const won = roll !== null && !roll.tie && roll0 !== null && other !== null && roll0 > other;
+        return (
+          <span
+            key={idx}
+            className={`clash-side${idx === 0 ? ' left' : ' right'}${dying ? ' dying' : ''}`}
+            style={
+              { '--pc': side.kind === 'player' ? playerColor(side.player) : '#3c7a3c' } as CSSProperties
+            }
+            data-side={idx}
+            data-won={won ? 'true' : 'false'}
+          >
+            <span className="clash-art">
+              {side.kind === 'flytrap' ? (
+                <GardenIcon type="flytrap" className="clash-face" />
+              ) : (
+                <UnitIcon owner={side.player} className="clash-face" />
+              )}
+              {dying && <Poof variant={dying.variant} color={playerColor(dying.player)} className="clash-poof" />}
+            </span>
+            <span className="clash-name">{sideName(state, side)}</span>
+            {showRoles && <span className="side-role">{idx === 0 ? 'defender' : 'attacker'}</span>}
+            {roll0 !== null && (
+              <span className="clash-roll" data-testid={`clash-roll-${idx}`}>
+                {roll0}
+              </span>
+            )}
+          </span>
+        );
+      })}
+      <span className="clash-vs">{roll?.tie ? 'tie!' : 'vs'}</span>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Fight: live respond panel
 // ---------------------------------------------------------------------------
 
@@ -268,32 +353,39 @@ export interface FightPanelProps {
   state: GameState;
   /** True when the respond controls should be shown (human actor, revealed). */
   interactive: boolean;
+  /** Deaths currently on screen, so a losing side can puff out mid-fight. */
+  poofs: readonly UnitPoof[];
   onPass: () => void;
   onPlayCard: (cardId: CardId) => void;
 }
 
-export function FightPanel({ state, interactive, onPass, onPlayCard }: FightPanelProps) {
+export function FightPanel({ state, interactive, poofs, onPass, onPlayCard }: FightPanelProps) {
   const f = state.fight;
   if (!f) return null;
   const rolls = state.events.filter(
     (e): e is Extract<GameEvent, { type: 'fightRolled' }> =>
       e.type === 'fightRolled' && e.fightId === f.id,
   );
+  const last = rolls[rolls.length - 1] ?? null;
   const d = state.pendingDecision;
   const respond = d?.kind === 'fightRespond' ? d : null;
   return (
     <div className="fight-panel" data-testid="fight-panel">
       <div className="panel-title">⚔️ Fight at {posStr(f.pos)} — round {f.round}</div>
-      <div className="fight-sides">
-        <FightSideBadge state={state} idx={0} f={f} />
-        <span className="vs">vs</span>
-        <FightSideBadge state={state} idx={1} f={f} />
-      </div>
-      {rolls.length > 0 && (
+      <FightClash
+        state={state}
+        sides={f.sides}
+        pos={f.pos}
+        roll={last}
+        seq={rolls.length}
+        poofs={poofs}
+        showRoles
+      />
+      {rolls.length > 1 && (
         <div className="fight-rolls">
           {rolls.slice(-4).map((r, i) => (
             <span key={i} className="roll-pair">
-              {dieFace(r.rolls[0])} {r.rolls[0]} : {dieFace(r.rolls[1])} {r.rolls[1]}
+              {r.rolls[0]} : {r.rolls[1]}
               {r.tie ? ' (tie)' : ''}
             </span>
           ))}
@@ -330,30 +422,6 @@ export function FightPanel({ state, interactive, onPass, onPlayCard }: FightPane
   );
 }
 
-function FightSideBadge({
-  state,
-  f,
-  idx,
-}: {
-  state: GameState;
-  f: NonNullable<GameState['fight']>;
-  idx: 0 | 1;
-}) {
-  const side = f.sides[idx];
-  const color = side.kind === 'player' ? playerColor(side.player) : '#3c7a3c';
-  return (
-    <span className="fight-side" style={{ '--pc': color } as CSSProperties}>
-      {side.kind === 'flytrap' ? (
-        <GardenIcon type="flytrap" className="inline-art" />
-      ) : (
-        <UnitIcon owner={side.kind === 'player' ? side.player : undefined} className="inline-art" />
-      )}{' '}
-      {sideName(state, side)}
-      <span className="side-role">{idx === 0 ? 'defender' : 'attacker'}</span>
-    </span>
-  );
-}
-
 // ---------------------------------------------------------------------------
 // Fight: finished-fight step-through
 //
@@ -366,32 +434,48 @@ function FightSideBadge({
 export interface FightPlaybackProps {
   state: GameState;
   playback: FightPlayback;
+  /** Deaths currently on screen; a side that just lost puffs out here too. */
+  poofs: readonly UnitPoof[];
   onSkip: () => void;
 }
 
-export function FightPlaybackCard({ state, playback, onSkip }: FightPlaybackProps) {
+export function FightPlaybackCard({ state, playback, poofs, onSkip }: FightPlaybackProps) {
   const shownEvents = playback.events.slice(0, playback.shown);
-  // Header describes the most recent fight in the shown window.
+  // Header describes the most recent fight in the shown window; the sides and
+  // roll count come from the same pass, so the clash always shows the fight
+  // being replayed rather than whatever the engine is doing now.
   let header = '⚔️ Fight!';
   let lastRoll: Extract<GameEvent, { type: 'fightRolled' }> | null = null;
+  let sides: [FightSide, FightSide] | null = state.fight?.sides ?? null;
+  let pos: Pos | null = state.fight?.pos ?? null;
+  let rollCount = 0;
   for (const ev of shownEvents) {
     if (ev.type === 'fightStarted') {
       header = `⚔️ ${sideName(state, ev.sides[1])} attacks ${sideName(state, ev.sides[0])} at ${posStr(ev.pos)}`;
+      sides = ev.sides;
+      pos = ev.pos;
       lastRoll = null;
+      rollCount = 0;
     }
-    if (ev.type === 'fightRolled') lastRoll = ev;
+    if (ev.type === 'fightRolled') {
+      lastRoll = ev;
+      rollCount += 1;
+    }
   }
   return (
     /* Not a dialog: it interrupts nothing, so it announces itself politely and
        leaves focus where the player left it. */
     <div className="fight-playback" role="status" aria-label="Fight" data-testid="fight-playback">
       <div className="fight-header">{header}</div>
-      {lastRoll && (
-        <div className="big-dice" key={shownEvents.length}>
-          <span className="die">{dieFace(lastRoll.rolls[0])}</span>
-          <span className="vs">vs</span>
-          <span className="die">{dieFace(lastRoll.rolls[1])}</span>
-        </div>
+      {sides && pos && (
+        <FightClash
+          state={state}
+          sides={sides}
+          pos={pos}
+          roll={lastRoll}
+          seq={rollCount}
+          poofs={poofs}
+        />
       )}
       <div className="fight-steps">
         {shownEvents.map((ev, i) => (
