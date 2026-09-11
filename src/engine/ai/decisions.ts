@@ -52,6 +52,9 @@ export function chooseDecisionAction(
     }
     case 'snailify':
       return { type: 'snailify', player: actor, accept: true };
+    case 'snailEat':
+      // Eating gardens is the whole of a snail's remaining agenda.
+      return { type: 'snailEat', player: actor, accept: true };
     case 'sacrificeGnome':
       // Magic Drain: give up the first (lowest-id) gnome.
       return legal[0];
@@ -99,6 +102,11 @@ function planHop(
   d: Extract<PendingDecision, { kind: 'slide' | 'tunnel' | 'snailMove' }>,
   legal: readonly Action[],
 ): Action {
+  // A meal beats a slither: Snailmaggedon offers it only when the snail is
+  // already sitting on a garden it can eat.
+  const meal = legal.find((a) => a.type === 'snailEat');
+  if (meal) return meal;
+
   const canDecline = legal.some((a) => a.type === 'declineEffect');
   const anchor = primaryTarget(state, actor, state.players[actor].homePos);
   const fromDist = manhattan(d.from, anchor);

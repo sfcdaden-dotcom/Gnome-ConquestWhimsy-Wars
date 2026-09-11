@@ -14,9 +14,8 @@ import {
   curseActive,
   destroyGarden,
   draftRollD6,
-  enemyUnitsAt,
+  edibleSnailGarden,
   entryBlockedByWall,
-  gardenAt,
   getPlayer,
   gnomeExitBlocked,
   illegal,
@@ -131,6 +130,7 @@ export function startTurn(draft: GameState, player: PlayerId, turnNumber: number
     activePlayer: player,
     phase: p.status === 'playing' ? 'harvest' : 'action',
     snailLostFight: false,
+    snailEatOffered: false,
   };
   draft.turnMustEnd = false;
   refillQuickChat(draft); // everyone's quickchat allowance refills each turn
@@ -175,21 +175,67 @@ export function doEndTurn(draft: GameState, player: PlayerId): void {
   endTurnInternal(draft);
 }
 
+/**
+ * Answer to a snail-meal offer: the end-of-turn `snailEat` decision, or the
+ * "eat instead of slithering" option inside a Snailmaggedon `snailMove`.
+ */
+export function resolveSnailEat(draft: GameState, player: PlayerId, accept: boolean): void {
+  const d = draft.pendingDecision;
+  if (!d || (d.kind !== 'snailEat' && d.kind !== 'snailMove')) {
+    illegal('No snail-meal decision is pending');
+  }
+  if (d.player !== player) illegal(`It is player ${d.player}'s decision, not player ${player}'s`);
+
+  if (d.kind === 'snailMove') {
+    // Snailmaggedon only: the curse's bonus action may be spent on a meal
+    // instead of a slither. A post-fight rout is a rout — no snacking.
+    if (d.context !== 'snailmaggedon') illegal('A snail that lost a fight must retreat, not eat');
+    if (!accept) illegal('Use declineEffect to pass on the snail move');
+    const snail = edibleSnailGarden(draft, player);
+    if (!snail) illegal('Your snail is not sitting on a garden it can eat');
+    draft.pendingDecision = null;
+    const h = draft.harvest;
+    if (h && h.snailMoves[0] === player) h.snailMoves.shift();
+    destroyGarden(draft, snail.pos, 'snail');
+    return;
+  }
+
+  draft.pendingDecision = null;
+  if (accept) {
+    // Re-checked rather than trusted: nothing resolves between opening the
+    // decision and answering it, but the meal is cheap to verify.
+    const snail = edibleSnailGarden(draft, player);
+    if (snail) destroyGarden(draft, snail.pos, 'snail');
+  } else {
+    pushEvent(draft, { type: 'snailMealDeclined', player, pos: d.pos });
+  }
+  endTurnInternal(draft);
+}
+
 export function endTurnInternal(draft: GameState): void {
   const t = requireTurn(draft);
   const p = getPlayer(draft, t.activePlayer);
-  pushEvent(draft, { type: 'turnEnded', player: p.id });
 
-  // Snail: destroy the garden it occupies — unless its turn ended by losing
-  // a fight (then nothing is destroyed), or enemy units still share the space
-  // (the snail survives losses without clearing it, so a garden its defenders
-  // are still standing on is not eaten).
-  if (p.status === 'snail' && !t.snailLostFight) {
-    const snail = playerUnits(draft, p.id).find((u) => u.kind === 'snail');
-    if (snail && gardenAt(draft, snail.pos) && enemyUnitsAt(draft, snail.pos, p.id).length === 0) {
-      destroyGarden(draft, snail.pos, 'snail');
+  // Snail: offer the garden it occupies as a meal — eating is the Snail's
+  // choice, not a reflex. Skipped when its turn ended by losing a fight (then
+  // nothing is eaten), when enemy units still share the space (the snail
+  // survives losses without clearing it, so a garden its defenders are still
+  // standing on is safe), and once the offer has already been answered.
+  if (p.status === 'snail' && !t.snailLostFight && !t.snailEatOffered) {
+    const snail = edibleSnailGarden(draft, p.id);
+    if (snail) {
+      t.snailEatOffered = true;
+      draft.pendingDecision = {
+        kind: 'snailEat',
+        player: p.id,
+        unitId: snail.id,
+        pos: { ...snail.pos },
+      };
+      return; // resolveSnailEat resumes this turn end once the Snail answers
     }
   }
+
+  pushEvent(draft, { type: 'turnEnded', player: p.id });
 
   // Per-turn markers keyed to this player's turn expire now.
   for (const g of Object.values(draft.gardens)) {

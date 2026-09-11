@@ -253,24 +253,53 @@ export function DecisionPanel({ state, decision, legal, interactive, act, onResp
         </Panel>
       );
 
-    case 'snailMove':
-      // A rout is mandatory (no "stay put"); the curse's bonus move is not.
-      return decision.context === 'retreat' ? (
-        <Panel title={`${who}: Driven back`} icon={<UnitIcon kind="snail" className="panel-icon" />}>
-          <div className="small muted">
-            Your snail lost the fight and must slither to an adjacent empty space. Click a highlighted
-            space.
-          </div>
-        </Panel>
-      ) : (
+    case 'snailMove': {
+      // A rout is mandatory (no "stay put"); the curse's bonus move is not —
+      // and it may be spent on the garden underfoot instead of a slither.
+      if (decision.context === 'retreat') {
+        return (
+          <Panel title={`${who}: Driven back`} icon={<UnitIcon kind="snail" className="panel-icon" />}>
+            <div className="small muted">
+              Your snail lost the fight and must slither to an adjacent empty space. Click a highlighted
+              space.
+            </div>
+          </Panel>
+        );
+      }
+      const meal = legal.find((a) => a.type === 'snailEat');
+      return (
         <Panel title={`${who}: Snailmaggedon`} icon={<UnitIcon kind="snail" className="panel-icon" />}>
           <div className="small muted">
             The curse lets your snail slither 1 space during this Harvest Phase. Click a highlighted space,
-            or decline.
+            {meal ? ' eat the garden it is sitting on,' : ''} or decline.
           </div>
           <div className="btn-row">
             <button type="button" className="btn" data-testid="decline-effect" onClick={() => act({ type: 'declineEffect', player: decision.player })}>
               Stay put
+            </button>
+            {meal && (
+              <button type="button" className="btn accent" data-testid="snail-eat" onClick={() => act(meal)}>
+                {eatLabel(state, decision.from)}
+              </button>
+            )}
+          </div>
+        </Panel>
+      );
+    }
+
+    case 'snailEat':
+      return (
+        <Panel title={`${who}: a garden underfoot`} icon={<UnitIcon kind="snail" className="panel-icon" />}>
+          <div className="small muted">
+            Your snail is sitting on {gardenLabel(state, decision.pos)} at {posStr(decision.pos)}. Devour it
+            before your turn ends, or slither off it and leave it standing.
+          </div>
+          <div className="btn-row">
+            <button type="button" className="btn accent" data-testid="snail-eat" onClick={() => act({ type: 'snailEat', player: decision.player, accept: true })}>
+              {eatLabel(state, decision.pos)}
+            </button>
+            <button type="button" className="btn" data-testid="snail-eat-decline" onClick={() => act({ type: 'snailEat', player: decision.player, accept: false })}>
+              Leave it standing
             </button>
           </div>
         </Panel>
@@ -293,6 +322,18 @@ export function DecisionPanel({ state, decision, legal, interactive, act, onResp
       );
     }
   }
+}
+
+/** "the Dandelion Patch" / "the garden" — whatever is standing at `pos`. */
+function gardenLabel(state: GameState, pos: { x: number; y: number }): string {
+  const g = state.gardens[`${pos.x},${pos.y}`];
+  if (!g) return 'a garden';
+  return `the ${g.upgraded ? GARDEN_META[g.type].upgradeLabel : GARDEN_META[g.type].label}`;
+}
+
+/** Button text for the snail's meal, naming what is on the plate. */
+function eatLabel(state: GameState, pos: { x: number; y: number }): string {
+  return `🐌 Eat ${gardenLabel(state, pos)}`;
 }
 
 function Panel({ title, icon, children }: { title: string; icon?: ReactNode; children: ReactNode }) {

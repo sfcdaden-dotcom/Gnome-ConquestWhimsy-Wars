@@ -146,6 +146,22 @@ export function playerUnits(state: GameState, player: PlayerId): Unit[] {
   return out;
 }
 
+/**
+ * The player's Snail when it is sitting on a garden it may eat: a Snail only
+ * eats a garden it SOLELY occupies, so an enemy unit standing on the tile
+ * (a defender that survived, say) keeps the garden safe. Returns null when
+ * there is no meal on offer.
+ */
+export function edibleSnailGarden(state: GameState, player: PlayerId): Unit | null {
+  const p = state.players[player];
+  if (!p || p.status !== 'snail') return null;
+  const snail = playerUnits(state, player).find((u) => u.kind === 'snail');
+  if (!snail) return null;
+  if (!gardenAt(state, snail.pos)) return null;
+  if (enemyUnitsAt(state, snail.pos, player).length > 0) return null;
+  return snail;
+}
+
 export function gnomesOnBoard(state: GameState, player: PlayerId): number {
   return playerUnits(state, player).filter((u) => u.kind === 'gnome').length;
 }

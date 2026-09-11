@@ -140,15 +140,18 @@ An eliminated player has lost, but may choose to continue as an **Immortal Snail
 
 Snail rules:
 - Moves up to 1 space on its turn. It can fight.
-- Any garden occupied by the Snail is **destroyed at the end of the Snail's turn**
+- At the end of the Snail's turn it **may** destroy the garden it occupies
   (returned to supply). This includes Home Gardens (which also means: a Snail
-  occupying your Home Garden eliminates you, since the Snail is an enemy).
-- **[RULING]** The Snail only destroys a garden it **solely** occupies. A Snail that
+  eating your Home Garden eliminates you, since the Snail is an enemy).
+- **[RULING]** The meal is the Snail owner's **choice**, not a reflex: the turn
+  pauses on a prompt offering the garden underfoot, and declining leaves it
+  standing with no other cost. A Snail that skips a meal has simply ended its turn.
+- **[RULING]** The Snail may only eat a garden it **solely** occupies. A Snail that
   loses a fight is normally driven off the space (below), but a boxed-in Snail stays
   and shares it with the enemy units that fought it off — a garden its defenders are
-  still standing on is NOT destroyed at the end of the Snail's turn.
+  still standing on is never offered as a meal.
 - If the Snail **loses** a fight it is not destroyed; its turn ends immediately and
-  no gnomes/gardens are destroyed. If it **wins**, the losing gnome is destroyed
+  no gnomes/gardens are destroyed (no meal is offered either). If it **wins**, the losing gnome is destroyed
   as normal.
 - **[RULING]** A Snail that loses a fight is driven back: it **must** move 1 space to
   an adjacent empty space (no critters there, and not sealed by the Great Wall). The

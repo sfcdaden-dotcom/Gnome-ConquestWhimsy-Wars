@@ -309,6 +309,8 @@ export function describeEvent(state: GameState, ev: GameEvent): string {
       return `💀 ${pname(state, ev.player)} is eliminated (${ELIMINATION_REASON_TEXT[ev.reason]}).`;
     case 'playerSnailified':
       return `${pname(state, ev.player)} returns as an Immortal Snail at ${posStr(ev.pos)}!`;
+    case 'snailMealDeclined':
+      return `${pname(state, ev.player)}'s Immortal Snail leaves the garden at ${posStr(ev.pos)} standing.`;
     case 'snailifyDeclined':
       return `${pname(state, ev.player)} leaves the game.`;
     case 'turnEnded':
@@ -359,6 +361,8 @@ export function describeAction(state: GameState, a: Action): string {
     }
     case 'snailMove':
       return `Move the snail to ${posStr(a.to)}`;
+    case 'snailEat':
+      return a.accept ? 'Eat the garden underfoot' : 'Leave the garden standing';
     case 'selectTarget':
       return describeTarget(state, a.target);
     case 'cancelTargeting':
@@ -462,6 +466,8 @@ export function decisionLabel(kind: string): string {
       return 'sacrifice a gnome';
     case 'snailMove':
       return 'snail move';
+    case 'snailEat':
+      return 'snail meal';
     case 'discard':
       return 'discard to hand limit';
     case 'snailify':

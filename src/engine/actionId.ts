@@ -149,6 +149,8 @@ export function actionKey(action: Action): string {
       return `${head}:${esc(action.cardId)}`;
     case 'snailify':
       return `${head}:${action.accept ? 'accept' : 'decline'}`;
+    case 'snailEat':
+      return `${head}:${action.accept ? 'eat' : 'leave'}`;
     case 'sacrificeGnome':
       return `${head}:${esc(action.unitId)}`;
     case 'selectTarget':

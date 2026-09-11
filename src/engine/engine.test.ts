@@ -436,7 +436,7 @@ describe('immortal snail', () => {
       d.units[id] = { id, owner: seat, kind: 'snail', pos: { ...pos }, movedOnTurn: null };
       const t = d.turn;
       if (!t) throw new Error('no active turn');
-      d.turn = { number: t.number + 1, activePlayer: seat, phase: 'action', snailLostFight: false };
+      d.turn = { number: t.number + 1, activePlayer: seat, phase: 'action', snailLostFight: false, snailEatOffered: false };
       d.pendingDecision = null;
     });
   }
@@ -456,7 +456,7 @@ describe('immortal snail', () => {
     expect(s.events.some((e) => e.type === 'gardenDestroyed' && e.cause === 'snail')).toBe(false);
   });
 
-  it('eats a garden it solely occupies at the end of its turn', () => {
+  it('is OFFERED the garden it solely occupies at the end of its turn, and may eat it', () => {
     let s = toActionPhase(11, {}, 4);
     const me = activePlayer(s);
     const seat = (me + 1) % 4;
@@ -466,10 +466,73 @@ describe('immortal snail', () => {
 
     const supplyBefore = s.players[me].supply.dandelion;
     s = applyAction(s, { type: 'endTurn', player: seat });
+    // The turn pauses on the meal offer instead of eating by reflex.
+    expect(s.pendingDecision).toEqual({
+      kind: 'snailEat',
+      player: seat,
+      unitId: Object.values(s.units).find((u) => u.kind === 'snail' && u.owner === seat)!.id,
+      pos,
+    });
+    expect(s.gardens[posKey(pos)]).toBeDefined();
+    expect(getLegalActions(s).map((a) => a.type)).toEqual(['snailEat', 'snailEat']);
+
+    s = applyAction(s, { type: 'snailEat', player: seat, accept: true });
     expect(s.gardens[posKey(pos)]).toBeUndefined();
     expect(s.events.some((e) => e.type === 'gardenDestroyed' && e.cause === 'snail')).toBe(true);
     // Destroyed gardens return to their planter's supply.
     expect(s.players[me].supply.dandelion).toBe(supplyBefore + 1);
+    // ...and the turn end it paused resumes.
+    expect(s.events.some((e) => e.type === 'turnEnded' && e.player === seat)).toBe(true);
+    expect(s.turn?.activePlayer).not.toBe(seat);
+  });
+
+  it('may leave the garden standing, and the turn ends anyway', () => {
+    let s = toActionPhase(11, {}, 4);
+    const me = activePlayer(s);
+    const seat = (me + 1) % 4;
+    const pos = { x: 3, y: 3 };
+    s = withGarden(s, pos, 'dandelion', 0, me);
+    s = withSnailTurn(s, seat, pos);
+
+    s = applyAction(s, { type: 'endTurn', player: seat });
+    s = applyAction(s, { type: 'snailEat', player: seat, accept: false });
+    expect(s.gardens[posKey(pos)]).toBeDefined();
+    expect(s.events.some((e) => e.type === 'gardenDestroyed' && e.cause === 'snail')).toBe(false);
+    expect(s.events.some((e) => e.type === 'snailMealDeclined' && e.player === seat)).toBe(true);
+    expect(s.events.some((e) => e.type === 'turnEnded' && e.player === seat)).toBe(true);
+    expect(s.turn?.activePlayer).not.toBe(seat);
+    checkInvariants(s);
+  });
+
+  it('may spend a Snailmaggedon bonus on the garden underfoot instead of a slither', () => {
+    let s = toActionPhase(11, {}, 4);
+    const me = activePlayer(s);
+    const seat = (me + 1) % 4;
+    const pos = { x: 3, y: 3 };
+    s = withGarden(s, pos, 'dandelion', 0, me);
+    s = withSnailTurn(s, seat, pos);
+    s = mutate(s, (d) => {
+      d.activeCurses.push('curse-snailmaggedon');
+    });
+
+    // End the snail's own turn without eating: the curse must still offer it.
+    s = applyAction(s, { type: 'endTurn', player: seat });
+    s = applyAction(s, { type: 'snailEat', player: seat, accept: false });
+    expect(s.gardens[posKey(pos)]).toBeDefined();
+
+    // The next player's Harvest Phase opens the curse's bonus move.
+    const d = s.pendingDecision;
+    if (!d || d.kind !== 'snailMove') throw new Error('expected a Snailmaggedon snail move');
+    expect(d.context).toBe('snailmaggedon');
+    const legal = getLegalActions(s);
+    expect(legal.some((a) => a.type === 'declineEffect')).toBe(true);
+    expect(legal.some((a) => a.type === 'snailEat' && a.accept)).toBe(true);
+
+    s = applyAction(s, { type: 'snailEat', player: seat, accept: true });
+    expect(s.gardens[posKey(pos)]).toBeUndefined();
+    // The meal spent the bonus: the snail stayed put and is not asked again.
+    expect(Object.values(s.units).find((u) => u.kind === 'snail' && u.owner === seat)?.pos).toEqual(pos);
+    expect(s.pendingDecision?.kind).not.toBe('snailMove');
   });
 
   it('eliminates the owner of a Home Garden it ate, at the next Harvest Phase', () => {
@@ -487,6 +550,7 @@ describe('immortal snail', () => {
     s = withSnailTurn(s, seat, victimHome);
 
     s = applyAction(s, { type: 'endTurn', player: seat });
+    s = applyAction(s, { type: 'snailEat', player: seat, accept: true });
     expect(s.gardens[posKey(victimHome)]).toBeUndefined();
     // The very next Harvest Phase notices the home is gone.
     expect(

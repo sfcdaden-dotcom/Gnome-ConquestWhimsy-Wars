@@ -65,12 +65,16 @@ const ACTION_TYPES: readonly Action['type'][] = [
   'declineEffect', 'respondPass', 'respondPlayCard', 'discardCard', 'snailify',
   'sacrificeGnome', 'snailMove', 'selectTarget', 'cancelTargeting',
   'move', 'plant', 'upgrade', 'drawCard', 'playCard', 'endTurn',
+  // Appended, never inserted: the index of an existing type is the schema.
+  'snailEat',
 ];
 
 const DECISION_KINDS: readonly PendingDecision['kind'][] = [
   'rollOff', 'chooseHarvest', 'homeHarvest', 'mushroomClones', 'slide', 'tunnel',
   'fightRespond', 'cardResponse', 'discard', 'snailify', 'sacrificeGnome',
   'snailMove', 'cardTargeting',
+  // Appended, never inserted (see ACTION_TYPES).
+  'snailEat',
 ];
 
 const TARGET_KINDS: readonly CardTarget['kind'][] = ['unit', 'space', 'player', 'card', 'gardenType'];
@@ -440,6 +444,7 @@ export function encodeOption(state: GameState, seat: PlayerId, action: Action): 
       out[OPT_CHOICE] = Math.min(action.count, 6) / 6;
       break;
     case 'snailify':
+    case 'snailEat':
       out[OPT_CHOICE + 3] = action.accept ? 1 : 0;
       break;
     case 'sacrificeGnome':
