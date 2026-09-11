@@ -23,7 +23,7 @@ import type { Action, AiDifficulty, GameSeal, GardenPreset, PlayerView } from '.
 import type { MatchRecord } from '../engine';
 
 /** Bumped on any breaking change to the messages below. */
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2;
 
 /** Room codes: 6 chars, no vowels (no accidental words) and no 0/O/1/I/L. */
 export const ROOM_CODE_ALPHABET = 'BCDFGHJKMNPQRSTVWXYZ23456789';
@@ -175,6 +175,34 @@ export interface ShotClock {
   now: number;
 }
 
+/**
+ * A player's gnome, as it travels between clients.
+ *
+ * The room never interprets one — it stores whatever a client sent and hands
+ * it back out with the rest of the seat, exactly as it does with a name. The
+ * receiving client validates it (`sanitizeLook` in src/ui/gnomeArt.ts) before
+ * drawing anything, because an unknown hat id from a stranger's build must not
+ * be able to leave a hole in your board.
+ *
+ * The shape is declared here rather than imported from the UI so the wire
+ * format stays owned by the wire; `src/ui/gnomeLook.ts` asserts that its own
+ * `GnomeLook` still matches this, so the two cannot drift apart in silence.
+ */
+export interface GnomeLookWire {
+  torso: string;
+  face: string;
+  shoes: string;
+  /** Optional layers; null means the gnome goes without. */
+  beard: string | null;
+  hair: string | null;
+  cap: string;
+  accessory: string;
+  /** Indices into the palettes — see src/ui/gnomeLook.ts. */
+  garment: number;
+  hair_color: number;
+  skin: number;
+}
+
 /** A seat as everyone in the room sees it. Carries no tokens. */
 export interface SeatInfo {
   index: number;
@@ -190,6 +218,8 @@ export interface SeatInfo {
    * may still be in the room, watching.
    */
   takenOver: boolean;
+  /** The gnome this seat plays. Absent until its player sends one. */
+  look?: GnomeLookWire;
 }
 
 /** The room as everyone in it sees it. Public by construction. */
@@ -238,7 +268,7 @@ export type ClientMessage =
    * presents it, and is ignored ever after — the host does not move because
    * somebody reloaded. See `Room.hello`.
    */
-  | { t: 'hello'; protocol: number; token?: string; name?: string; hostKey?: string }
+  | { t: 'hello'; protocol: number; token?: string; name?: string; look?: GnomeLookWire; hostKey?: string }
   /** Host only: lobby settings. Rejected once the game has started. */
   | { t: 'configure'; playerCount?: 2 | 4; boardSize?: number; gardenPreset?: GardenPreset; seats?: SeatConfig[] }
   /** Host only: deal the cards. The room picks the seed; no client ever does. */
@@ -258,6 +288,7 @@ export interface SeatConfig {
   controller?: 'human' | 'cpu';
   difficulty?: AiDifficulty;
   name?: string;
+  look?: GnomeLookWire;
 }
 
 // ---------------------------------------------------------------------------

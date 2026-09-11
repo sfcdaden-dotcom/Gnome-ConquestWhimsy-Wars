@@ -108,7 +108,7 @@ export function Board({ state, highlights, selectedKey, onCellClick }: BoardProp
                   data-kind={g.kind}
                   data-count={g.count}
                 >
-                  <UnitIcon kind={g.kind} className="token-face" />
+                  <UnitIcon kind={g.kind} owner={g.owner} className="token-face" />
                   {g.count > 1 && <span className="token-count">{g.count}</span>}
                 </span>
               ))}

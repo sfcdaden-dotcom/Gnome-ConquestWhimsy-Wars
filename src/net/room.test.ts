@@ -25,6 +25,7 @@ import {
   EMPTY_ROOM_REAP_MS,
   HOST_GRACE_MS,
   ROOM_CODE_ALPHABET,
+  PROTOCOL_VERSION,
   SHOT_CLOCK_MS,
   TAKEOVER_AFTER_TIMEOUTS,
   TOMBSTONE_TTL_MS,
@@ -148,7 +149,7 @@ function makeHost(): RoomHost & {
   return h;
 }
 
-const HELLO = { t: 'hello', protocol: 1 } as const;
+const HELLO = { t: 'hello', protocol: PROTOCOL_VERSION } as const;
 
 type FakeHost = ReturnType<typeof makeHost>;
 
@@ -245,6 +246,80 @@ describe('seats and identity', () => {
 
     expect(c.errors()).toContain('PROTOCOL');
     expect(c.closed).not.toBeNull();
+  });
+
+  /**
+   * Appearance is the clients' business: the room stores a look verbatim and
+   * republishes it, so everyone at the table draws the same gnome from the same
+   * snapshot. What matters here is that it survives the round trip and a
+   * reconnect — not that the room understands any of it.
+   */
+  describe('gnomes', () => {
+    const LOOK = {
+      torso: 'torso-overalls',
+      face: 'b-face',
+      shoes: 'shoes',
+      beard: 'lush-beard',
+      hair: null,
+      cap: 'wide-cap',
+      accessory: 'scythe-accessory',
+      garment: 3,
+      hair_color: 2,
+      skin: 5,
+    } as const;
+
+    it('publishes the look a player arrives with, on their seat', async () => {
+      const host = makeHost();
+      const room = await Room.open(host, 'ABC123');
+      const c0 = new FakeConn('c0');
+      await room.hello(c0, { ...HELLO, look: { ...LOOK } });
+
+      expect(c0.last('room')?.room.seats[0].look).toEqual(LOOK);
+    });
+
+    it('shows it to everyone else in the room, not just its owner', async () => {
+      const host = makeHost();
+      const room = await Room.open(host, 'ABC123');
+      const c0 = new FakeConn('c0');
+      const c1 = new FakeConn('c1');
+      await room.hello(c0, { ...HELLO, look: { ...LOOK } });
+      await room.handle('c0', { t: 'configure', seats: [{ index: 1, controller: 'human' }] });
+      await room.hello(c1, { ...HELLO });
+
+      expect(c1.last('room')?.room.seats[0].look).toEqual(LOOK);
+    });
+
+    it('leaves a seat without one alone rather than inventing a gnome', async () => {
+      const { c0 } = await lobby();
+      expect(c0.last('room')?.room.seats[0].look).toBeUndefined();
+    });
+
+    it('restores it on reconnect, along with the seat', async () => {
+      const host = makeHost();
+      const room = await Room.open(host, 'ABC123');
+      const c0 = new FakeConn('c0');
+      await room.hello(c0, { ...HELLO, look: { ...LOOK } });
+      const token = c0.last('welcome')?.you.token;
+
+      const again = new FakeConn('c0b');
+      await room.hello(again, { ...HELLO, token, look: { ...LOOK } });
+
+      expect(again.last('welcome')?.you.seat).toBe(0);
+      expect(again.last('room')?.room.seats[0].look).toEqual(LOOK);
+    });
+
+    it('lets the host give a CPU seat one, since no player will', async () => {
+      const host = makeHost();
+      const room = await Room.open(host, 'ABC123');
+      const c0 = new FakeConn('c0');
+      await room.hello(c0, { ...HELLO });
+      await room.handle('c0', {
+        t: 'configure',
+        seats: [{ index: 1, controller: 'cpu', look: { ...LOOK } }],
+      });
+
+      expect(c0.last('room')?.room.seats[1].look).toEqual(LOOK);
+    });
   });
 
   it('generates room codes from the unambiguous alphabet', () => {
@@ -938,7 +1013,7 @@ describe('reconnect and hibernation', () => {
     room.disconnect('c0');
 
     const again = new FakeConn('c0-again');
-    await room.hello(again, { t: 'hello', protocol: 1, token });
+    await room.hello(again, { t: 'hello', protocol: PROTOCOL_VERSION, token });
 
     expect(again.last('welcome')?.you.seat).toBe(0);
     expect(again.last('welcome')?.you.isHost).toBe(true);
@@ -949,7 +1024,7 @@ describe('reconnect and hibernation', () => {
   it('does not hand a seat to someone presenting an unknown token', async () => {
     const { room } = await lobby(['human', 'cpu']);
     const stranger = new FakeConn('x');
-    await room.hello(stranger, { t: 'hello', protocol: 1, token: 'not-a-real-token' });
+    await room.hello(stranger, { t: 'hello', protocol: PROTOCOL_VERSION, token: 'not-a-real-token' });
 
     // Seat 0 is taken and seat 1 is a CPU, so there is nothing to claim.
     expect(stranger.last('welcome')?.you.seat).toBeNull();
@@ -960,7 +1035,7 @@ describe('reconnect and hibernation', () => {
     const token = c0.last('welcome')!.you.token;
 
     const second = new FakeConn('c0-second');
-    await room.hello(second, { t: 'hello', protocol: 1, token });
+    await room.hello(second, { t: 'hello', protocol: PROTOCOL_VERSION, token });
 
     expect(second.last('welcome')?.you.seat).toBe(0);
     expect(c0.closed).not.toBeNull();

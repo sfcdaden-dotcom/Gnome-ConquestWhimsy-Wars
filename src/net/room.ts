@@ -67,6 +67,7 @@ import type {
   RoomErrorCode,
   RoomPhase,
   RoomSnapshot,
+  GnomeLookWire,
   SeatConfig,
   SeatInfo,
   ServerMessage,
@@ -185,6 +186,13 @@ export interface PersistedSeat {
   name: string;
   controller: 'human' | 'cpu';
   difficulty: AiDifficulty;
+  /**
+   * The gnome this seat plays, as its client sent it. Stored verbatim and
+   * never read by the room — appearance is the clients' business, and a room
+   * that tried to validate hat ids would need updating every time somebody
+   * drew a new hat.
+   */
+  look?: GnomeLookWire;
   /** The room took this seat over for inactivity (not a lobby CPU seat). */
   takenOver?: boolean;
   /** Consecutive shot-clock timeouts. Any action by the seat resets it. */
@@ -475,6 +483,9 @@ export class Room {
     this.data.tokens[token] = seat;
 
     if (message.name && seat !== null) this.data.seats[seat].name = message.name.slice(0, 24);
+    // A returning player's gnome arrives with every hello, so a reconnect
+    // restores their character along with their seat and their hand.
+    if (message.look && seat !== null) this.data.seats[seat].look = message.look;
 
     this.conns.set(conn.id, { conn, token, seat, announced: null });
     this.bindHost(token, message.hostKey);
@@ -846,6 +857,7 @@ export class Room {
     if (cfg.controller) seat.controller = cfg.controller;
     if (cfg.difficulty) seat.difficulty = cfg.difficulty;
     if (cfg.name) seat.name = cfg.name.slice(0, 24);
+    if (cfg.look) seat.look = cfg.look;
   }
 
   /**
@@ -1381,6 +1393,7 @@ export class Room {
       difficulty: s.difficulty,
       connected: s.controller === 'human' && this.seatIsOccupied(i),
       takenOver: s.takenOver === true,
+      ...(s.look ? { look: s.look } : {}),
     }));
     let spectators = 0;
     for (const c of this.conns.values()) if (c.seat === null) spectators++;

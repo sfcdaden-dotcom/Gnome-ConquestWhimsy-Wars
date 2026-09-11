@@ -37,6 +37,9 @@ import { DEFAULT_ADVANCED_SETTINGS, isDefaultSettings, parseSeedText, settingsOp
 import type { AdvancedSettingsValue } from './advancedSettings';
 import { PresetEditor } from './PresetEditor';
 import type { PresetDraft } from './PresetEditor';
+import { GnomeCreator, GnomePortrait } from './GnomeCreator';
+import { defaultLook, randomLook } from './gnomeArt';
+import type { GnomeLook } from './gnomeLook';
 import {
   PRESET_LABEL_MAX_LENGTH,
   buildCustomPresetDef,
@@ -59,6 +62,11 @@ function fixedBoardSize(def: GardenPresetDef): number | null {
 export interface SetupResult {
   options: CreateGameOptions;
   seed: number;
+  /**
+   * Each seat's gnome, by seat index. Kept beside `options` rather than in it
+   * because the engine has no concept of a gnome's hat — see gnomeLook.ts.
+   */
+  looks: GnomeLook[];
 }
 
 interface SeatDraft {
@@ -178,6 +186,20 @@ export function SetupScreen({
     { name: DEFAULT_NAMES[2], controller: 'cpu', difficulty: 'normal' },
     { name: DEFAULT_NAMES[3], controller: 'cpu', difficulty: 'normal' },
   ]);
+  /**
+   * A gnome per seat. Seat 0 is the one a person is most likely to be sitting
+   * in, so it gets the stock gnome and an invitation to change it; the rest
+   * are rolled, which is also what makes a table of CPUs look like four
+   * different characters rather than four copies in four colours.
+   */
+  const [looks, setLooks] = useState<GnomeLook[]>(() => [
+    defaultLook(),
+    randomLook(),
+    randomLook(),
+    randomLook(),
+  ]);
+  /** Seat whose gnome the creator is open on, or null when it is closed. */
+  const [gnomeSeat, setGnomeSeat] = useState<number | null>(null);
   const [preset, setPreset] = useState<GardenPreset>(DEFAULT_GARDEN_PRESET_ID);
   const [customPresets, setCustomPresets] = useState<GardenPresetDef[]>([]);
   // Which layout the editor is open on: a brand-new one, an existing custom
@@ -275,7 +297,19 @@ export function SetupScreen({
   }
 
   function updateSeat(i: number, patch: Partial<SeatDraft>) {
-    setSeats((s) => s.map((seat, j) => (j === i ? { ...seat, ...patch } : seat)));
+    setSeats((s) => {
+      // Handing a seat to the CPU rolls it a new gnome: nobody is going to
+      // open the creator for a bot, and a table of identical CPUs was the
+      // thing this feature exists to stop.
+      if (patch.controller === 'cpu' && s[i].controller !== 'cpu') {
+        setLooks((l) => l.map((look, j) => (j === i ? randomLook() : look)));
+      }
+      return s.map((seat, j) => (j === i ? { ...seat, ...patch } : seat));
+    });
+  }
+
+  function updateLook(i: number, look: GnomeLook) {
+    setLooks((l) => l.map((prev, j) => (j === i ? look : prev)));
   }
 
   /**
@@ -399,8 +433,10 @@ export function SetupScreen({
         ...(s.controller === 'cpu' ? { difficulty: s.difficulty } : {}),
       })),
     };
-    onStart({ options, seed });
+    onStart({ options, seed, looks: looks.slice(0, count) });
   }
+
+  const creatorSeat = gnomeSeat !== null && gnomeSeat < count ? gnomeSeat : null;
 
   if (editorTarget) {
     return (
@@ -443,6 +479,16 @@ export function SetupScreen({
           {seats.slice(0, count).map((seat, i) => (
             <div key={i} className="seat-row" style={{ '--pc': playerColor(i) } as CSSProperties}>
               <span className="pp-dot" title={PLAYER_COLOR_NAMES[i]} />
+              <button
+                type="button"
+                className="gnome-chip"
+                data-testid={`seat-${i}-gnome`}
+                aria-label={`Customize seat ${i + 1}'s gnome`}
+                title="Customize this gnome"
+                onClick={() => setGnomeSeat(i)}
+              >
+                <GnomePortrait look={looks[i]} seatId={i} />
+              </button>
               <input
                 type="text"
                 value={seat.name}
@@ -646,6 +692,19 @@ export function SetupScreen({
                 ? `“${presetDef.label}” is drawn on a fixed ${boardSize}×${boardSize} board. Pick a scaling layout to change the board size.`
                 : undefined
             }
+          />
+        )}
+
+        {creatorSeat !== null && (
+          <GnomeCreator
+            seatId={creatorSeat}
+            seatName={seats[creatorSeat].name.trim()}
+            value={looks[creatorSeat]}
+            onSave={(look) => {
+              updateLook(creatorSeat, look);
+              setGnomeSeat(null);
+            }}
+            onCancel={() => setGnomeSeat(null)}
           />
         )}
 
