@@ -128,6 +128,31 @@ test('the clothes swatches are the seat’s colour, not a free choice', async ({
   expect(red).not.toBe(blue);
 });
 
+test('the hair colour reaches the eyebrows, even on a gnome with no hair', async ({ page }) => {
+  await openSetup(page);
+  await openCreator(page, 0);
+
+  // Strip the hair and the beard, so the only hair-coloured pixels left on the
+  // gnome are the eyebrows. Changing the hair colour must still redraw it.
+  const clear = async (layer: 'hair' | 'beard') => {
+    const value = page.getByTestId(`gnome-${layer}-value`);
+    for (let i = 0; i < 8; i++) {
+      if (((await value.textContent()) ?? '').trim().startsWith('None')) return;
+      await page.getByTestId(`gnome-${layer}-next`).click();
+    }
+    throw new Error(`could not clear the ${layer}`);
+  };
+  await clear('hair');
+  await clear('beard');
+
+  const stage = page.locator('.gnome-portrait.big');
+  await expect(stage).toHaveAttribute('src', /^data:image\/png/, { timeout: 10_000 });
+  const bald = await stage.getAttribute('src');
+
+  await page.getByTestId('gnome-hair-color-5').click();
+  await expect(stage).not.toHaveAttribute('src', bald ?? '', { timeout: 10_000 });
+});
+
 test('surprise me changes the gnome', async ({ page }) => {
   await openSetup(page);
   await openCreator(page, 0);

@@ -11,6 +11,8 @@ import { describe, expect, it } from 'vitest';
 import { PLAYER_COLORS } from './meta';
 import {
   GARMENT_SOURCES,
+  GNOME_LAYERS,
+  HAIR_TINTED_LAYERS,
   GARMENT_VARIANTS,
   HAIR_COLORS,
   HAIR_SOURCE,
@@ -38,7 +40,7 @@ import type { GnomeLook } from './gnomeLook';
 const ART_COLORS = {
   /** Repainted by the seat's garment ramp. */
   garment: ['#37474f', '#3d2f3d', '#424242', '#616161', '#757575', '#78909c', '#90a4ae'],
-  /** Repainted by the hair choice, and only on the hair and beard layers. */
+  /** Repainted by the hair choice, on the hair, beard and face layers. */
   hair: ['#e0e0e0'],
   /** Repainted by the skin choice, shading included. */
   skin: ['#e5aa7a', '#cba37b', '#d09f70', '#d99d77', '#d99f73', '#cc936a'],
@@ -132,11 +134,19 @@ describe('the swap table', () => {
     }
   });
 
-  it('keeps hair out of the shared swap, so eye whites stay white', () => {
-    // `#e0e0e0` is a beard on a beard layer and the whites of the eyes on a
-    // face. Only the hair and beard layers may repaint it.
+  it('keeps hair out of the shared swap, so only hair-bearing layers take it', () => {
     expect(garmentAndSkinSwap(look(), 0)[HAIR_SOURCE]).toBeUndefined();
     expect(hairSwap(look())[HAIR_SOURCE]).toBe(HAIR_COLORS[0].hex);
+  });
+
+  it('tints hair, beard and face, and nothing else', () => {
+    // The face is in the set for its eyebrows — eight pixels above the eyes,
+    // the only #e0e0e0 a face has. A cap must never be in it: its polka dots
+    // are white on purpose and are the gnome's contrast at board size.
+    expect([...HAIR_TINTED_LAYERS].sort()).toEqual(['beard', 'face', 'hair']);
+    for (const layer of HAIR_TINTED_LAYERS) {
+      expect(GNOME_LAYERS, layer).toContain(layer);
+    }
   });
 
   it('maps each garment source to the ramp step it was drawn as', () => {

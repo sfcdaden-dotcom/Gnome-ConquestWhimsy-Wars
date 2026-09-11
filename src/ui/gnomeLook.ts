@@ -16,7 +16,7 @@
  * belongs to exactly one slot:
  *
  *   garment  the seat's 4-shade ramp — cap, torso and the metal of a tool
- *   hair     one flat colour — hair and beard only
+ *   hair     one flat colour — hair, beard and the eyebrows on a face
  *   skin     face, the hand holding a tool, and the arms on the overalls
  *
  * Anything not listed in a slot is left exactly as drawn: the brown shoes and
@@ -198,11 +198,12 @@ export function garmentRamp(seatId: number, variant: number): GarmentRamp {
 // ---------------------------------------------------------------------------
 
 /**
- * Hair and beard colour. Deliberately NOT scoped to the seat's colour: the
- * garment already carries ownership, and a red gnome with a red beard under a
- * red hat reads as a red blob rather than a character. `#e0e0e0` is the only
- * hex the hair and beard art uses, so one flat colour per choice is all these
- * layers can take.
+ * Hair colour — which covers the hair, the beard AND the eyebrows.
+ *
+ * Deliberately NOT scoped to the seat's colour: the garment already carries
+ * ownership, and a red gnome with a red beard under a red hat reads as a red
+ * blob rather than a character. `#e0e0e0` is the only hex these layers use, so
+ * one flat colour per choice is all they can take.
  */
 export const HAIR_COLORS = [
   { id: 'snow', label: 'Snow', hex: '#e8e8e8' },
@@ -213,8 +214,23 @@ export const HAIR_COLORS = [
   { id: 'soot', label: 'Soot', hex: '#4a4a4a' },
 ] as const;
 
-/** The hex the hair and beard art is drawn in. */
+/** The hex the hair, beard and eyebrow pixels are drawn in. */
 export const HAIR_SOURCE = '#e0e0e0';
+
+/**
+ * Layers whose `#e0e0e0` pixels are hair and take the hair colour.
+ *
+ * The face is in here for its EYEBROWS: eight pixels at the top of each face,
+ * angled in above the eyes. They are the only `#e0e0e0` on a face — the eyes
+ * themselves are solid black, and there are no whites — so tinting the whole
+ * layer tints exactly the brows and nothing else.
+ *
+ * Every other layer is excluded, not by omission but because none of them has
+ * any `#e0e0e0` to tint. Keeping the set explicit is what stops a future layer
+ * that uses the same light grey for something that is not hair from silently
+ * turning whatever-it-is ginger.
+ */
+export const HAIR_TINTED_LAYERS = ['hair', 'beard', 'face'] as const;
 
 /** The hex the skin is drawn in; every other skin pixel is a shade of it. */
 export const SKIN_SOURCE = '#e5aa7a';
@@ -276,9 +292,8 @@ export const GARMENT_SOURCES: Record<string, keyof GarmentRamp> = {
  * `gnomeArt.ts` applies it pixel by pixel; keeping it a pure value is what
  * makes the recolouring testable without a canvas.
  *
- * Hair is handled by the caller, not here: `#e0e0e0` also paints the whites of
- * the eyes, so swapping it globally would give a player ash-coloured eyes.
- * See `hairSwap`.
+ * Hair is handled separately rather than folded in here, because it applies to
+ * some layers and not others — see `HAIR_TINTED_LAYERS` and `hairSwap`.
  */
 export function garmentAndSkinSwap(look: GnomeLook, seatId: number): Record<string, string> {
   const ramp = garmentRamp(seatId, look.garment);
@@ -289,7 +304,7 @@ export function garmentAndSkinSwap(look: GnomeLook, seatId: number): Record<stri
   return swap;
 }
 
-/** The one swap the hair and beard layers get, on top of the shared ones. */
+/** The one extra swap a hair-tinted layer gets, on top of the shared ones. */
 export function hairSwap(look: GnomeLook): Record<string, string> {
   const hair = (HAIR_COLORS[look.hair_color] ?? HAIR_COLORS[0]).hex;
   return { [HAIR_SOURCE]: hair };

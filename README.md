@@ -101,7 +101,7 @@ What a layer has to survive:
   | `#37474f` `#3d2f3d` `#424242` | the garment ramp's darkest shade |
   | `#616161` `#757575` `#78909c` | its medium-dark shade |
   | `#90a4ae` | its medium shade |
-  | `#e0e0e0` | the hair colour — **hair and beard layers only**, because the same hex is the whites of the eyes on a face |
+  | `#e0e0e0` | the hair colour — on the **hair, beard and face** layers only (`HAIR_TINTED_LAYERS`). The face is in that set for its eyebrows, the only `#e0e0e0` it has; a cap's polka dots are a different white and stay white |
   | `#e5aa7a` and its shadows | the skin tone |
 
   Everything else is left exactly as drawn: the brown shoes and tool shafts,
