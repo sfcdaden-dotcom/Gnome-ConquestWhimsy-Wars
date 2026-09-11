@@ -91,8 +91,9 @@ and once on the board space it died on. The sprites are in `src/assets/art/FX/`
 strip there and it joins the random draw; the count has to match the file, or
 the animation clips or trails empty frames.
 
-The six shipped strips are cut from a free pixel smoke-FX pack; credit the
-pack where the project credits its other assets.
+The six shipped strips are cut from a free pixel smoke-FX pack by
+**BDragon1727**, credited on the home screen's Credits card (`CREDITS` in
+`src/ui/HomeScreen.tsx` — add a line there for anything else that ships).
 
 The art is **white on transparency**, and it matters: a poof is drawn as a CSS
 mask over a box painted in the dead gnome's seat colour, which is what lets six

@@ -693,3 +693,29 @@ test('the home screen routes to local play, the rules, and the online menu', asy
   await page.getByTestId('setup-back').click();
   await expect(page.getByTestId('home-screen')).toBeVisible();
 });
+
+test('the home screen shows the credits, and three ways out of them', async ({ page }) => {
+  await page.goto('/');
+  const credits = page.getByTestId('credits-card');
+
+  await page.getByTestId('home-credits').click();
+  await expect(credits).toContainText('Daden');
+  await expect(credits).toContainText('BDragon1727');
+
+  // Closing: the button, Escape, and a click on the backdrop all work — the
+  // card asks nothing, so no way out of it should be a hunt.
+  await page.getByTestId('credits-close').click();
+  await expect(credits).toBeHidden();
+
+  await page.getByTestId('home-credits').click();
+  await page.keyboard.press('Escape');
+  await expect(credits).toBeHidden();
+
+  await page.getByTestId('home-credits').click();
+  await page.mouse.click(8, 8);
+  await expect(credits).toBeHidden();
+
+  // And the doors underneath still work afterwards.
+  await page.getByTestId('home-local').click();
+  await expect(page.getByTestId('start-game')).toBeVisible();
+});

@@ -1889,6 +1889,59 @@ h2 {
   font-weight: 400;
 }
 
+/* Small print under the doors: there when you look for it, out of the way of
+   the three things people came to this screen to click. */
+.home-credits-link {
+  align-self: center;
+  margin-top: -4px;
+  font-size: 0.8rem;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.credits-card {
+  gap: 14px;
+}
+.credits-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 1.2rem;
+  margin: 0;
+}
+.credits-title .title-art {
+  width: 1.4em;
+  height: 1.4em;
+}
+/* A definition list, because that is what it is: each row is one credit, the
+   role on the left and the person on the right. */
+.credits-list {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+.credits-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px dashed var(--border);
+  padding-bottom: 5px;
+}
+.credits-row:last-child {
+  border-bottom: none;
+}
+.credits-row dt {
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+.credits-row dd {
+  margin: 0;
+  font-weight: 700;
+}
+
 .field {
   display: flex;
   flex-direction: column;
