@@ -21,6 +21,9 @@
   --shadow: 0 4px 14px rgba(44, 66, 24, 0.12);
   /* Vertical chrome around the board: topbar + paddings + footer slot. */
   --board-chrome: 172px;
+  /* One puff of smoke, start to gone. Mirrored by POOF_MS in fxAssets.ts —
+     the timer that takes the element off screen has to outlast the frames. */
+  --poof-ms: 620ms;
 
   color-scheme: light dark;
   font: 15px/1.45 var(--sans);
@@ -555,6 +558,26 @@ h2 {
   .shot-clock[data-urgent='true'] {
     animation: none;
   }
+  /* No lunging and no frame-by-frame smoke: the fight still reads (numbers,
+     the log, a gnome that vanishes in a puff held mid-burst), it just holds
+     still doing it. */
+  .clash-side .clash-face,
+  .clash-roll {
+    animation: none;
+  }
+  .poof {
+    animation: poof-hold var(--poof-ms) forwards;
+    -webkit-mask-position: 50% 0;
+    mask-position: 50% 0;
+  }
+  @keyframes poof-hold {
+    to {
+      opacity: 0;
+    }
+  }
+  .cell.contested {
+    transition: none;
+  }
 }
 
 .main {
@@ -630,7 +653,7 @@ h2 {
   padding: 0;
   font: inherit;
   overflow: hidden;
-  transition: box-shadow 0.12s ease, filter 0.12s ease;
+  transition: box-shadow 0.12s ease, filter 0.12s ease, transform 0.16s ease;
 }
 .cell:nth-child(even) {
   background: var(--cell-alt);
@@ -791,6 +814,36 @@ h2 {
   width: 78%;
   height: 78%;
 }
+/* A space held by two seats at once. The square stays a square and simply
+   grows — over its neighbours if it must — so both gnomes keep their full
+   size instead of shrinking to share one cell. Stacks belonging to a SINGLE
+   seat are left alone: they were never a standoff, and the count badge says
+   all they need to. */
+.cell.contested {
+  --grow: 1.55;
+  transform: scale(var(--grow));
+  z-index: 6;
+  border-radius: 10px;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
+}
+.cell.contested[data-contested='3'] {
+  --grow: 1.75;
+}
+.cell.contested[data-contested='4'] {
+  --grow: 1.95;
+}
+/* Side by side, never wrapped — and each seat's token takes an equal share of
+   the widened square, so three seats fit as readily as two. */
+.cell.contested .tokens {
+  flex-wrap: nowrap;
+  gap: 2px;
+  padding-top: 4px;
+}
+.cell.contested .token {
+  width: clamp(13px, calc(88cqi / var(--n, 7) / var(--seats, 2)), 30px);
+  height: clamp(13px, calc(88cqi / var(--n, 7) / var(--seats, 2)), 30px);
+}
+
 .token-count {
   position: absolute;
   top: -6px;
@@ -996,33 +1049,13 @@ h2 {
   border: 2px solid var(--error);
   box-shadow: var(--shadow);
 }
-.fight-sides {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  margin: 4px 0;
-}
-.fight-side {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  border: 1px solid var(--pc, var(--border));
-  border-left: 4px solid var(--pc, var(--border));
-  border-radius: 8px;
-  padding: 3px 8px;
-  font-weight: 600;
-  font-size: 0.9rem;
-}
 .side-role {
   font-size: 0.7rem;
   color: var(--muted);
   font-weight: 400;
 }
-.vs {
-  font-weight: 800;
-  color: var(--muted);
-}
+/* The rolls BEFORE the one on screen — the clash shows the current one, this
+   is the round-by-round trail behind it. */
 .fight-rolls {
   display: flex;
   gap: 10px;
@@ -1290,26 +1323,179 @@ h2 {
   font-size: 0.86rem;
   line-height: 1.25;
 }
-.big-dice {
+/* The clash: the two combatants facing off, lunging at each other once per
+   roll, with what each of them rolled underneath. It replaced a pair of dice
+   glyphs — same information, but it is the gnomes doing it. */
+.fight-clash {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 4px;
+  width: 100%;
+  margin: 2px 0;
+}
+.clash-side {
+  display: flex;
+  flex: 1 1 0;
+  min-width: 0;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  text-align: center;
+}
+.clash-art {
+  position: relative;
+  width: clamp(34px, 22%, 52px);
+  aspect-ratio: 1;
   display: flex;
   align-items: center;
-  gap: 16px;
-  font-size: 1rem;
+  justify-content: center;
 }
-.big-dice .die {
-  font-size: 2.2rem;
-  line-height: 1;
-  animation: dice-in 0.35s ease;
+.clash-face {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.45));
 }
-@keyframes dice-in {
+/* The defender stands on the left, so it lunges right and its opposite number
+   lunges left; both are mirrored halves of one move. */
+.clash-side.left .clash-face {
+  animation: lunge-right 0.62s ease-out;
+}
+.clash-side.right .clash-face {
+  animation: lunge-left 0.62s ease-out;
+  transform: scaleX(-1);
+}
+/* A gnome that just lost this round is gone — the smoke is what is left. */
+.clash-side.dying .clash-face {
+  animation: none;
+  opacity: 0;
+}
+.clash-name {
+  font-size: 0.7rem;
+  line-height: 1.15;
+  max-width: 12ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+}
+.clash-roll {
+  min-width: 1.6em;
+  padding: 0 5px;
+  border-radius: 7px;
+  border: 1px solid var(--pc, var(--border));
+  background: color-mix(in srgb, var(--pc, #888) 22%, var(--panel-2));
+  font-weight: 700;
+  font-size: 1.15rem;
+  line-height: 1.3;
+  animation: roll-pop 0.3s ease-out 0.34s backwards;
+}
+/* The round's winner is the one whose number is worth reading. */
+.clash-side[data-won='true'] .clash-roll {
+  border-color: var(--text);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--pc, #888) 45%, transparent);
+}
+.clash-side[data-won='false'] .clash-roll {
+  opacity: 0.75;
+}
+.clash-vs {
+  position: absolute;
+  left: 50%;
+  top: 30%;
+  transform: translate(-50%, -50%);
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--muted);
+  pointer-events: none;
+}
+
+@keyframes lunge-right {
+  0% {
+    transform: none;
+  }
+  40% {
+    transform: translateX(52%) rotate(9deg) scale(1.06);
+  }
+  58% {
+    transform: translateX(22%) rotate(-3deg);
+  }
+  100% {
+    transform: none;
+  }
+}
+/* The right-hand fighter is already mirrored, so its keyframes carry the flip
+   through every step — dropping it mid-animation would spin the gnome round. */
+@keyframes lunge-left {
+  0% {
+    transform: scaleX(-1);
+  }
+  40% {
+    transform: translateX(-52%) rotate(-9deg) scale(1.06) scaleX(-1);
+  }
+  58% {
+    transform: translateX(-22%) rotate(3deg) scaleX(-1);
+  }
+  100% {
+    transform: scaleX(-1);
+  }
+}
+@keyframes roll-pop {
   from {
-    transform: rotate(-25deg) scale(0.4);
+    transform: scale(0.4);
     opacity: 0;
   }
   to {
     transform: none;
     opacity: 1;
   }
+}
+
+/* ------------------------------------------------------------------ */
+/* Poof: what a gnome leaves behind                                     */
+/* ------------------------------------------------------------------ */
+
+/* The sprite is a strip of white-on-transparent frames used as a MASK over a
+   box painted in the dead gnome's seat colour — that is what makes one set of
+   files serve four players. The strip is laid out `--poof-frames` cells wide
+   and walked one cell per step; the last stop is one cell PAST the end, which
+   is what gives the final frame the same screen time as the rest. */
+.poof {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 150%;
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  z-index: 2;
+  background-color: var(--pc, #e8e8e8);
+  -webkit-mask-image: var(--poof-src);
+  mask-image: var(--poof-src);
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-size: calc(var(--poof-frames) * 100%) 100%;
+  mask-size: calc(var(--poof-frames) * 100%) 100%;
+  animation: poof-play var(--poof-ms) steps(var(--poof-frames)) forwards;
+}
+@keyframes poof-play {
+  from {
+    -webkit-mask-position: 0% 0;
+    mask-position: 0% 0;
+  }
+  to {
+    -webkit-mask-position: calc(100% * var(--poof-frames) / (var(--poof-frames) - 1)) 0;
+    mask-position: calc(100% * var(--poof-frames) / (var(--poof-frames) - 1)) 0;
+  }
+}
+/* On the board the puff fills its space; in the fight card it is big enough to
+   swallow the gnome it replaced. */
+.board-poof {
+  width: 130%;
+}
+.clash-poof {
+  width: 170%;
 }
 .fight-steps {
   max-height: 120px;
@@ -1701,6 +1887,59 @@ h2 {
   font-size: 0.85rem;
   opacity: 0.8;
   font-weight: 400;
+}
+
+/* Small print under the doors: there when you look for it, out of the way of
+   the three things people came to this screen to click. */
+.home-credits-link {
+  align-self: center;
+  margin-top: -4px;
+  font-size: 0.8rem;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.credits-card {
+  gap: 14px;
+}
+.credits-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 1.2rem;
+  margin: 0;
+}
+.credits-title .title-art {
+  width: 1.4em;
+  height: 1.4em;
+}
+/* A definition list, because that is what it is: each row is one credit, the
+   role on the left and the person on the right. */
+.credits-list {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+.credits-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px dashed var(--border);
+  padding-bottom: 5px;
+}
+.credits-row:last-child {
+  border-bottom: none;
+}
+.credits-row dt {
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+.credits-row dd {
+  margin: 0;
+  font-weight: 700;
 }
 
 .field {

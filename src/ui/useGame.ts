@@ -21,10 +21,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Action, CreateGameOptions, GameState, PlayerId } from '../engine';
 import { applyAction, chooseAiAction, createAiMemory, createGame, getPlayerToAct } from '../engine';
-import type { ChatBubble, FightPlayback, Toast } from './sessionFx';
+import type { ChatBubble, FightPlayback, Toast, UnitPoof } from './sessionFx';
 import { addedEvents, useChatBubbles, useFightPlayback, useToasts } from './sessionFx';
 
-export type { ChatBubble, FightPlayback, Toast };
+export type { ChatBubble, FightPlayback, Toast, UnitPoof };
 
 // ---------------------------------------------------------------------------
 // The session contract GameScreen renders
@@ -46,6 +46,8 @@ export interface GameSession {
   canFastForward: boolean;
   playback: FightPlayback | null;
   skipPlayback: () => void;
+  /** Units that just died, drawn as smoke on the board and in the fight card. */
+  poofs: UnitPoof[];
   chatBubbles: ChatBubble[];
   chatMuted: boolean;
   toggleChatMuted: () => void;
@@ -95,7 +97,7 @@ export function useGame(options: CreateGameOptions, seed: number): GameSession {
   const [revealedSeat, setRevealedSeat] = useState<PlayerId | null>(null);
 
   const { toasts, pushToast, dismissToast } = useToasts();
-  const { playback, noticeFightEvents, skipPlayback } = useFightPlayback(fastForward);
+  const { playback, poofs, noticeFightEvents, skipPlayback } = useFightPlayback(fastForward);
   const { chatBubbles, chatMuted, toggleChatMuted, noticeChatEvents } = useChatBubbles();
 
   const stateRef = useRef(state);
@@ -197,6 +199,7 @@ export function useGame(options: CreateGameOptions, seed: number): GameSession {
     canFastForward: true,
     playback,
     skipPlayback,
+    poofs,
     chatBubbles,
     chatMuted,
     toggleChatMuted,

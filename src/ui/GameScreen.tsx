@@ -414,13 +414,19 @@ export function GameScreen({ game: g, onPlayAgain, onQuit }: GameScreenProps) {
             state={state}
             highlights={highlights}
             selectedKey={selectedKey}
+            poofs={g.poofs}
             onCellClick={onCellClick}
           />
           <QuickChatFeed state={state} bubbles={g.chatBubbles} />
           {/* The dice replay, beside the board rather than over it. Hidden once
               the game ends, where the end overlay is the thing to read. */}
           {playback && state.status !== 'finished' && (
-            <FightPlaybackCard state={state} playback={playback} onSkip={g.skipPlayback} />
+            <FightPlaybackCard
+              state={state}
+              playback={playback}
+              poofs={g.poofs}
+              onSkip={g.skipPlayback}
+            />
           )}
           {/* Stable-height slot: the bar appearing/disappearing must not
               reflow the board. Targeting replaces the action bar. */}
@@ -481,6 +487,7 @@ export function GameScreen({ game: g, onPlayAgain, onQuit }: GameScreenProps) {
             <FightPanel
               state={state}
               interactive={interactive && decision?.kind === 'fightRespond'}
+              poofs={g.poofs}
               onPass={() =>
                 decision?.kind === 'fightRespond' && act({ type: 'respondPass', player: decision.player })
               }

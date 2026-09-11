@@ -55,6 +55,13 @@ src/assets/art/
     garden-slippery.png
     garden-tunnel.png
   Gnome Assets/               one folder per layer — see below
+  FX/                         death poofs — one animation per file
+    poof-burst.png            (see "Fight animations" below)
+    poof-ball.png
+    poof-star.png
+    poof-blob.png
+    poof-swirl.png
+    poof-ring.png
 ```
 
 To replace a garden or the stock gnome, overwrite the file: the filenames are
@@ -66,6 +73,42 @@ WebP, JPEG).
 different scales: tucked into a cell's top-left corner during play, and filling
 the whole cell in the setup preview and the preset editor. Non-square is allowed
 but letterboxes, since the CSS uses `object-fit: contain`.
+
+### Fight animations
+
+A fight is the two combatants standing off, not a pair of dice: `FightClash`
+(`src/ui/panels.tsx`) puts each side's own art — a custom gnome, the snail, a
+flytrap — on either side of the card and lunges them at each other once per
+roll, with the number each of them rolled underneath and the winner's picked
+out. A tie rerolls, which is another lunge. The same clash serves the live
+Respond panel and the finished-fight replay, so a fight looks the same however
+you meet it.
+
+A gnome that loses is replaced by a puff of smoke: once where it was fighting
+and once on the board space it died on. The sprites are in `src/assets/art/FX/`
+— each file is one animation as a horizontal strip of 64×64 frames — and
+`src/ui/fxAssets.ts` is the one place a file is tied to its frame count. Add a
+strip there and it joins the random draw; the count has to match the file, or
+the animation clips or trails empty frames.
+
+The six shipped strips are cut from a free pixel smoke-FX pack by
+**BDragon1727**, credited on the home screen's Credits card (`CREDITS` in
+`src/ui/HomeScreen.tsx` — add a line there for anything else that ships).
+
+The art is **white on transparency**, and it matters: a poof is drawn as a CSS
+mask over a box painted in the dead gnome's seat colour, which is what lets six
+files serve every player. A new strip that is coloured in will come out as a
+white-ish blob. The timing lives in two halves that must agree — `POOF_MS` in
+`fxAssets.ts` (when the element is dropped) and `--poof-ms` in `index.css` (how
+long the frames take).
+
+Two seats standing on one space grow the square rather than shrinking the
+gnomes: the cell scales up, stays square, and rides over its neighbours until
+the fight resolves. A stack belonging to a SINGLE seat is untouched — that was
+never a standoff, and the count badge says all it needs to.
+
+Fast-forward (⏩ fast CPU) skips the replay entirely, and
+`prefers-reduced-motion` keeps every picture but holds it still.
 
 ### Custom gnomes
 
