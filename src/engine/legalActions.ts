@@ -26,7 +26,7 @@
 import type { Action, GameState, PlayerId, Pos } from './types';
 import { deckHasCards, whyCannotPlayNow } from './cards';
 import { getPendingDecisionOptions } from './targeting';
-import { internal, plantWishCost, playerUnits, posKey } from './helpers';
+import { edibleSnailGarden, internal, plantWishCost, playerUnits, posKey } from './helpers';
 import { canPlantAt, canUpgradeAt } from './gardens';
 import { UPGRADE_WISH_COST } from './actions';
 import { antsyPantsViolators, getPlayerToAct, moveDestinations } from './turns';
@@ -112,10 +112,19 @@ export function getLegalActionIntents(state: GameState, player?: PlayerId): Acti
         return d.options.map((unitId) => ({ type: 'sacrificeGnome', player: actor, unitId }));
       case 'snailMove': {
         const out: Action[] = d.options.map((to) => ({ type: 'snailMove', player: actor, to }));
-        // Snailmaggedon's bonus move is optional; a post-fight rout is not.
-        if (d.context === 'snailmaggedon') out.push({ type: 'declineEffect', player: actor });
+        // Snailmaggedon's bonus move is optional (and may be spent on a meal
+        // instead); a post-fight rout is neither.
+        if (d.context === 'snailmaggedon') {
+          out.push({ type: 'declineEffect', player: actor });
+          if (edibleSnailGarden(state, actor)) out.push({ type: 'snailEat', player: actor, accept: true });
+        }
         return out;
       }
+      case 'snailEat':
+        return [
+          { type: 'snailEat', player: actor, accept: true },
+          { type: 'snailEat', player: actor, accept: false },
+        ];
       default: {
         // Exhaustiveness: a new PendingDecision kind must be handled here.
         const missing: never = d;

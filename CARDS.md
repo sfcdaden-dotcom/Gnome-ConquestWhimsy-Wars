@@ -94,7 +94,9 @@ implementation rulings marked **[IMPL]**. This file is the source of truth for
 1. **Compost Combustion** — Gardens now cost 2 Wishes to plant.
 2. **Snailmaggedon** — Snails can now move during every Harvest Phase.
    [IMPL]: during ANY player's Harvest Phase, each snail owner may move their snail
-   1 space (in turn order), in addition to normal snail turns.
+   1 space (in turn order), in addition to normal snail turns. A snail already
+   sitting on a garden it solely occupies may spend that bonus on eating it instead
+   of slithering.
 3. **Magic Drain** — If you start your turn at 0 Wishes, sacrifice a gnome.
    [IMPL]: checked at turn start before Harvest; owner chooses which gnome; if no
    gnomes on board, nothing happens (reserves untouched).

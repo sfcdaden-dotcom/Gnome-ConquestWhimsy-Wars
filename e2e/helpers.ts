@@ -226,6 +226,9 @@ export class Game {
         case 'snailMove':
           await this.resolveBoardPick();
           break;
+        case 'snailEat':
+          await this.page.getByTestId('snail-eat').click();
+          break;
         case 'cardResponse':
           await this.page.getByTestId('respond-pass').click();
           break;

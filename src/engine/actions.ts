@@ -58,7 +58,7 @@ import {
 } from './targeting';
 import { doSacrificeGnome, doSnailify } from './elimination';
 import { doQuickChat } from './quickchat';
-import { doEndTurn, doRollOff, requireActionPhaseActor } from './turns';
+import { doEndTurn, doRollOff, requireActionPhaseActor, resolveSnailEat } from './turns';
 
 // ---------------------------------------------------------------------------
 // Dispatch
@@ -99,6 +99,8 @@ export function dispatch(draft: GameState, action: Action): void {
       return doSacrificeGnome(draft, action.player, action.unitId);
     case 'snailMove':
       return resolveSnailMove(draft, action.player, action.to);
+    case 'snailEat':
+      return resolveSnailEat(draft, action.player, action.accept);
     case 'move':
       return doMove(draft, action.player, action.unitId, action.to);
     case 'plant':

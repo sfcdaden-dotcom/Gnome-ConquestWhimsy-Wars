@@ -238,6 +238,9 @@ export interface TurnState {
   phase: TurnPhase;
   /** Set when the active Snail lost a fight this turn (skips garden destruction). */
   snailLostFight: boolean;
+  /** Set once the Snail has been offered the end-of-turn garden meal, so the
+   *  resumed turn end does not ask again. */
+  snailEatOffered: boolean;
 }
 
 export interface RolloffState {
@@ -448,9 +451,21 @@ export type PendingDecision =
     }
   | {
       /**
+       * End of the Snail's turn: eat the garden it is sitting on, or leave it
+       * standing. Opened only when the Snail SOLELY occupies a garden — the
+       * meal is an option, never a reflex.
+       */
+      kind: 'snailEat';
+      player: PlayerId;
+      unitId: UnitId;
+      pos: Pos;
+    }
+  | {
+      /**
        * Move your snail 1 space. Two flavors, told apart by `context`:
        *  - `snailmaggedon`: the curse's optional bonus move during the current
-       *    Harvest Phase (declineEffect passes),
+       *    Harvest Phase (declineEffect passes; a `snailEat` spends the bonus
+       *    on the garden underfoot instead),
        *  - `retreat`: the MANDATORY rout after the snail loses a fight — it
        *    must slither to an adjacent empty space and cannot be declined.
        */
@@ -523,6 +538,7 @@ export type Action =
   | { type: 'snailify'; player: PlayerId; accept: boolean }
   | { type: 'sacrificeGnome'; player: PlayerId; unitId: UnitId }
   | { type: 'snailMove'; player: PlayerId; to: Pos }
+  | { type: 'snailEat'; player: PlayerId; accept: boolean }
   // --- phased card targeting (answers a 'cardTargeting' decision) --------------
   | { type: 'selectTarget'; player: PlayerId; target: CardTarget }
   | { type: 'cancelTargeting'; player: PlayerId }
@@ -566,6 +582,7 @@ export type GameEvent =
   | { type: 'gardenPlanted'; player: PlayerId; pos: Pos; gardenType: PlantableGardenType }
   | { type: 'gardenUpgraded'; player: PlayerId; pos: Pos; gardenType: PlantableGardenType }
   | { type: 'gardenDestroyed'; pos: Pos; gardenType: GardenType; cause: 'snail' | 'card' | 'elimination' }
+  | { type: 'snailMealDeclined'; player: PlayerId; pos: Pos }
   | { type: 'maizeExitPaid'; player: PlayerId; pos: Pos; cost: number }
   | { type: 'cardDrawn'; player: PlayerId; cardId: CardId }
   | { type: 'cardDiscarded'; player: PlayerId; cardId: CardId }
