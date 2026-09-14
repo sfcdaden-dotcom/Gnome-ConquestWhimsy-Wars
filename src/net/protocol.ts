@@ -23,7 +23,7 @@ import type { Action, AiDifficulty, GameSeal, GardenPreset, PlayerView } from '.
 import type { MatchRecord } from '../engine';
 
 /** Bumped on any breaking change to the messages below. */
-export const PROTOCOL_VERSION = 2;
+export const PROTOCOL_VERSION = 3;
 
 /** Room codes: 6 chars, no vowels (no accidental words) and no 0/O/1/I/L. */
 export const ROOM_CODE_ALPHABET = 'BCDFGHJKMNPQRSTVWXYZ23456789';
@@ -237,6 +237,17 @@ export interface RoomSnapshot {
   /** Is anybody the host right now? False only between a host leaving and a takeover. */
   hasHost: boolean;
   /**
+   * The room was opened by a board view, which declined the lobby rather than
+   * holding it: the first player to sit down becomes host. True only in the
+   * window between that opening and that arrival, and never again once a host
+   * exists — a host who later leaves is replaced by the deliberate takeover,
+   * not by whoever walks in next.
+   *
+   * On the wire so a board view can say what it is waiting for, and so a
+   * player's lobby does not read a hostless room as an abandoned one.
+   */
+  hostDelegated: boolean;
+  /**
    * Set while a lobby is waiting out a dropped host. Null at every other time,
    * including mid-game. When it runs out the room is handed over or closed.
    */
@@ -267,8 +278,29 @@ export type ClientMessage =
    * room. It binds the host ONCE, to the token of the connection that first
    * presents it, and is ignored ever after — the host does not move because
    * somebody reloaded. See `Room.hello`.
+   *
+   * `spectate` marks a screen rather than a player: a board view on a TV or a
+   * projector, which shows the room to everyone around it and is touched by
+   * nobody. It is sent on EVERY hello, reconnects included, because it is a
+   * property of the screen and not of a moment — a projector that dropped and
+   * redialled without it would be handed a seat on the way back in.
+   *
+   * A spectating connection is never seated, never becomes host, and cannot
+   * take a hostless room over. What it CAN do is open the room: presenting a
+   * valid `hostKey` while spectating delegates the lobby instead of claiming
+   * it, so the first person to sit down gets the start button. That is what
+   * makes "set the TV up first" the natural order rather than the trap it
+   * would otherwise be — see `Room.settleHost`.
    */
-  | { t: 'hello'; protocol: number; token?: string; name?: string; look?: GnomeLookWire; hostKey?: string }
+  | {
+      t: 'hello';
+      protocol: number;
+      token?: string;
+      name?: string;
+      look?: GnomeLookWire;
+      hostKey?: string;
+      spectate?: boolean;
+    }
   /** Host only: lobby settings. Rejected once the game has started. */
   | { t: 'configure'; playerCount?: 2 | 4; boardSize?: number; gardenPreset?: GardenPreset; seats?: SeatConfig[] }
   /** Host only: deal the cards. The room picks the seed; no client ever does. */

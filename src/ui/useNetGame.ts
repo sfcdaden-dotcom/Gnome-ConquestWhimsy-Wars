@@ -96,7 +96,18 @@ export interface NetGame {
   toasts: GameSession['toasts'];
 }
 
-export function useNetGame(code: string, name: string, look?: GnomeLookWire): NetGame {
+/**
+ * `spectate` opens the socket as a SCREEN rather than a player: a board view on
+ * a TV. The room never seats it, never makes it host, and never sends it a
+ * hand — see protocol.ts. It is a property of this client for the life of the
+ * socket, so it rides every hello, reconnects included.
+ */
+export function useNetGame(
+  code: string,
+  name: string,
+  look?: GnomeLookWire,
+  spectate = false,
+): NetGame {
   const [room, setRoom] = useState<RoomSnapshot | null>(null);
   const [you, setYou] = useState<{ seat: number | null; isHost: boolean } | null>(null);
   const [view, setView] = useState<PlayerView | null>(null);
@@ -152,12 +163,21 @@ export function useNetGame(code: string, name: string, look?: GnomeLookWire): Ne
           token: tokenStore.load(seatStores, code),
           // Only ever set for a room this browser opened. The room binds it
           // once and ignores it afterwards, so re-sending it on every dial
-          // costs nothing and covers a first dial that failed.
+          // costs nothing and covers a first dial that failed. A board view
+          // sends it too, and the room reads it as an offer rather than a
+          // claim: the lobby goes to the first player to sit down.
           hostKey: hostKeyStore.load(localStorage, code),
-          name,
-          // Sent on every dial for the same reason the name is: a reconnect
-          // has to put the player's gnome back, not just their seat.
-          look: lookRef.current,
+          // A screen has no name and no gnome — it is not sitting anywhere for
+          // one to belong to.
+          ...(spectate
+            ? { spectate: true }
+            : {
+                name,
+                // Sent on every dial for the same reason the name is: a
+                // reconnect has to put the player's gnome back, not just their
+                // seat.
+                look: lookRef.current,
+              }),
         });
         ping = window.setInterval(() => send({ t: 'ping' }), PING_MS);
       };
@@ -258,8 +278,9 @@ export function useNetGame(code: string, name: string, look?: GnomeLookWire): Ne
     };
     // Reconnecting on a name change alone would drop the seat mid-game; the
     // name is only a first-hello nicety, so the socket is keyed by room only.
+    // `spectate` is fixed for the life of a screen, so it never re-dials here.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [code, dial]);
+  }, [code, dial, spectate]);
 
   // --- the seat claim ------------------------------------------------------
   // Says "this tab is still using this seat" to the other tabs of this

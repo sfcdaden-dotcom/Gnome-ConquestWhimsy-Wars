@@ -1382,6 +1382,30 @@ describe('a lobby whose host has gone', () => {
     expect(host.closed).toBe(true);
   });
 
+  // Both paths that end a host's tenure spend the room's `hostKey`, which used
+  // to leave the room in the same shape as one persisted before host keys
+  // existed — and `bindHost` reads THAT as "hand the lobby to whoever connects
+  // first". So a room that had been deliberately left hostless, waiting for
+  // somebody to press the takeover button, gave itself away to the next person
+  // to open the link instead. See `hostSettled`.
+  it('does not hand the room to the next arrival once its host has gone', async () => {
+    const { host, room, c1 } = await hosted();
+    await room.disconnect('c0');
+    host.clock += HOST_GRACE_MS;
+    await room.onAlarm();
+    expect(room.snapshot().hasHost).toBe(false);
+
+    const c2 = new FakeConn('c2');
+    await room.hello(c2, { ...HELLO });
+
+    expect(c2.last('welcome')?.you.isHost).toBe(false);
+    // Still nobody's room: the takeover is a button somebody presses, in front
+    // of everyone, and it is still on offer to the player who stayed.
+    expect(room.snapshot().hasHost).toBe(false);
+    await room.handle('c1', { t: 'takeOverRoom' });
+    expect(c1.last('welcome')?.you.isHost).toBe(true);
+  });
+
   it('leaves a room standing while anybody is still in it', async () => {
     const { host, room, c1 } = await hosted();
     await room.disconnect('c0');
@@ -1613,5 +1637,199 @@ describe('a room nobody is in', () => {
 
     expect(reopened.isClosed).toBe(false);
     expect(opener.last('welcome')?.you.isHost).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+/**
+ * A board view: the screen on the TV that shows the room to everybody around
+ * it and is touched by nobody.
+ *
+ * Two properties carry the whole feature. It is never dealt in — not on
+ * arrival, and not later when a seat opens under it — so a projector left on
+ * in the corner cannot end up holding a chair at a table of four. And it opens
+ * the room without owning it, so setting the TV up FIRST (the obvious order,
+ * and the one that used to strand the start button on an unreachable screen)
+ * hands the lobby to the first person who actually sits down.
+ */
+describe('board views', () => {
+  /** A room opened by a board view, with nobody seated yet. */
+  async function projector() {
+    const host = makeHost();
+    const room = await Room.open(host, 'ABC123');
+    const hostKey = await room.hostKeyForCreate();
+    const tv = new FakeConn('tv');
+    await room.hello(tv, { ...HELLO, hostKey, spectate: true });
+    return { host, room, tv, hostKey };
+  }
+
+  it('is not seated, even with the whole table free', async () => {
+    const { tv } = await projector();
+
+    expect(tv.last('welcome')?.you.seat).toBeNull();
+    expect(tv.last('welcome')?.you.isHost).toBe(false);
+    // Every seat is still there to be sat in.
+    expect(tv.last('welcome')?.room.seats.every((s) => !s.connected)).toBe(true);
+  });
+
+  it('is not seated when the host opens the table up', async () => {
+    const { room, tv } = await projector();
+    const c0 = new FakeConn('c0');
+    await room.hello(c0, { ...HELLO });
+
+    // `seatSpectators` runs on this, and would otherwise sit the TV down in
+    // one of the two seats that just appeared.
+    await room.handle('c0', { t: 'configure', playerCount: 4 });
+
+    expect(tv.last('welcome')?.you.seat).toBeNull();
+    expect(room.snapshot().seats.filter((s) => s.connected)).toHaveLength(1);
+  });
+
+  it('stays seatless across a reconnect', async () => {
+    const { room, tv } = await projector();
+    const token = tv.last('welcome')!.you.token;
+    await room.disconnect('tv');
+
+    // The flag rides every hello, so the screen coming back is still a screen.
+    const again = new FakeConn('tv-again');
+    await room.hello(again, { ...HELLO, token, spectate: true });
+
+    expect(again.last('welcome')?.you.seat).toBeNull();
+  });
+
+  it('holds the room open on its own', async () => {
+    const { host, room } = await projector();
+
+    // Nobody has arrived yet and the code is still on the screen. A connected
+    // board view is somebody being in the room.
+    host.clock += EMPTY_ROOM_REAP_MS * 2;
+    await room.onAlarm();
+
+    expect(room.isClosed).toBe(false);
+  });
+
+  it('does not start a host countdown, having never been the host', async () => {
+    const { tv } = await projector();
+
+    expect(tv.last('room')!.room.hasHost).toBe(false);
+    expect(tv.last('room')!.room.hostDelegated).toBe(true);
+    expect(tv.last('room')!.room.hostGrace).toBeNull();
+  });
+
+  it('gives the lobby to the first player to sit down', async () => {
+    const { room, tv } = await projector();
+
+    const c0 = new FakeConn('c0');
+    await room.hello(c0, { ...HELLO });
+
+    expect(c0.last('welcome')?.you.seat).toBe(0);
+    expect(c0.last('welcome')?.you.isHost).toBe(true);
+    // And the screen is told, so it can stop showing "waiting for a host".
+    expect(tv.last('room')!.room.hasHost).toBe(true);
+    expect(tv.last('room')!.room.hostDelegated).toBe(false);
+  });
+
+  it('gives it to the first player only', async () => {
+    const { room } = await projector();
+    const c0 = new FakeConn('c0');
+    await room.hello(c0, { ...HELLO });
+    await room.handle('c0', { t: 'configure', playerCount: 4 });
+    const c1 = new FakeConn('c1');
+    await room.hello(c1, { ...HELLO });
+
+    expect(c1.last('welcome')?.you.seat).toBe(1);
+    expect(c1.last('welcome')?.you.isHost).toBe(false);
+  });
+
+  it('cannot take the lobby back once it has given it away', async () => {
+    const { room, tv, hostKey } = await projector();
+    const c0 = new FakeConn('c0');
+    await room.hello(c0, { ...HELLO });
+
+    // The credential is spent. Re-presenting it on a redial changes nothing.
+    const token = tv.last('welcome')!.you.token;
+    const again = new FakeConn('tv-again');
+    await room.hello(again, { ...HELLO, token, hostKey, spectate: true });
+
+    expect(again.last('welcome')?.you.isHost).toBe(false);
+    expect(room.snapshot().hostSeat).toBe(0);
+  });
+
+  it('cannot take a hostless room over', async () => {
+    const { host, room, tv } = await projector();
+    const c0 = new FakeConn('c0');
+    await room.hello(c0, { ...HELLO });
+    await room.disconnect('c0');
+    host.clock += HOST_GRACE_MS;
+    await room.onAlarm();
+    expect(room.snapshot().hasHost).toBe(false);
+
+    await room.handle('tv', { t: 'takeOverRoom' });
+
+    expect(tv.errors()).toContain('NOT_YOUR_SEAT');
+    expect(room.snapshot().hasHost).toBe(false);
+  });
+
+  // The delegation is a one-shot, and this is why it has to be. `hostToken`
+  // also goes null when a host leaves for good — and a room in THAT state is
+  // meant to wait for somebody to press the takeover button, not to fall into
+  // the lap of whoever opens the link next.
+  it('does not re-delegate after a host leaves for good', async () => {
+    const { host, room } = await projector();
+    const c0 = new FakeConn('c0');
+    await room.hello(c0, { ...HELLO });
+    await room.handle('c0', { t: 'configure', playerCount: 4 });
+    await room.disconnect('c0');
+    host.clock += HOST_GRACE_MS;
+    await room.onAlarm();
+
+    const c1 = new FakeConn('c1');
+    await room.hello(c1, { ...HELLO });
+
+    expect(c1.last('welcome')?.you.seat).not.toBeNull();
+    expect(c1.last('welcome')?.you.isHost).toBe(false);
+    expect(room.snapshot().hasHost).toBe(false);
+  });
+
+  it('delegates nothing without the credential that opened the room', async () => {
+    const host = makeHost();
+    const room = await Room.open(host, 'ABC123');
+    await room.hostKeyForCreate();
+
+    // A second screen somebody pointed at the room. It watches; it does not
+    // get to decide who hosts.
+    const tv = new FakeConn('tv');
+    await room.hello(tv, { ...HELLO, spectate: true });
+
+    expect(room.snapshot().hostDelegated).toBe(false);
+
+    // And with no delegation in force, an arriving player is an ordinary
+    // player: the real host key is still what binds the lobby.
+    const c0 = new FakeConn('c0');
+    await room.hello(c0, { ...HELLO });
+    expect(c0.last('welcome')?.you.isHost).toBe(false);
+  });
+
+  it('is counted as a spectator, not as a player', async () => {
+    const { room, tv } = await projector();
+    const c0 = new FakeConn('c0');
+    await room.hello(c0, { ...HELLO });
+
+    expect(room.snapshot().spectators).toBe(1);
+    expect(tv.last('welcome')?.you.seat).toBeNull();
+  });
+
+  it('is sent the game redacted for nobody', async () => {
+    const { room, tv } = await projector();
+    const c0 = new FakeConn('c0');
+    await room.hello(c0, { ...HELLO });
+    await room.handle('c0', { t: 'configure', seats: [{ index: 1, controller: 'cpu' }] });
+    await room.handle('c0', { t: 'start' });
+
+    const view = tv.last('state')!.view;
+    // Every hand is hidden from the screen in the room's own memory, not by
+    // the screen declining to draw it.
+    expect(view.players.every((p) => p.hand.every((c) => c === HIDDEN_CARD_ID))).toBe(true);
   });
 });

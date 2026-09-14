@@ -43,6 +43,12 @@ export interface PanZoomProps {
    * of a wide monitor with room going spare.
    */
   maxFitScale?: number;
+  /**
+   * Show the zoom buttons. False for a viewport nobody is standing at — the
+   * board view on a TV (BoardView.tsx), where a control is not merely unused
+   * but wrong: it is furniture, and it has no pointer and no keyboard.
+   */
+  controls?: boolean;
   children: ReactNode;
 }
 
@@ -53,6 +59,7 @@ export function PanZoom({
   label,
   insets = NO_INSETS,
   maxFitScale = 1,
+  controls = true,
   children,
 }: PanZoomProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
@@ -273,6 +280,7 @@ export function PanZoom({
         {children}
       </div>
 
+      {controls && (
       <div className="panzoom-controls" onPointerDown={(e) => e.stopPropagation()}>
         <button
           type="button"
@@ -307,6 +315,7 @@ export function PanZoom({
           ⤢
         </button>
       </div>
+      )}
     </div>
   );
 }

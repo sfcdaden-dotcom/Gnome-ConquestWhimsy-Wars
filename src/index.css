@@ -2486,3 +2486,194 @@ h2 {
   height: 26px;
   flex: none;
 }
+
+/* ---------------------------------------------------------------------------
+   The board view — the screen in the middle of the room (BoardView.tsx)
+
+   Sized for a sofa rather than a desk. Everything scales off the VIEWPORT
+   (`vmin`/`vw`) instead of the root font size, because this page is read from
+   across a room on whatever the HDMI cable was plugged into: a 1080p projector
+   and a 4K TV should show the same thing at the same apparent size, and a
+   fixed pixel scale would leave the room code unreadable on one of them.
+--------------------------------------------------------------------------- */
+
+.board-view {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.5vmin;
+  padding: 3vmin;
+  background:
+    radial-gradient(1200px 600px at 20% -10%, var(--bg-accent), transparent),
+    var(--bg);
+  overflow: hidden;
+  text-align: center;
+}
+
+.bv-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.2vmin;
+}
+
+.bv-kicker {
+  margin: 0;
+  color: var(--muted);
+  font-size: 2.4vmin;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.bv-join {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 4vmin;
+  color: var(--text);
+}
+
+/* The one thing a person across the room has to be able to read. */
+.bv-code {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 16vmin;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.08em;
+  color: var(--accent);
+}
+
+.bv-line {
+  margin: 0;
+  color: var(--muted);
+  font-size: 2.6vmin;
+}
+
+.bv-seats {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 1.5vmin;
+  margin: 1vmin 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bv-seat {
+  display: flex;
+  align-items: center;
+  gap: 1vmin;
+  padding: 1vmin 2.2vmin;
+  border: 0.3vmin solid var(--border);
+  border-radius: 999px;
+  background: var(--panel);
+  font-size: 2.6vmin;
+  opacity: 0.45;
+}
+
+.bv-seat.here {
+  border-color: var(--pc);
+  opacity: 1;
+}
+
+.bv-seat-dot {
+  width: 2vmin;
+  height: 2vmin;
+  border-radius: 50%;
+  background: var(--pc, var(--muted));
+  flex: none;
+}
+
+/* --- in play -------------------------------------------------------------- */
+
+.board-view.playing {
+  justify-content: flex-start;
+  gap: 0;
+  padding: 0;
+}
+
+.bv-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 1.5vmin 3vmin;
+  font-size: 3vmin;
+}
+
+.bv-tag {
+  font-family: var(--mono);
+  color: var(--muted);
+}
+
+.bv-turn {
+  display: flex;
+  align-items: center;
+  gap: 1.2vmin;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.bv-main {
+  position: relative;
+  display: flex;
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  align-items: stretch;
+}
+
+.bv-stage {
+  flex: 1;
+  min-width: 0;
+}
+
+/* The seats ride along the right-hand edge, over the board's own stage — the
+   board pans behind them rather than being boxed in beside them. */
+.bv-side {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 0 2vmin;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.bv-side .player-panels {
+  gap: 1.2vmin;
+  font-size: 2.2vmin;
+  /* A fixed column, so the panels line up down their right edge. Left to size
+     themselves they step in and out as badges appear — which reads, from a
+     sofa, as the panel that changed having moved. */
+  width: 30vmin;
+}
+
+.bv-side .player-panel {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* A 16:9 wall is wide and short: the board gets the height, the seats stack
+   down the side. On anything taller than it is wide (a portrait display
+   somebody has turned sideways) put them along the bottom instead. */
+@media (max-aspect-ratio: 1/1) {
+  .bv-side {
+    top: auto;
+    left: 0;
+    flex-direction: row;
+    justify-content: center;
+    padding: 2vmin;
+  }
+
+  .bv-side .player-panels {
+    flex-direction: row;
+    width: auto;
+  }
+}

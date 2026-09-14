@@ -1,7 +1,8 @@
 # Multiplayer — rooms, identity, and what the server refuses
 
 Private friend rooms, 2 or 4 seats in any mix of humans and server-run CPU,
-realtime with reconnect. One Cloudflare Durable Object per room.
+realtime with reconnect, and a board view for a TV everyone can see. One
+Cloudflare Durable Object per room.
 
 - Redaction and the sealed deck: [ENGINE_API.md](ENGINE_API.md)
   ("Hidden information & per-seat views")
@@ -18,6 +19,7 @@ src/worker/room-do.ts  the Durable Object: sockets, storage, alarms, randomness
 src/ui/useNetGame.ts   the client socket, as a GameSession GameScreen can render
 src/ui/netClient.ts    URLs, reconnect tokens, backoff, framing (no React)
 src/ui/OnlineScreen.tsx  host-or-join menu, the lobby, and the networked game
+src/ui/BoardView.tsx   the board view: the HUD-less screen for a TV
 ```
 
 The split matters. `Room` takes everything platform-shaped through a
@@ -63,6 +65,49 @@ human, this is what a solo host hits: fill the other seats with people or with
 bots, deliberately.
 
 **More than it will serve.** See below.
+
+## The board view
+
+A TV or a projector in the middle of the room, showing the table to everybody
+around it, while everyone plays from their own phone. `?room=CODE&view=board`
+is its address; "Play on a TV" on the online menu opens a fresh room straight
+into it.
+
+It is a screen, not a player. `hello` carries `spectate: true` and the room
+then treats the connection as furniture:
+
+- **Never seated.** Not on arrival, and not by `seatSpectators` when a seat
+  opens later — otherwise a projector left on in the corner ends up holding a
+  chair at a table of four.
+- **Never host, and never able to take a hostless room over.** Its screen shows
+  no takeover button, but the room enforces it too: the client is not what
+  decides who holds the lobby.
+- **Never sent a hand.** It sits at no seat, so `viewFor(state, null)` is what
+  it gets. Nothing is hidden on the shared screen because nothing private ever
+  reaches it — which is the property that makes the whole idea safe.
+
+**It opens the room without owning it.** The host binds to whoever presents the
+`hostKey` first, and setting the TV up before anybody arrives is the obvious
+order — so the projector would bind, and the start button would spend the
+evening on a screen with no keyboard in front of it. Telling people "create the
+room on your phone first" is a rule nobody remembers at a party, so the room
+handles it instead: a *spectating* connection presenting the key **delegates**
+rather than claims (`hostDelegated`), and the lobby goes to the first
+connection to hold a seat. A connected board view is enough to keep the room
+off the reaper, and `syncGrace` starts no countdown for a host that does not
+exist yet, so the room simply waits with the code on screen.
+
+The delegation is consumed the moment it is honoured, and that is load-bearing:
+`hostToken` also goes null when a host leaves and their grace expires, and a
+room in *that* state must stay the deliberate, announced takeover it was
+designed to be rather than falling to the next arrival.
+
+Related fix, found by the tests for the above: both paths that end a host's
+tenure (`takeOverRoom`, `graceExpired`) clear `hostKey`, which left the room
+looking exactly like one persisted before host keys existed — and `bindHost`
+reads *that* as "hand the lobby to whoever connects first". A room deliberately
+left hostless therefore gave itself away to the next person to open the link.
+`hostSettled` tells the two states apart.
 
 ## Seats
 

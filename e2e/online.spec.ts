@@ -271,3 +271,80 @@ test('the menu offers a way back into the room you just left', async ({ browser 
 
   await ctx.close();
 });
+
+/**
+ * The living-room setup: a board view on the TV, opened BEFORE anybody
+ * arrives, and two phones joining it.
+ *
+ * The order is the whole point. The screen in the middle of the room is the
+ * one people set up first, and it used to be the screen that claimed the
+ * lobby — leaving the start button on a projector with no keyboard in front of
+ * it. It now opens the room and hands it to the first person who sits down.
+ */
+test('a board view opens a room and hands the lobby to the first player', async ({ browser }) => {
+  const tvCtx = await browser.newContext();
+  const p1Ctx = await browser.newContext();
+  const p2Ctx = await browser.newContext();
+  const tv = await tvCtx.newPage();
+  const p1 = await p1Ctx.newPage();
+  const p2 = await p2Ctx.newPage();
+
+  // The TV goes on first, with nobody in the room.
+  await tv.goto('/');
+  await tv.getByTestId('home-online').click();
+  await tv.getByTestId('online-board-view').click();
+
+  await expect(tv.getByTestId('board-view')).toBeVisible();
+  const code = (await tv.getByTestId('bv-code').textContent())!.trim();
+  expect(code).toHaveLength(6);
+  // It is the room's screen, not a player's: the address says so, and survives.
+  expect(new URL(tv.url()).searchParams.get('view')).toBe('board');
+  await expect(tv.getByTestId('bv-status')).toHaveText(/First player to sit down/);
+
+  // Every seat is still empty — the TV took none of them.
+  await expect(tv.getByTestId('bv-seats').locator('.bv-seat.here')).toHaveCount(0);
+
+  // First player in gets the lobby.
+  await p1.goto('/');
+  await p1.getByTestId('home-online').click();
+  await p1.getByTestId('online-name').fill('Ada');
+  await p1.getByTestId('online-join').click();
+  await p1.getByTestId('online-join-code').fill(code);
+  await p1.getByTestId('online-join-go').click();
+  await expect(p1.getByTestId('room-lobby')).toBeVisible();
+  await expect(p1.getByTestId('lobby-start')).toBeVisible();
+
+  // Second player is an ordinary guest, and the TV shows both of them.
+  await p2.goto('/');
+  await p2.getByTestId('home-online').click();
+  await p2.getByTestId('online-name').fill('Bo');
+  await p2.getByTestId('online-join').click();
+  await p2.getByTestId('online-join-code').fill(code);
+  await p2.getByTestId('online-join-go').click();
+  await expect(p2.getByTestId('room-lobby')).toBeVisible();
+  await expect(p2.getByTestId('lobby-start')).toHaveCount(0);
+  await expect(tv.getByTestId('bv-seats').locator('.bv-seat.here')).toHaveCount(2);
+
+  // The start button is on a phone, which is where somebody can reach it.
+  await expect(p1.getByTestId('lobby-start')).toBeEnabled();
+  await p1.getByTestId('lobby-start').click();
+
+  // The TV follows the game without being dealt into it: a board, and no hand.
+  await expect(tv.getByTestId('board-view')).toBeVisible();
+  await expect(tv.getByTestId('bv-turn')).toBeVisible();
+  await expect(tv.getByTestId('hand-cards')).toHaveCount(0);
+  await expect(tv.getByTestId('roll-off')).toHaveCount(0);
+  // The players are playing, on their own screens.
+  await expect(p1.getByTestId('game-screen')).toBeVisible();
+  await expect(p1.getByTestId('roll-off')).toBeVisible();
+
+  // A reload of the TV comes back as the TV — not as a menu, and not as a
+  // player holding a seat. Nobody is standing at it to fix that.
+  await tv.reload();
+  await expect(tv.getByTestId('board-view')).toBeVisible();
+  await expect(tv.getByTestId('hand-cards')).toHaveCount(0);
+
+  await tvCtx.close();
+  await p1Ctx.close();
+  await p2Ctx.close();
+});

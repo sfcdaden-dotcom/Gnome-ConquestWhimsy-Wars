@@ -34,7 +34,14 @@ import type { GnomeLook } from './gnomeLook';
 import { GnomeLooksContext } from './gnomeLooks';
 import type { SeatLooks } from './gnomeLooks';
 import { useNetGame } from './useNetGame';
-import { hostKeyStore, NAME_KEY, recentRoom, roomCodeFromSearch, roomHref } from './netClient';
+import {
+  boardViewHref,
+  hostKeyStore,
+  NAME_KEY,
+  recentRoom,
+  roomCodeFromSearch,
+  roomHref,
+} from './netClient';
 import { HOST_GRACE_MS, ROOM_CODE_LENGTH } from '../net/protocol';
 import type { RoomClosedReason } from '../net/protocol';
 import { HostGraceBanner } from './HostGraceBanner';
@@ -111,25 +118,51 @@ function OnlineMenu({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  /** Open a room and keep its credential. Shared by both ways in. */
+  async function create(): Promise<string> {
+    const res = await fetch('/api/rooms', { method: 'POST' });
+    if (!res.ok) throw new Error(`The server said ${res.status}`);
+    const { code, hostKey } = (await res.json()) as { code: string; hostKey?: string };
+    // Keep the credential before entering the room: the socket presents it on
+    // `hello`. From a player it claims the lobby; from a board view it offers
+    // it to the first person who sits down (see net/protocol.ts).
+    if (hostKey) hostKeyStore.save(localStorage, code, hostKey);
+    return code;
+  }
+
+  function failed(err: unknown): void {
+    // Almost always "this build is served without the Worker" — say so rather
+    // than leaving a dead button.
+    setError(
+      `Could not create a room (${err instanceof Error ? err.message : String(err)}). Online play needs the Whimsy Wars server; a static-only deploy has no rooms.`,
+    );
+    setBusy(false);
+  }
+
   async function host() {
     setBusy(true);
     setError(null);
     try {
-      const res = await fetch('/api/rooms', { method: 'POST' });
-      if (!res.ok) throw new Error(`The server said ${res.status}`);
-      const { code, hostKey } = (await res.json()) as { code: string; hostKey?: string };
-      // Keep the credential before entering the room: the socket presents it
-      // on `hello`, and it is what makes us the host rather than whoever
-      // happens to connect first.
-      if (hostKey) hostKeyStore.save(localStorage, code, hostKey);
-      onEnter(code);
+      onEnter(await create());
     } catch (err) {
-      // Almost always "this build is served without the Worker" — say so
-      // rather than leaving a dead button.
-      setError(
-        `Could not create a room (${err instanceof Error ? err.message : String(err)}). Online play needs the Whimsy Wars server; a static-only deploy has no rooms.`,
-      );
-      setBusy(false);
+      failed(err);
+    }
+  }
+
+  /**
+   * Open the room on THIS screen as the board view, for a TV or a projector.
+   *
+   * A full navigation rather than a state change: the board view is a
+   * different kind of screen, and it has to survive a reload on a machine
+   * nobody is sitting at. Its address is what makes that true.
+   */
+  async function boardView() {
+    setBusy(true);
+    setError(null);
+    try {
+      window.location.href = boardViewHref(window.location, await create());
+    } catch (err) {
+      failed(err);
     }
   }
 
@@ -219,6 +252,23 @@ function OnlineMenu({
             <span className="home-choice-icon">🏡</span>
             <span className="home-choice-label">{busy ? 'Creating…' : 'Host a game'}</span>
             <span className="home-choice-sub">Get a code, set up the table, invite a friend</span>
+          </button>
+
+          {/* For the screen everyone looks at rather than the one they hold.
+              It opens the room and shows the code; whoever sits down first
+              runs the game from their own phone. */}
+          <button
+            type="button"
+            className="btn big home-choice"
+            data-testid="online-board-view"
+            disabled={busy}
+            onClick={boardView}
+          >
+            <span className="home-choice-icon">📺</span>
+            <span className="home-choice-label">Play on a TV</span>
+            <span className="home-choice-sub">
+              Put the board on the big screen and play from your phones
+            </span>
           </button>
 
           {joining ? (
