@@ -35,6 +35,24 @@ import {
 import type { ActionMenuItem } from './ActionMenu';
 import { ActionMenu } from './ActionMenu';
 import type { GameSession } from './useGame';
+import { PanZoom } from './PanZoom';
+import type { Insets } from './panZoom';
+import { boardPixelSize } from './boardGeometry';
+import { useMediaQuery, useSize } from './useMeasure';
+
+/**
+ * The stage may enlarge the board to fill the play area, up to this much — a
+ * 7×7 at 64px cells would otherwise sit small in the middle of a wide monitor.
+ * 1.25 lands the default board at roughly the ~580px it was capped at before
+ * it moved onto the stage.
+ */
+const BOARD_MAX_FIT = 1.25;
+
+/** Gap between the columns and the play area, from `.main`'s padding/gap. */
+const MAIN_GAP_PX = 12;
+
+/** Below this the layout stacks and nothing floats over the board. */
+const DESKTOP_LAYOUT = '(min-width: 1081px)';
 
 // ---------------------------------------------------------------------------
 // GameScreen
@@ -60,6 +78,26 @@ export function GameScreen({ game: g, onPlayAgain, onQuit }: GameScreenProps) {
   // "New game" abandons a game in progress, so it asks first: armed here,
   // confirmed by the second click.
   const [quitArmed, setQuitArmed] = useState(false);
+
+  // What the board has to fit between. The columns and the action-bar slot are
+  // measured rather than assumed: the right column is a `clamp` of the viewport
+  // width, and the left one grows with the number of seats and curses.
+  const leftCol = useRef<HTMLElement>(null);
+  const rightCol = useRef<HTMLElement>(null);
+  const boardFooter = useRef<HTMLDivElement>(null);
+  const floating = useMediaQuery(DESKTOP_LAYOUT);
+  const leftWidth = useSize(leftCol).width;
+  const rightWidth = useSize(rightCol).width;
+  const footerHeight = useSize(boardFooter).height;
+  const boardPx = boardPixelSize(state.config.boardSize);
+  const boardInsets: Insets = floating
+    ? {
+        left: leftWidth + MAIN_GAP_PX,
+        right: rightWidth + MAIN_GAP_PX,
+        top: 0,
+        bottom: footerHeight + MAIN_GAP_PX,
+      }
+    : { left: 0, right: 0, top: 0, bottom: 0 };
 
   // Card plays are enumerated WITHOUT targets — dispatching a targeted play
   // opens a `cardTargeting` decision, and the engine then hands back one step's
@@ -404,19 +442,36 @@ export function GameScreen({ game: g, onPlayAgain, onQuit }: GameScreenProps) {
       </header>
 
       <div className="main">
-        <aside className="left-col">
-          <PlayerPanels state={state} takenOverSeats={g.takenOverSeats} />
-          {state.activeCurses.length > 0 && <CursePanel state={state} />}
-        </aside>
-
-        <section className="board-wrap">
+        {/* The board is the backdrop on a desktop layout: it pans and zooms on
+            its own stage across the whole play area, while the columns float
+            over it. The stage fits it into the space they leave, so nothing is
+            hidden until you choose to drag it under a panel. Stacked (≤1080px)
+            the stage is an ordinary row and the insets go to zero — there is
+            nothing over the board to avoid down there. */}
+        <PanZoom
+          className="board-stage"
+          label="Board viewport"
+          contentWidth={boardPx}
+          contentHeight={boardPx}
+          insets={boardInsets}
+          maxFitScale={BOARD_MAX_FIT}
+        >
           <Board
             state={state}
             highlights={highlights}
             selectedKey={selectedKey}
             poofs={g.poofs}
+            sizePx={boardPx}
             onCellClick={onCellClick}
           />
+        </PanZoom>
+
+        <aside className="left-col" ref={leftCol}>
+          <PlayerPanels state={state} takenOverSeats={g.takenOverSeats} />
+          {state.activeCurses.length > 0 && <CursePanel state={state} />}
+        </aside>
+
+        <section className="board-wrap">
           <QuickChatFeed state={state} bubbles={g.chatBubbles} />
           {/* The dice replay, beside the board rather than over it. Hidden once
               the game ends, where the end overlay is the thing to read. */}
@@ -430,7 +485,7 @@ export function GameScreen({ game: g, onPlayAgain, onQuit }: GameScreenProps) {
           )}
           {/* Stable-height slot: the bar appearing/disappearing must not
               reflow the board. Targeting replaces the action bar. */}
-          <div className="board-footer">
+          <div className="board-footer" ref={boardFooter}>
             {interactive && decision?.kind === 'cardTargeting' && decision.player === playerToAct ? (
               <TargetingBanner
                 state={state}
@@ -470,7 +525,7 @@ export function GameScreen({ game: g, onPlayAgain, onQuit }: GameScreenProps) {
           </div>
         </section>
 
-        <aside className="right-col">
+        <aside className="right-col" ref={rightCol}>
           {/* fightRespond → FightPanel; cardTargeting → the board-footer
               TargetingBanner. Everything else gets the DecisionPanel. */}
           {decision && decision.kind !== 'fightRespond' && decision.kind !== 'cardTargeting' && (

@@ -25,17 +25,18 @@
  * zooming magnifies the board alone — the HUD keeps its own scale.
  */
 
-import { useLayoutEffect, useRef, useState } from 'react';
-import type { CSSProperties, RefObject } from 'react';
+import { useRef, useState } from 'react';
+import type { CSSProperties } from 'react';
 import type { GardenPresetDef, PlantableGardenType, Pos } from '../engine';
 import { PLANTABLE_GARDEN_TYPES, posKey } from '../engine';
 import { GARDEN_META } from './meta';
 import { GardenIcon } from './art';
 import { PanZoom } from './PanZoom';
 import type { Insets } from './panZoom';
+import { boardPixelSize } from './boardGeometry';
+import { useSize } from './useMeasure';
 import {
   CUSTOM_EDITOR_BOARD_SIZE,
-  editorBoardPx,
   maxPerType,
   PRESET_DESCRIPTION_MAX_LENGTH,
   PRESET_LABEL_MAX_LENGTH,
@@ -78,30 +79,9 @@ export interface PresetEditorProps {
   onApply: (def: GardenPresetDef) => void;
 }
 
-/**
- * How tall an element currently is, tracked as it changes. The stage fits the
- * board into the space the HUD leaves, and the HUD's height depends on the
- * palette wrapping — which depends on the window — so it has to be measured
- * rather than assumed.
- */
 /** The HUD's own padding, and the width of the zoom cluster — both from index.css. */
 const HUD_EDGE_PX = 12;
 const ZOOM_CLUSTER_PX = 56;
-
-function useHeight(ref: RefObject<HTMLElement | null>): number {
-  const [height, setHeight] = useState(0);
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const measure = () => setHeight(el.getBoundingClientRect().height);
-    measure();
-    if (typeof ResizeObserver === 'undefined') return;
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [ref]);
-  return height;
-}
 
 function initialGardens(initial: PresetEditorProps['initial']): Map<string, PlantableGardenType> {
   const map = new Map<string, PlantableGardenType>();
@@ -113,7 +93,7 @@ function initialGardens(initial: PresetEditorProps['initial']): Map<string, Plan
 export function PresetEditor({ initial, boardSize, onCancel, onApply }: PresetEditorProps) {
   const n = initial?.boardSize ?? boardSize ?? CUSTOM_EDITOR_BOARD_SIZE;
   const maxThisType = maxPerType(n);
-  const boardPx = editorBoardPx(n);
+  const boardPx = boardPixelSize(n);
   const [label, setLabel] = useState(initial?.label ?? '');
   const [description, setDescription] = useState(initial?.description ?? '');
   const [gardens, setGardens] = useState<Map<string, PlantableGardenType>>(() => initialGardens(initial));
@@ -127,8 +107,8 @@ export function PresetEditor({ initial, boardSize, onCancel, onApply }: PresetEd
   const topPanel = useRef<HTMLDivElement>(null);
   const bottomPanel = useRef<HTMLDivElement>(null);
   const insets: Insets = {
-    top: useHeight(topPanel) + HUD_EDGE_PX,
-    bottom: useHeight(bottomPanel) + HUD_EDGE_PX,
+    top: useSize(topPanel).height + HUD_EDGE_PX,
+    bottom: useSize(bottomPanel).height + HUD_EDGE_PX,
     left: 0,
     right: ZOOM_CLUSTER_PX,
   };

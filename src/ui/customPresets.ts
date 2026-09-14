@@ -31,20 +31,6 @@ export function maxPerType(boardSize: number): number {
   return Math.max(8, Math.round((boardSize * boardSize) / 6));
 }
 
-/**
- * Cell size the editor draws at, whatever the board size — the stage zooms,
- * so a bigger board becomes a bigger board rather than smaller cells. Matches
- * `.board`'s own padding and gap so the content box handed to the stage is
- * exactly what the grid renders.
- */
-const EDITOR_CELL_PX = 64;
-const EDITOR_BOARD_PADDING_PX = 8;
-const EDITOR_BOARD_GAP_PX = 3;
-
-export function editorBoardPx(boardSize: number): number {
-  return boardSize * EDITOR_CELL_PX + (boardSize - 1) * EDITOR_BOARD_GAP_PX + EDITOR_BOARD_PADDING_PX * 2;
-}
-
 export {
   PRESET_LABEL_MAX_LENGTH,
   PRESET_DESCRIPTION_MAX_LENGTH,

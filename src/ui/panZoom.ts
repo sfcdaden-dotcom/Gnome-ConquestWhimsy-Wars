@@ -51,16 +51,23 @@ export function clampZoom(scale: number): number {
 
 /**
  * The view that shows all of `content` in the part of `viewport` nothing else
- * covers, centred there with a little breathing room. Never zooms past 1: a
- * small board is shown at its natural size rather than blown up to fill a wide
- * monitor.
+ * covers, centred there with a little breathing room. It will not enlarge the
+ * content past `maxScale` — a small board is shown at its natural size rather
+ * than blown up to fill a wide monitor, unless the caller says how much
+ * growing it is willing to do.
  */
-export function fitView(content: Size, viewport: Size, insets: Insets = NO_INSETS, padding = 16): View {
+export function fitView(
+  content: Size,
+  viewport: Size,
+  insets: Insets = NO_INSETS,
+  padding = 16,
+  maxScale = 1,
+): View {
   if (content.width <= 0 || content.height <= 0 || viewport.width <= 0 || viewport.height <= 0) {
     return { scale: 1, x: 0, y: 0 };
   }
   const free = freeSpace(viewport, insets, padding);
-  const scale = clampZoom(Math.min(1, free.width / content.width, free.height / content.height));
+  const scale = clampZoom(Math.min(maxScale, free.width / content.width, free.height / content.height));
   return center({ scale, x: 0, y: 0 }, content, viewport, insets);
 }
 

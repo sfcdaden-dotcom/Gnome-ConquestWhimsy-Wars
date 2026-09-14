@@ -37,10 +37,24 @@ export interface PanZoomProps {
    * clicked rather than half of it under a panel.
    */
   insets?: Insets;
+  /**
+   * How far "fit" may ENLARGE the content to fill the free space (1 = never).
+   * A board drawn at a fixed cell size would otherwise sit small in the middle
+   * of a wide monitor with room going spare.
+   */
+  maxFitScale?: number;
   children: ReactNode;
 }
 
-export function PanZoom({ contentWidth, contentHeight, className, label, insets = NO_INSETS, children }: PanZoomProps) {
+export function PanZoom({
+  contentWidth,
+  contentHeight,
+  className,
+  label,
+  insets = NO_INSETS,
+  maxFitScale = 1,
+  children,
+}: PanZoomProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const [viewport, setViewport] = useState<Size>({ width: 0, height: 0 });
   const [view, setView] = useState<View>({ scale: 1, x: 0, y: 0 });
@@ -49,8 +63,8 @@ export function PanZoom({ contentWidth, contentHeight, className, label, insets 
   const content: Size = { width: contentWidth, height: contentHeight };
   // Read inside pointer/wheel handlers that are registered once: those close
   // over the first render's values otherwise.
-  const latest = useRef({ view, viewport, content, insets });
-  latest.current = { view, viewport, content, insets };
+  const latest = useRef({ view, viewport, content, insets, maxFitScale });
+  latest.current = { view, viewport, content, insets, maxFitScale };
 
   // Measure the space we were given. A viewport of zero size (first paint,
   // or a hidden tab) simply leaves the view where it is.
@@ -65,20 +79,49 @@ export function PanZoom({ contentWidth, contentHeight, className, label, insets 
     return () => ro.disconnect();
   }, []);
 
-  const fit = useCallback(() => {
-    const { viewport: vp, content: c, insets: i } = latest.current;
-    setView(fitView(c, vp, i));
+  /** True once the player has zoomed or panned: their view, not ours. */
+  const steered = useRef(false);
+
+  const fit = useCallback((manual = false) => {
+    const { viewport: vp, content: c, insets: i, maxFitScale: max } = latest.current;
+    if (manual) steered.current = false; // "fit" hands the view back to us
+    setView(fitView(c, vp, i, undefined, max));
   }, []);
 
-  // Fit whenever the board itself changes size (a different preset, a
-  // different board size) or the viewport does. Panning and zooming from there
-  // is the player's business — nothing below re-fits behind their back.
+  // A different board is a different thing to look at, so it opens fitted
+  // however the last one was left.
   useEffect(() => {
+    steered.current = false;
     fit();
-  }, [fit, contentWidth, contentHeight, viewport.width, viewport.height, insets.top, insets.bottom, insets.left, insets.right]);
+  }, [fit, contentWidth, contentHeight]);
+
+  // The space around the board changes constantly — a window resize, the
+  // palette wrapping, the action bar growing a row. Re-fit only while the view
+  // is still ours; once the player has zoomed in somewhere, keep them there and
+  // just hold the new bounds, or selecting a gnome would fling the board back.
+  useEffect(() => {
+    if (!steered.current) {
+      fit();
+      return;
+    }
+    // Read through the ref so this effect depends on the inset NUMBERS rather
+    // than on the object identity a parent re-creates every render.
+    const { content: c, viewport: vp, insets: i } = latest.current;
+    setView((v) => clampView(v, c, vp, i));
+  }, [
+    fit,
+    viewport.width,
+    viewport.height,
+    insets.top,
+    insets.bottom,
+    insets.left,
+    insets.right,
+    maxFitScale,
+  ]);
 
   const zoomBy = useCallback((factor: number, focus?: Point) => {
     const { view: v, viewport: vp, content: c, insets: i } = latest.current;
+    steered.current = true;
     const at = focus ?? { x: (i.left + vp.width - i.right) / 2, y: (i.top + vp.height - i.bottom) / 2 };
     setView(clampView(zoomAt(v, factor, at), c, vp, i));
   }, []);
@@ -122,6 +165,7 @@ export function PanZoom({ contentWidth, contentHeight, className, label, insets 
       if (!dragging && Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
       if (!dragging) {
         dragging = true;
+        steered.current = true;
         setPanning(true);
       }
       move.preventDefault();
@@ -182,7 +226,7 @@ export function PanZoom({ contentWidth, contentHeight, className, label, insets 
     if (e.target !== e.currentTarget) return; // typing in a control, not steering the board
     if (e.key === '+' || e.key === '=') zoomBy(ZOOM_STEP);
     else if (e.key === '-' || e.key === '_') zoomBy(1 / ZOOM_STEP);
-    else if (e.key === '0') fit();
+    else if (e.key === '0') fit(true);
     else return;
     e.preventDefault();
   }
@@ -193,6 +237,16 @@ export function PanZoom({ contentWidth, contentHeight, className, label, insets 
     <div
       ref={viewportRef}
       className={`panzoom${className ? ` ${className}` : ''}`}
+      // The controls sit inside the free space too, so they are not parked
+      // under whatever covers the viewport's edge.
+      style={
+        {
+          '--pz-inset-top': `${insets.top}px`,
+          '--pz-inset-right': `${insets.right}px`,
+          '--pz-inset-bottom': `${insets.bottom}px`,
+          '--pz-inset-left': `${insets.left}px`,
+        } as CSSProperties
+      }
       data-panning={panning}
       role="region"
       aria-label={label}
@@ -243,7 +297,13 @@ export function PanZoom({ contentWidth, contentHeight, className, label, insets 
         >
           +
         </button>
-        <button type="button" className="btn small" onClick={fit} aria-label="Fit board to screen" title="Fit to screen (0)">
+        <button
+          type="button"
+          className="btn small"
+          onClick={() => fit(true)}
+          aria-label="Fit board to screen"
+          title="Fit to screen (0)"
+        >
           ⤢
         </button>
       </div>

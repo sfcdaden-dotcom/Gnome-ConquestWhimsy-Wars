@@ -37,6 +37,14 @@ describe('fitView', () => {
     expect(view.y + content.height * view.scale).toBe(400);
   });
 
+  it('enlarges a small board only as far as the caller allows', () => {
+    const content = { width: 200, height: 200 };
+    // The game board asks for some growth so it does not sit small on a wide
+    // monitor; the ceiling still holds once the free space runs out.
+    expect(fitView(content, viewport, NO_INSETS, 0, 1.25).scale).toBe(1.25);
+    expect(fitView(content, { width: 240, height: 240 }, NO_INSETS, 0, 1.25).scale).toBe(1.2);
+  });
+
   it('survives being measured before anything has been laid out', () => {
     expect(fitView({ width: 0, height: 0 }, { width: 0, height: 0 })).toEqual({ scale: 1, x: 0, y: 0 });
   });
