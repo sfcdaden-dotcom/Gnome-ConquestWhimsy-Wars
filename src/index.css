@@ -405,10 +405,124 @@ h2 {
 /* Garden preset editor                                                */
 /* ------------------------------------------------------------------ */
 
+/* The editor is a stage, not a card: the board fills the screen behind a HUD
+   that floats over it. Zooming scales the board alone — the panels below are
+   siblings of the viewport, so they keep their own size at any zoom, which is
+   the whole point of the arrangement for 11×11 and 13×13 boards. */
+.editor-screen {
+  position: relative;
+  height: 100%;
+  min-height: 100dvh;
+  overflow: hidden;
+}
+.editor-stage {
+  position: absolute;
+  inset: 0;
+}
+
+/* The HUD layer is click-through so a drag started in the gaps between panels
+   pans the board; each panel takes its own clicks back. */
+.editor-hud {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px;
+  pointer-events: none;
+}
+.editor-panel {
+  pointer-events: auto;
+  background: color-mix(in srgb, var(--panel) 92%, transparent);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(680px, 100%);
+  margin: 0 auto;
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  /* A tall palette or a long error must never grow past the screen and push
+     the exits out of reach. */
+  max-height: 45dvh;
+  overflow-y: auto;
+}
+.editor-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.editor-title {
+  margin: 0;
+  font-size: 1.15rem;
+}
+.editor-panel .setup-label {
+  width: 60px;
+}
+
 .editor-palette {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+}
+
+/* ------------------------------------------------------------------ */
+/* Pan & zoom viewport (PanZoom.tsx)                                    */
+/* ------------------------------------------------------------------ */
+
+.panzoom {
+  overflow: hidden;
+  /* The component handles every gesture itself; leaving the browser its own
+     pan/pinch would fight the transform. */
+  touch-action: none;
+  cursor: grab;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.panzoom[data-panning='true'] {
+  cursor: grabbing;
+}
+.panzoom-content {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+  will-change: transform;
+}
+/* The zoom cluster rides above the content but below the HUD panels, pinned
+   to the viewport's corner rather than to the board. */
+.panzoom-controls {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  /* Down the right edge, in the gap the HUD leaves between its panels — a
+     corner would be under one of them on a narrow screen. */
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--panel) 92%, transparent);
+  box-shadow: var(--shadow);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+}
+.panzoom-level {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--muted);
+  min-width: 4ch;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
 }
 /* Editor exits: backing out (ghost) sits apart from the two ways to use the
    layout, and playing — not saving a file — is the primary action. */

@@ -12,8 +12,38 @@
 import type { GardenPresetDef } from '../engine';
 import { toPresetFile, parsePresetFile } from '../engine';
 
-/** Fixed board size the in-game editor designs for (matches the engine default). */
+/**
+ * Board the editor falls back to when nothing says otherwise (the engine
+ * default). The editor normally draws the size the game is set up to play, and
+ * an existing layout is always edited on the board it was drawn for.
+ */
 export const CUSTOM_EDITOR_BOARD_SIZE = 7;
+
+/**
+ * Editor sanity cap per garden type. Preset gardens are WILD tiles (they come
+ * from no player's supply — see RULES.md "Per-player supply"), so this is a
+ * layout-design limit, not a supply constraint. It holds at the old
+ * shared-supply value of 8 up to the default 7×7 board — every existing preset
+ * stays valid — and grows with the board's area beyond that, since 8 of each
+ * type on a 13×13 board would leave most of it bare.
+ */
+export function maxPerType(boardSize: number): number {
+  return Math.max(8, Math.round((boardSize * boardSize) / 6));
+}
+
+/**
+ * Cell size the editor draws at, whatever the board size — the stage zooms,
+ * so a bigger board becomes a bigger board rather than smaller cells. Matches
+ * `.board`'s own padding and gap so the content box handed to the stage is
+ * exactly what the grid renders.
+ */
+const EDITOR_CELL_PX = 64;
+const EDITOR_BOARD_PADDING_PX = 8;
+const EDITOR_BOARD_GAP_PX = 3;
+
+export function editorBoardPx(boardSize: number): number {
+  return boardSize * EDITOR_CELL_PX + (boardSize - 1) * EDITOR_BOARD_GAP_PX + EDITOR_BOARD_PADDING_PX * 2;
+}
 
 export {
   PRESET_LABEL_MAX_LENGTH,
