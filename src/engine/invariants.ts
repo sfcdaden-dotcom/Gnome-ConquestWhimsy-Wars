@@ -23,9 +23,10 @@
  * today, and callers decide when they want the check.
  */
 
-import type { GameState, PlayerId } from './types';
+import type { GameState, PlantableGardenType, PlayerId } from './types';
 import { EngineError } from './types';
 import { inBounds, parsePos } from './helpers';
+import { tileBudget } from './setup';
 
 /** One broken invariant. `where` is a stable dotted path into the state. */
 export interface InvariantViolation {
@@ -105,8 +106,9 @@ export function checkInvariants(state: GameState): InvariantViolation[] {
       fail('LOST_EXCEEDS_SPAWNED', at('gnomesLost'), `gnomesLost = ${p.gnomesLost} > gnomesSpawned = ${p.gnomesSpawned}`);
     }
     for (const [type, count] of Object.entries(p.supply)) {
-      if (count < 0 || count > config.tilesPerType) {
-        fail('SUPPLY_OUT_OF_RANGE', at(`supply.${type}`), `${type} supply = ${count}, budget ${config.tilesPerType}`);
+      const budget = tileBudget(config, type as PlantableGardenType);
+      if (count < 0 || count > budget) {
+        fail('SUPPLY_OUT_OF_RANGE', at(`supply.${type}`), `${type} supply = ${count}, budget ${budget}`);
       }
     }
     if (p.quickChatsThisTurn < 0) {

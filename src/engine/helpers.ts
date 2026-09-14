@@ -6,6 +6,7 @@
  */
 
 import type {
+  CenterStarBoon,
   EliminationReason,
   GameEvent,
   GameState,
@@ -178,16 +179,32 @@ export function gardenIsActive(state: GameState, garden: Garden): boolean {
 }
 
 /**
- * Current wish cap: base limit, +1 while the player occupies the Center Star,
- * +1 per Golden Dandelion (upgraded dandelion garden) the player controls
- * (occupied by their gnome, no enemy units). Bonuses stack.
+ * True when the Center Star is in play AND set to grant `boon`. Setup offers
+ * one boon at a time (see CENTER_STAR_BOONS in setup.ts), so every star rule
+ * below asks this first and an un-chosen boon simply never fires.
+ */
+export function centerStarGrants(state: GameState, boon: CenterStarBoon): boolean {
+  return state.config.centerStar && state.config.centerStarBoon === boon;
+}
+
+/** True when `player` has a unit standing on the center space. */
+export function holdsCenterStar(state: GameState, player: PlayerId): boolean {
+  return playerUnitsAt(state, centerPos(state), player).length > 0;
+}
+
+/** True when `pos` is the center space and the Center Star is in play there. */
+function onCenterStar(state: GameState, pos: Pos): boolean {
+  return state.config.centerStar && samePos(pos, centerPos(state));
+}
+
+/**
+ * Current wish cap: base limit, +1 while the player occupies a Center Star set
+ * to the 'wishCap' boon, +1 per Golden Dandelion (upgraded dandelion garden)
+ * the player controls (occupied by their gnome, no enemy units). Bonuses stack.
  */
 export function wishCap(state: GameState, player: PlayerId): number {
   let cap = state.config.wishLimit;
-  if (state.config.centerStar) {
-    const c = centerPos(state);
-    if (playerUnitsAt(state, c, player).length > 0) cap += 1;
-  }
+  if (centerStarGrants(state, 'wishCap') && holdsCenterStar(state, player)) cap += 1;
   for (const [key, g] of Object.entries(state.gardens)) {
     if (g.type !== 'dandelion' || !g.upgraded) continue;
     const pos = parsePos(key);
@@ -198,13 +215,15 @@ export function wishCap(state: GameState, player: PlayerId): number {
 }
 
 /**
- * Current gnome board limit: base config limit, +1 per Elder Mushroom
- * (upgraded mushroom garden) the player controls (occupied by their gnome,
- * no enemy units). Bonuses stack. Losing control never destroys gnomes
- * already on the board — it only blocks new spawns while over the limit.
+ * Current gnome board limit: base config limit, +1 while the player occupies a
+ * Center Star set to the 'gnomeLimit' boon, +1 per Elder Mushroom (upgraded
+ * mushroom garden) the player controls (occupied by their gnome, no enemy
+ * units). Bonuses stack. Losing control never destroys gnomes already on the
+ * board — it only blocks new spawns while over the limit.
  */
 export function gnomeBoardCap(state: GameState, player: PlayerId): number {
   let cap = state.config.gnomeBoardLimit;
+  if (centerStarGrants(state, 'gnomeLimit') && holdsCenterStar(state, player)) cap += 1;
   for (const [key, g] of Object.entries(state.gardens)) {
     if (g.type !== 'mushroom' || !g.upgraded) continue;
     const pos = parsePos(key);
@@ -242,9 +261,29 @@ export function curseActive(state: GameState, curseId: string): boolean {
   return state.activeCurses.includes(curseId);
 }
 
-/** Planting cost: 1 Wish, or 2 under the Compost Combustion curse. */
-export function plantWishCost(state: GameState): number {
+/**
+ * Planting cost: 1 Wish, or 2 under the Compost Combustion curse — and 0 on
+ * the center space when the Center Star grants 'freePlant'. The boon beats the
+ * curse: a space advertised as free planting stays free.
+ *
+ * `pos` is optional only for callers asking the general price (a UI hint, say);
+ * anything actually charging a plant passes the space being planted.
+ */
+export function plantWishCost(state: GameState, pos?: Pos): number {
+  if (pos && centerStarGrants(state, 'freePlant') && onCenterStar(state, pos)) return 0;
   return curseActive(state, CURSE_COMPOST) ? 2 : 1;
+}
+
+/** Base cost of a garden upgrade, before the Center Star's 'freeUpgrade' boon. */
+export const UPGRADE_WISH_COST = 2;
+
+/**
+ * Upgrade cost for the garden on `pos`: 2 Wishes, or 0 on the center space
+ * when the Center Star grants 'freeUpgrade' — a garden planted on the star can
+ * be flipped to its upgraded form for nothing.
+ */
+export function upgradeWishCost(state: GameState, pos: Pos): number {
+  return centerStarGrants(state, 'freeUpgrade') && onCenterStar(state, pos) ? 0 : UPGRADE_WISH_COST;
 }
 
 /** Great Wall Of Whimsy: is entering `pos` currently forbidden? */

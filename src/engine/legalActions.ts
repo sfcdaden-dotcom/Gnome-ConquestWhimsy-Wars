@@ -26,9 +26,8 @@
 import type { Action, GameState, PlayerId, Pos } from './types';
 import { deckHasCards, whyCannotPlayNow } from './cards';
 import { getPendingDecisionOptions } from './targeting';
-import { edibleSnailGarden, internal, plantWishCost, playerUnits, posKey } from './helpers';
+import { edibleSnailGarden, internal, plantWishCost, playerUnits, posKey, upgradeWishCost } from './helpers';
 import { canPlantAt, canUpgradeAt } from './gardens';
-import { UPGRADE_WISH_COST } from './actions';
 import { antsyPantsViolators, getPlayerToAct, moveDestinations } from './turns';
 
 // ---------------------------------------------------------------------------
@@ -165,8 +164,10 @@ export function getLegalActionIntents(state: GameState, player?: PlayerId): Acti
   }
 
   if (p.status === 'playing') {
-    // Plants (from the player's own tile supply).
-    if (p.wishes >= plantWishCost(state)) {
+    // Plants (from the player's own tile supply). The price is per-space, not
+    // per-turn: a Center Star set to 'freePlant' makes the center space free
+    // while everywhere else still costs, so each spot is priced on its own.
+    {
       const spots = new Map<string, Pos>();
       for (const u of playerUnits(state, actor)) {
         if (u.kind !== 'gnome') continue;
@@ -174,20 +175,24 @@ export function getLegalActionIntents(state: GameState, player?: PlayerId): Acti
       }
       const types = Object.keys(p.supply) as Array<keyof typeof p.supply>;
       for (const pos of spots.values()) {
+        if (p.wishes < plantWishCost(state, pos)) continue;
         for (const gt of types) {
           if (p.supply[gt] > 0) out.push({ type: 'plant', player: actor, pos, gardenType: gt });
         }
       }
     }
 
-    // Upgrades (garden you control, non-home, not already upgraded).
-    if (p.wishes >= UPGRADE_WISH_COST) {
+    // Upgrades (garden you control, non-home, not already upgraded). Priced
+    // per-space too, for the 'freeUpgrade' Center Star.
+    {
       const spots = new Map<string, Pos>();
       for (const u of playerUnits(state, actor)) {
         if (u.kind !== 'gnome') continue;
         if (canUpgradeAt(state, actor, u.pos)) spots.set(posKey(u.pos), u.pos);
       }
-      for (const pos of spots.values()) out.push({ type: 'upgrade', player: actor, pos });
+      for (const pos of spots.values()) {
+        if (p.wishes >= upgradeWishCost(state, pos)) out.push({ type: 'upgrade', player: actor, pos });
+      }
     }
 
     // Draw.

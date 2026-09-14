@@ -3,14 +3,26 @@
  * panel that edits them (AdvancedSettings.tsx) so the setup screen and the
  * tests can reason about a configuration without rendering anything.
  *
+ * Two of these are sparse override maps rather than plain numbers — the deck
+ * (`deckCounts`) and each player's garden budget (`tileCounts`) — because an
+ * untouched one must add nothing to the game config at all, leaving a stock
+ * game's state identical to one set up before the editors existed.
+ *
  * Every value here maps to a field the engine already validates
  * (`setup.resolveConfig`). `settingsProblem` mirrors those checks so a bad
  * combination is refused while the panel is open, rather than as an engine
  * error after "Start the war".
  */
 
-import type { CardId } from '../engine';
-import { CARD_DEFINITIONS, CURSE_DEFINITIONS, DEFAULT_CONFIG, DEFAULT_CURSE_COPIES, resolveDeckCounts } from '../engine';
+import type { CardId, CenterStarBoon, PlantableGardenType } from '../engine';
+import {
+  CARD_DEFINITIONS,
+  CURSE_DEFINITIONS,
+  DEFAULT_CONFIG,
+  DEFAULT_CURSE_COPIES,
+  PLANTABLE_GARDEN_TYPES,
+  resolveDeckCounts,
+} from '../engine';
 
 /** Board sizes offered. Odd only, and >= 5 — the engine rejects anything else. */
 export const BOARD_SIZES = [5, 7, 9, 11, 13] as const;
@@ -32,6 +44,15 @@ export interface AdvancedSettingsValue {
    */
   deckCounts: Record<CardId, number>;
   /**
+   * Per-type garden budget, sparse in the same way as `deckCounts`: only the
+   * types moved away from the stock 4-per-type get an entry.
+   */
+  tileCounts: Partial<Record<PlantableGardenType, number>>;
+  /** Center Star marker on the center space. */
+  centerStar: boolean;
+  /** What the star grants its holder. Ignored while `centerStar` is false. */
+  centerStarBoon: CenterStarBoon;
+  /**
    * The game seed, as typed. Blank means "roll a fresh one at start", which is
    * why this is text rather than a number — there is no number that means
    * "unset", and the raw text is also what a bad entry is reported against.
@@ -46,6 +67,9 @@ export const DEFAULT_ADVANCED_SETTINGS: AdvancedSettingsValue = {
   gnomeBoardLimit: DEFAULT_CONFIG.gnomeBoardLimit,
   totalReinforcements: DEFAULT_CONFIG.totalReinforcements,
   deckCounts: {},
+  tileCounts: {},
+  centerStar: DEFAULT_CONFIG.centerStar,
+  centerStarBoon: DEFAULT_CONFIG.centerStarBoon,
   seedText: '',
 };
 
@@ -105,6 +129,9 @@ export const SETTING_FIELDS: ReadonlyArray<{
   },
 ];
 
+/** Tiles of each plantable type a stock supply holds (the engine default, 4). */
+export const STOCK_TILES_PER_TYPE = DEFAULT_CONFIG.tilesPerType;
+
 /** Copies of `id` in the stock deck (2 per Whimsy card, 1 per Curse). */
 export function stockCount(id: CardId): number {
   return CARD_DEFINITIONS.find((c) => c.id === id)?.copies ?? DEFAULT_CURSE_COPIES;
@@ -119,6 +146,9 @@ export function isDefaultSettings(v: AdvancedSettingsValue): boolean {
     v.gnomeBoardLimit === DEFAULT_ADVANCED_SETTINGS.gnomeBoardLimit &&
     v.totalReinforcements === DEFAULT_ADVANCED_SETTINGS.totalReinforcements &&
     Object.keys(v.deckCounts).length === 0 &&
+    Object.keys(v.tileCounts).length === 0 &&
+    v.centerStar === DEFAULT_ADVANCED_SETTINGS.centerStar &&
+    v.centerStarBoon === DEFAULT_ADVANCED_SETTINGS.centerStarBoon &&
     v.seedText.trim() === ''
   );
 }
@@ -143,6 +173,16 @@ export function curseTotal(v: AdvancedSettingsValue): number {
   return CURSE_DEFINITIONS.reduce((sum, c) => sum + deckCountOf(v, c.id), 0);
 }
 
+/** Tiles of `type` this configuration puts in each player's supply. */
+export function tileCountOf(v: AdvancedSettingsValue, type: PlantableGardenType): number {
+  return v.tileCounts[type] ?? STOCK_TILES_PER_TYPE;
+}
+
+/** Garden tiles one player's whole supply would hold under this configuration. */
+export function tileTotal(v: AdvancedSettingsValue): number {
+  return PLANTABLE_GARDEN_TYPES.reduce((sum, t) => sum + tileCountOf(v, t), 0);
+}
+
 /**
  * Why this configuration cannot start a game, or null. Mirrors the engine's
  * own checks, so the panel refuses a combination before the setup screen has
@@ -154,6 +194,7 @@ export function settingsProblem(v: AdvancedSettingsValue): string | null {
     return 'Total reinforcements cannot be below the gnome limit.';
   }
   if (whimsyTotal(v) < 1) return 'The deck needs at least one Whimsy card.';
+  if (tileTotal(v) < 1) return 'Players need at least one garden tile to plant.';
   if (seedTextIsBad(v.seedText)) return 'Seed must be a number (or leave it blank for a random one).';
   return null;
 }
@@ -170,5 +211,8 @@ export function settingsOptions(v: AdvancedSettingsValue) {
     gnomeBoardLimit: v.gnomeBoardLimit,
     totalReinforcements: v.totalReinforcements,
     ...(Object.keys(v.deckCounts).length > 0 ? { deckCounts: v.deckCounts } : {}),
+    ...(Object.keys(v.tileCounts).length > 0 ? { tileCounts: v.tileCounts } : {}),
+    centerStar: v.centerStar,
+    centerStarBoon: v.centerStarBoon,
   };
 }

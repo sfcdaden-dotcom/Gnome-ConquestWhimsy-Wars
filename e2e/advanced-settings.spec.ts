@@ -3,8 +3,9 @@
  *
  * The panel edits a working copy, so what these tests pin is the boundary
  * between it and the game it starts: Cancel changes nothing, Done carries the
- * board size into the preview, a deck edited to nothing is refused before the
- * engine ever sees it, and a raised gnome/wish economy actually reaches play.
+ * board size into the preview, a deck (or a garden budget) edited to nothing is
+ * refused before the engine ever sees it, and a raised gnome/wish economy — or
+ * a Center Star boon — actually reaches play.
  */
 
 import type { Page } from '@playwright/test';
@@ -197,4 +198,85 @@ test('a big game board zooms and pans under the panels, which keep their size', 
   // Fit puts it back.
   await page.getByRole('button', { name: 'Fit board to screen' }).click();
   expect(await scaleOf()).toBeCloseTo(fitted, 3);
+});
+
+test('the garden editor changes tile budgets, and refuses an empty supply', async ({ page }) => {
+  await openSetup(page);
+  await openAdvanced(page);
+  await page.getByTestId('open-garden-editor').click();
+  const editor = page.getByTestId('garden-editor');
+  // Six plantable types × 4 tiles each.
+  await expect(editor).toContainText('24 tiles per player');
+
+  await page.getByTestId('tile-count-mushroom').fill('9');
+  await expect(editor).toContainText('29 tiles per player');
+
+  // Nothing to plant at all is not a supply — Done is blocked with the reason.
+  const counts = page.locator('[data-testid^="tile-count-"]');
+  for (const box of await counts.all()) await box.fill('0');
+  await expect(page.getByTestId('advanced-done')).toBeDisabled();
+  await expect(page.getByRole('dialog')).toContainText('at least one garden tile');
+
+  // The stock-supply button puts every count back.
+  await page.getByTestId('garden-reset').click();
+  await expect(editor).toContainText('24 tiles per player');
+  await expect(page.getByTestId('advanced-done')).toBeEnabled();
+});
+
+test('a garden budget survives the panel and starts a game', async ({ page }) => {
+  await openSetup(page);
+  await openAdvanced(page);
+  await page.getByTestId('open-garden-editor').click();
+  await page.getByTestId('tile-count-mushroom').fill('7');
+  await page.getByTestId('tile-count-flytrap').fill('0');
+  await page.getByTestId('garden-back').click();
+  // 24 stock − 4 flytraps + 3 extra mushrooms.
+  await expect(page.getByTestId('open-garden-editor')).toContainText('23 tiles');
+  await page.getByTestId('advanced-done').click();
+
+  await page.getByTestId('preset-select').selectOption('few');
+  await page.getByTestId('player-count-2').click();
+  await page.getByTestId('seat-1-human').click();
+  await setSeed(page, 4242);
+  await page.getByTestId('start-game').click();
+  await expect(page.getByTestId('game-screen')).toBeVisible();
+});
+
+test('the Center Star is a boon menu in the panel, not a toggle on the screen', async ({ page }) => {
+  await openSetup(page);
+  // It is no longer a row on the setup screen itself.
+  await expect(page.getByTestId('center-star-boon')).toBeHidden();
+
+  await openAdvanced(page);
+  const boon = page.getByTestId('center-star-boon');
+  await expect(boon).toHaveValue('wishCap');
+  await expect(page.getByRole('dialog')).toContainText('your wish limit is one higher');
+
+  await boon.selectOption('freeUpgrade');
+  await expect(page.getByRole('dialog')).toContainText('upgraded for free');
+  await page.getByTestId('advanced-done').click();
+
+  // The choice is worth seeing without reopening the panel.
+  await expect(page.getByText('Free upgrade on the star')).toBeVisible();
+
+  await page.getByTestId('preset-select').selectOption('few');
+  await page.getByTestId('player-count-2').click();
+  await page.getByTestId('seat-1-human').click();
+  await setSeed(page, 4242);
+  await page.getByTestId('start-game').click();
+  await expect(page.getByTestId('game-screen')).toBeVisible();
+});
+
+test('switching the Center Star off clears it from the layout preview', async ({ page }) => {
+  await openSetup(page);
+  await page.getByTestId('preset-select').selectOption('few');
+  const preview = page.locator('.preset-preview');
+  await expect(preview.locator('[title="Center Star"]')).toHaveCount(1);
+
+  await openAdvanced(page);
+  await page.getByTestId('center-star-boon').selectOption('off');
+  await page.getByTestId('advanced-done').click();
+
+  await expect(preview.locator('[title="Center Star"]')).toHaveCount(0);
+  await expect(page.getByText('no Center Star')).toBeVisible();
 });

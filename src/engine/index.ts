@@ -17,6 +17,9 @@ export {
   createGame,
   DEFAULT_CONFIG,
   TILES_PER_TYPE,
+  MAX_TILES_PER_TYPE,
+  CENTER_STAR_BOONS,
+  tileBudget,
   homePositions,
   seatHomes,
   presetGardens,
@@ -126,6 +129,11 @@ export {
   gardenIsActive,
   wishCap,
   maizeExitCost,
+  centerStarGrants,
+  holdsCenterStar,
+  plantWishCost,
+  upgradeWishCost,
+  UPGRADE_WISH_COST,
 } from './helpers';
 
 // Card framework (data-driven; the full 23-card + 5-curse list from CARDS.md).

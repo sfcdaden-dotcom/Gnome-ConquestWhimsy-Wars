@@ -12,7 +12,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Action, CardId, CardTarget, GameState, PendingDecision, PlayerId, Pos } from '../engine';
-import { gardenAt, getLegalActionIntents, getPendingDecisionOptions, posKey } from '../engine';
+import { gardenAt, getLegalActionIntents, getPendingDecisionOptions, posKey, upgradeWishCost } from '../engine';
 import { Board } from './Board';
 import { DecisionPanel } from './DecisionPanel';
 import { FightPanel, FightPlaybackCard, HandPanel, PlayerPanels } from './panels';
@@ -330,7 +330,9 @@ export function GameScreen({ game: g, onPlayAgain, onQuit }: GameScreenProps) {
   if (upgradeAction && upgradeGardenType && upgradeGardenType !== 'home') {
     menuItems.push({
       key: 'upgrade',
-      label: `⭐ Upgrade to ${GARDEN_META[upgradeGardenType].upgradeLabel} (2 ✨)`,
+      // The price is per-space: a Center Star set to 'freeUpgrade' makes the
+      // garden on the center space free, so the label reads the real cost.
+      label: `⭐ Upgrade to ${GARDEN_META[upgradeGardenType].upgradeLabel} (${upgradeWishCost(state, upgradeAction.pos)} ✨)`,
       testId: 'upgrade-garden',
       title: GARDEN_META[upgradeGardenType].upgradeBlurb,
       onSelect: () => act(upgradeAction),
