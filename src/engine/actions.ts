@@ -27,6 +27,7 @@ import {
   pushEvent,
   requireTurn,
   spendWishes,
+  upgradeWishCost,
 } from './helpers';
 import { handleRespondPass, handleRespondPlayCard } from './fights';
 import {
@@ -176,7 +177,8 @@ function doPlant(draft: GameState, player: PlayerId, pos: Pos, gardenType: strin
     illegal(`You need one of your gnomes on (${pos.x},${pos.y}) to plant there`);
   }
   if (p.supply[gt] <= 0) illegal(`Your supply has no ${gardenType} tiles left`);
-  const cost = plantWishCost(draft); // 1, or 2 under Compost Combustion
+  // 1, or 2 under Compost Combustion — and 0 on a 'freePlant' Center Star.
+  const cost = plantWishCost(draft, pos);
   if (p.wishes < cost) illegal(`Planting a garden costs ${cost} Wish(es)`);
 
   spendWishes(draft, player, cost, 'plant garden');
@@ -186,8 +188,9 @@ function doPlant(draft: GameState, player: PlayerId, pos: Pos, gardenType: strin
 }
 
 /** Flat upgrade cost (deliberately NOT doubled by Compost Combustion, which
- *  taxes planting specifically). */
-export const UPGRADE_WISH_COST = 2;
+ *  taxes planting specifically); `upgradeWishCost` applies the Center Star's
+ *  'freeUpgrade' boon on top of it. */
+export { UPGRADE_WISH_COST } from './helpers';
 
 function doUpgrade(draft: GameState, player: PlayerId, pos: Pos): void {
   requireActionPhaseActor(draft, player);
@@ -205,9 +208,10 @@ function doUpgrade(draft: GameState, player: PlayerId, pos: Pos): void {
   if (!playerUnitsAt(draft, pos, player).some((u) => u.kind === 'gnome')) {
     illegal(`You need one of your gnomes on (${pos.x},${pos.y}) to upgrade the garden there`);
   }
-  if (p.wishes < UPGRADE_WISH_COST) illegal(`Upgrading a garden costs ${UPGRADE_WISH_COST} Wishes`);
+  const cost = upgradeWishCost(draft, pos);
+  if (p.wishes < cost) illegal(`Upgrading a garden costs ${cost} Wishes`);
 
-  spendWishes(draft, player, UPGRADE_WISH_COST, 'upgrade garden');
+  spendWishes(draft, player, cost, 'upgrade garden');
   g.upgraded = true;
   pushEvent(draft, { type: 'gardenUpgraded', player, pos: { ...pos }, gardenType: g.type });
 }

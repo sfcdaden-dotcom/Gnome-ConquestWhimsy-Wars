@@ -1,6 +1,7 @@
 /**
  * Advanced setup: the knobs that change the shape of a game rather than who
- * is playing it — board size, the wish and gnome economies, and the deck.
+ * is playing it — board size, the wish and gnome economies, the Center Star,
+ * the deck and each player's garden supply.
  *
  * Opened as a modal from the setup screen and edited on a working copy, so
  * backing out with Cancel leaves the pending game exactly as it was. The
@@ -8,18 +9,30 @@
  */
 
 import { useState } from 'react';
-import type { CardId } from '../engine';
-import { CARD_DEFINITIONS, CURSE_DEFINITIONS, MAX_CARD_COPIES } from '../engine';
+import type { CardId, CenterStarBoon, PlantableGardenType } from '../engine';
+import {
+  CARD_DEFINITIONS,
+  CENTER_STAR_BOONS,
+  CURSE_DEFINITIONS,
+  MAX_CARD_COPIES,
+  MAX_TILES_PER_TYPE,
+  PLANTABLE_GARDEN_TYPES,
+} from '../engine';
+import { GARDEN_META } from './meta';
+import { GardenIcon } from './art';
 import {
   BOARD_SIZES,
   DEFAULT_ADVANCED_SETTINGS,
   SETTING_FIELDS,
+  STOCK_TILES_PER_TYPE,
   curseTotal,
   deckCountOf,
   deckTotal,
   isDefaultSettings,
   settingsProblem,
   stockCount,
+  tileCountOf,
+  tileTotal,
   whimsyTotal,
 } from './advancedSettings';
 import type { AdvancedSettingsValue } from './advancedSettings';
@@ -152,6 +165,84 @@ function DeckEditor({
   );
 }
 
+/**
+ * The garden editor: one row per plantable type, holding how many tiles of it
+ * each player starts with. Stored sparsely like the deck — a type set back to
+ * the stock 4 drops out of the override map, so an untouched supply adds
+ * nothing to the game config.
+ */
+function GardenEditor({
+  value,
+  onChange,
+  onBack,
+}: {
+  value: AdvancedSettingsValue;
+  onChange: (v: AdvancedSettingsValue) => void;
+  onBack: () => void;
+}) {
+  function setCount(type: PlantableGardenType, n: number) {
+    const next = { ...value.tileCounts };
+    if (n === STOCK_TILES_PER_TYPE) delete next[type];
+    else next[type] = n;
+    onChange({ ...value, tileCounts: next });
+  }
+
+  return (
+    <div className="advanced-body" data-testid="garden-editor">
+      <div className="setup-row">
+        <span className="setup-label">Gardens</span>
+        <span className="muted small">{tileTotal(value)} tiles per player</span>
+      </div>
+
+      <div className="deck-list">
+        {PLANTABLE_GARDEN_TYPES.map((type) => {
+          const count = tileCountOf(value, type);
+          const changed = count !== STOCK_TILES_PER_TYPE;
+          return (
+            <div
+              key={type}
+              className={`deck-row${changed ? ' changed' : ''}`}
+              title={GARDEN_META[type].blurb}
+            >
+              <GardenIcon type={type} className="btn-icon" />
+              <span className="deck-name">{GARDEN_META[type].label}</span>
+              <Stepper
+                value={count}
+                min={0}
+                max={MAX_TILES_PER_TYPE}
+                label={`${GARDEN_META[type].label} tiles`}
+                testId={`tile-count-${type}`}
+                onChange={(n) => setCount(type, n)}
+              />
+            </div>
+          );
+        })}
+      </div>
+
+      <p className="muted small">
+        How many tiles of each type sit in every player's supply at the start. A type set
+        to 0 is out of the game — planting spends from your own supply, and a destroyed
+        garden returns a basic tile to whoever planted it.
+      </p>
+
+      <div className="btn-row">
+        <button
+          type="button"
+          className="btn small"
+          data-testid="garden-reset"
+          disabled={Object.keys(value.tileCounts).length === 0}
+          onClick={() => onChange({ ...value, tileCounts: {} })}
+        >
+          ↩️ Stock supply
+        </button>
+        <button type="button" className="btn small" data-testid="garden-back" onClick={onBack}>
+          ← Back to settings
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function AdvancedSettings({
   value,
   onApply,
@@ -169,8 +260,11 @@ export function AdvancedSettings({
   boardSizeLockedReason?: string;
 }) {
   const [draft, setDraft] = useState<AdvancedSettingsValue>(value);
-  const [view, setView] = useState<'settings' | 'deck'>('settings');
+  const [view, setView] = useState<'settings' | 'deck' | 'gardens'>('settings');
   const problem = settingsProblem(draft);
+  const centerStarBlurb = draft.centerStar
+    ? (CENTER_STAR_BOONS.find((b) => b.id === draft.centerStarBoon)?.blurb ?? '')
+    : 'The center space is unmarked and grants nothing.';
 
   return (
     <div className="overlay" role="dialog" aria-modal="true" aria-label="Advanced settings">
@@ -179,6 +273,8 @@ export function AdvancedSettings({
 
         {view === 'deck' ? (
           <DeckEditor value={draft} onChange={setDraft} onBack={() => setView('settings')} />
+        ) : view === 'gardens' ? (
+          <GardenEditor value={draft} onChange={setDraft} onBack={() => setView('settings')} />
         ) : (
           <div className="advanced-body">
             <div className="setup-row">
@@ -229,6 +325,55 @@ export function AdvancedSettings({
                 </button>
               </div>
             </div>
+
+            <div className="setup-row">
+              <span
+                className="setup-label"
+                title="How many garden tiles of each type each player starts with."
+              >
+                Gardens
+              </span>
+              <div className="btn-row">
+                <button
+                  type="button"
+                  className="btn small"
+                  data-testid="open-garden-editor"
+                  onClick={() => setView('gardens')}
+                >
+                  🌱 Edit the garden budget ({tileTotal(draft)} tiles)
+                </button>
+              </div>
+            </div>
+
+            {/*
+              The star is one menu rather than a toggle plus a boon: "off" is
+              simply the first option, so there is never a boon selected on a
+              star that is not in play.
+            */}
+            <div className="setup-row">
+              <span className="setup-label" title={centerStarBlurb}>
+                Center Star ⭐
+              </span>
+              <select
+                className="preset-select small"
+                aria-label="Center Star boon"
+                data-testid="center-star-boon"
+                value={draft.centerStar ? draft.centerStarBoon : 'off'}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (v === 'off') setDraft({ ...draft, centerStar: false });
+                  else setDraft({ ...draft, centerStar: true, centerStarBoon: v as CenterStarBoon });
+                }}
+              >
+                <option value="off">No Center Star</option>
+                {CENTER_STAR_BOONS.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <p className="muted small">{centerStarBlurb}</p>
 
             <div className="setup-row">
               <span

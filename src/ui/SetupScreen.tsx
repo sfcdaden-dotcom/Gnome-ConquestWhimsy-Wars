@@ -1,7 +1,7 @@
 /**
- * New-game setup: player count, per-seat name + human/CPU, board layout,
- * Center Star toggle, and an advanced panel (board size, the wish/gnome
- * economies, the deck and the seed) behind a button.
+ * New-game setup: player count, per-seat name + human/CPU, board layout, and
+ * an advanced panel (board size, the wish/gnome economies, the Center Star and
+ * its boon, the deck, the garden budget and the seed) behind a button.
  *
  * The layout menu leads with the three starting-board MODES — Fresh, Bare
  * Essentials, True Random — which are generated, so they fit every board size
@@ -22,6 +22,7 @@ import type {
   RandomLayout,
 } from '../engine';
 import {
+  CENTER_STAR_BOONS,
   CLASSIC_PRESETS,
   DEFAULT_GARDEN_PRESET_ID,
   GARDEN_PRESETS,
@@ -206,7 +207,6 @@ export function SetupScreen({
   // preset, or nothing (closed). Not derived from `preset`, so opening the
   // editor never disturbs the selection.
   const [editorTarget, setEditorTarget] = useState<EditorTarget | null>(null);
-  const [centerStar, setCenterStar] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [settings, setSettings] = useState<AdvancedSettingsValue>(DEFAULT_ADVANCED_SETTINGS);
   const [advancedOpen, setAdvancedOpen] = useState(false);
@@ -426,7 +426,6 @@ export function SetupScreen({
     const options: CreateGameOptions = {
       gardenPreset: preset,
       ...layoutOptions(),
-      centerStar,
       ...settingsOptions(settings),
       players: seats.slice(0, count).map((s, i) => ({
         name: s.name.trim() || DEFAULT_NAMES[i],
@@ -438,6 +437,10 @@ export function SetupScreen({
   }
 
   const creatorSeat = gnomeSeat !== null && gnomeSeat < count ? gnomeSeat : null;
+  /** The Center Star lives in the advanced panel now, so the summary line says where it stands. */
+  const centerStarSummary = settings.centerStar
+    ? `⭐ ${CENTER_STAR_BOONS.find((b) => b.id === settings.centerStarBoon)?.label ?? settings.centerStarBoon}`
+    : 'no Center Star';
 
   if (editorTarget) {
     return (
@@ -538,7 +541,7 @@ export function SetupScreen({
 
         {/* Preview first, then every preset control together underneath it. */}
         <div className="preset-section" data-testid="preset-section">
-          <LayoutPreview layout={previewLayout} playerCount={count} centerStar={centerStar} />
+          <LayoutPreview layout={previewLayout} playerCount={count} centerStar={settings.centerStar} />
           <div className="preset-controls">
             <select
               className="preset-select"
@@ -657,14 +660,6 @@ export function SetupScreen({
         </div>
 
         <div className="setup-row">
-          <span className="setup-label">Center Star ⭐</span>
-          <label className="check-label">
-            <input type="checkbox" checked={centerStar} onChange={(e) => setCenterStar(e.target.checked)} />
-            Occupying the center raises your wish cap to 6
-          </label>
-        </div>
-
-        <div className="setup-row">
           <span className="setup-label">Advanced</span>
           <div className="btn-row">
             <button
@@ -677,7 +672,7 @@ export function SetupScreen({
             </button>
             {!isDefaultSettings(settings) && (
               <span className="muted small">
-                Customised
+                Customised · {centerStarSummary}
                 {settings.seedText.trim() !== '' && ` · seed ${settings.seedText.trim()}`}
               </span>
             )}

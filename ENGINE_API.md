@@ -378,8 +378,10 @@ store the order. Logged in TECH_DEBT.md.
   remains; sources are revalidated when resolved; gardens entered mid-harvest do
   not harvest this turn.
 - **Action Phase**: any number of `move` (each unit 1 orthogonal space per
-  turn), `plant` (from the actor's own tile supply), `upgrade` (2 Wishes,
-  flips a controlled non-Home garden to its upgraded form — see RULES.md
+  turn), `plant` (from the actor's own tile supply — free on the center space
+  under a `'freePlant'` Center Star), `upgrade` (2 Wishes, or 0 on the center
+  space under a `'freeUpgrade'` one; flips a controlled non-Home garden to its
+  upgraded form — see RULES.md
   "Garden Upgrades"), `drawCard`, `playCard`; then `endTurn`.
 
 ## Decisions (`PendingDecision.kind` → answering `Action.type`)
@@ -503,7 +505,16 @@ cards that differ need an entry), 0 removes a card outright, and
 `resolveDeckCounts` is the single place the stock counts and the override meet,
 so the setup screen's deck editor and `buildInitialDeck` cannot disagree.
 `createGame` rejects an unknown id, a count outside 0…`MAX_CARD_COPIES`, and a
-deck left with no Whimsy cards at all. A targeted
+deck left with no Whimsy cards at all. `GameConfig.tileCounts` does the same job
+for the per-player garden supply — sparse overrides of `tilesPerType`, 0 takes a
+garden type out of the game, and a budget with no tiles left in it at all is
+rejected (`tileBudget(config, type)` is the single place the flat default and
+the overrides meet, so `makeSupply`, the supply invariant and the encoder cannot
+disagree). `GameConfig.centerStarBoon` picks what the Center Star grants —
+`'wishCap'` (the default, +1 wish limit while occupied), `'gnomeLimit'`,
+`'freePlant'` or `'freeUpgrade'` (the last two price the center space itself at
+0 Wishes; see `plantWishCost` / `upgradeWishCost`). It is ignored while
+`centerStar` is false, and an unknown boon is rejected. A targeted
 card declares a `targetFlow(state, player) → TargetStep[]` — the ordered steps
 the engine walks during phased targeting (each step's `getOptions` computes its
 legal options from the state and the earlier picks). Once targeting completes

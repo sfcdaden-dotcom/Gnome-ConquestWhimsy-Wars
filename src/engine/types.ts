@@ -75,6 +75,21 @@ export const PLANTABLE_GARDEN_TYPES: readonly PlantableGardenType[] = [
   'tunnel',
 ];
 
+/**
+ * What the Center Star space is worth to the player who holds it. Setup picks
+ * exactly one (the star itself can also be switched off entirely):
+ *
+ *   'wishCap'     — the rulebook boon: +1 wish limit while you occupy it.
+ *   'gnomeLimit'  — +1 gnome board limit while you occupy it.
+ *   'freePlant'   — planting ON the star space costs no Wishes.
+ *   'freeUpgrade' — upgrading the garden ON the star space costs no Wishes.
+ *
+ * The first two are held-while-you-stand-there bonuses (they read the
+ * occupant); the last two are properties of the space itself, so they pay off
+ * for whoever is standing on it at the moment they act.
+ */
+export type CenterStarBoon = 'wishCap' | 'gnomeLimit' | 'freePlant' | 'freeUpgrade';
+
 export type UnitKind = 'gnome' | 'snail';
 export type PlayerController = 'human' | 'cpu';
 /** CPU strength. Meaningless for 'human' seats, but stored uniformly. Default 'normal'. */
@@ -117,8 +132,17 @@ export interface GameConfig {
   handLimit: number;
   /** Center Star marker on the center space. Default true. */
   centerStar: boolean;
+  /** What the Center Star grants. Ignored while `centerStar` is false. Default 'wishCap'. */
+  centerStarBoon: CenterStarBoon;
   /** Garden tiles of each plantable type in each player's supply. Default 4. */
   tilesPerType: number;
+  /**
+   * Per-type garden budget, overriding `tilesPerType` for the types named.
+   * Sparse, exactly like `deckCounts`: only the types that differ need an
+   * entry, and 0 takes a garden type out of the game for everybody. Plain
+   * data, so it round-trips through save/replay like the rest of GameConfig.
+   */
+  tileCounts?: Partial<Record<PlantableGardenType, number>>;
   /**
    * Per-card deck composition, overriding the stock copy counts (2 of each
    * Whimsy card, 1 of each Curse — see cards.ts). Sparse: only the cards that

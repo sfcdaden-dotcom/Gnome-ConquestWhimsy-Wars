@@ -6,14 +6,18 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { CARD_DEFINITIONS, CURSE_DEFINITIONS, createGame, EngineError } from '../engine';
+import { CARD_DEFINITIONS, CURSE_DEFINITIONS, createGame, EngineError, PLANTABLE_GARDEN_TYPES } from '../engine';
 import {
   DEFAULT_ADVANCED_SETTINGS,
+  STOCK_TILES_PER_TYPE,
   deckCountOf,
   deckTotal,
   isDefaultSettings,
   parseSeedText,
+  settingsOptions,
   settingsProblem,
+  tileCountOf,
+  tileTotal,
 } from './advancedSettings';
 import type { AdvancedSettingsValue } from './advancedSettings';
 
@@ -33,11 +37,7 @@ function start(v: AdvancedSettingsValue) {
       ],
       gardenPreset: 'none',
       boardSize: v.boardSize,
-      startingWishes: v.startingWishes,
-      wishLimit: v.wishLimit,
-      gnomeBoardLimit: v.gnomeBoardLimit,
-      totalReinforcements: v.totalReinforcements,
-      ...(Object.keys(v.deckCounts).length > 0 ? { deckCounts: v.deckCounts } : {}),
+      ...settingsOptions(v),
     },
     1,
   );
@@ -88,6 +88,10 @@ describe('settingsProblem', () => {
       { ...DEFAULT_ADVANCED_SETTINGS, startingWishes: 5, wishLimit: 3 },
       { ...DEFAULT_ADVANCED_SETTINGS, gnomeBoardLimit: 20, totalReinforcements: 16 },
       withDeck(Object.fromEntries(CARD_DEFINITIONS.map((c) => [c.id, 0]))),
+      {
+        ...DEFAULT_ADVANCED_SETTINGS,
+        tileCounts: Object.fromEntries(PLANTABLE_GARDEN_TYPES.map((t) => [t, 0])),
+      },
     ];
     for (const v of cases) {
       expect(settingsProblem(v)).not.toBeNull();
@@ -97,13 +101,13 @@ describe('settingsProblem', () => {
 
   it('accepts a raised economy that the engine also accepts', () => {
     const v: AdvancedSettingsValue = {
+      ...DEFAULT_ADVANCED_SETTINGS,
       boardSize: 9,
       startingWishes: 6,
       wishLimit: 6,
       gnomeBoardLimit: 12,
       totalReinforcements: 30,
       deckCounts: { [CARD_DEFINITIONS[0].id]: 4 },
-      seedText: '',
     };
     expect(settingsProblem(v)).toBeNull();
     const s = start(v);
@@ -111,5 +115,61 @@ describe('settingsProblem', () => {
     expect(s.players[0].wishes).toBe(6);
     expect(s.config.gnomeBoardLimit).toBe(12);
     expect(s.deck.filter((id) => id === CARD_DEFINITIONS[0].id)).toHaveLength(4);
+  });
+});
+
+describe('the garden budget', () => {
+  it('reports the stock supply until a type is changed', () => {
+    expect(tileTotal(DEFAULT_ADVANCED_SETTINGS)).toBe(STOCK_TILES_PER_TYPE * PLANTABLE_GARDEN_TYPES.length);
+    expect(tileCountOf(DEFAULT_ADVANCED_SETTINGS, 'mushroom')).toBe(STOCK_TILES_PER_TYPE);
+    expect(settingsOptions(DEFAULT_ADVANCED_SETTINGS)).not.toHaveProperty('tileCounts');
+  });
+
+  it('counts an override into the total, and into the game it starts', () => {
+    const v: AdvancedSettingsValue = {
+      ...DEFAULT_ADVANCED_SETTINGS,
+      tileCounts: { mushroom: 9, flytrap: 0 },
+    };
+    expect(tileCountOf(v, 'mushroom')).toBe(9);
+    expect(tileTotal(v)).toBe(STOCK_TILES_PER_TYPE * (PLANTABLE_GARDEN_TYPES.length - 2) + 9);
+    expect(isDefaultSettings(v)).toBe(false);
+    expect(settingsProblem(v)).toBeNull();
+
+    const s = start(v);
+    expect(s.players[0].supply.mushroom).toBe(9);
+    expect(s.players[0].supply.flytrap).toBe(0);
+    expect(s.players[1].supply.dandelion).toBe(STOCK_TILES_PER_TYPE);
+  });
+
+  it('refuses a supply with nothing in it at all', () => {
+    const empty: AdvancedSettingsValue = {
+      ...DEFAULT_ADVANCED_SETTINGS,
+      tileCounts: Object.fromEntries(PLANTABLE_GARDEN_TYPES.map((t) => [t, 0])),
+    };
+    expect(settingsProblem(empty)).toMatch(/at least one garden tile/i);
+    expect(() => start(empty)).toThrow(EngineError);
+  });
+});
+
+describe('the Center Star', () => {
+  it('defaults to the rulebook star, and says so in the options', () => {
+    expect(DEFAULT_ADVANCED_SETTINGS.centerStar).toBe(true);
+    expect(DEFAULT_ADVANCED_SETTINGS.centerStarBoon).toBe('wishCap');
+    expect(start(DEFAULT_ADVANCED_SETTINGS).config.centerStarBoon).toBe('wishCap');
+  });
+
+  it('carries a chosen boon into the game, and counts as a change', () => {
+    const v: AdvancedSettingsValue = { ...DEFAULT_ADVANCED_SETTINGS, centerStarBoon: 'freeUpgrade' };
+    expect(isDefaultSettings(v)).toBe(false);
+    expect(settingsProblem(v)).toBeNull();
+    const s = start(v);
+    expect(s.config.centerStar).toBe(true);
+    expect(s.config.centerStarBoon).toBe('freeUpgrade');
+  });
+
+  it('switches the star off entirely', () => {
+    const v: AdvancedSettingsValue = { ...DEFAULT_ADVANCED_SETTINGS, centerStar: false };
+    expect(isDefaultSettings(v)).toBe(false);
+    expect(start(v).config.centerStar).toBe(false);
   });
 });

@@ -14,9 +14,9 @@ rulebook was ambiguous, the designer's ruling is marked **[RULING]**.
 | Gnome limit on board (per player) | 8 (+1 per controlled Elder Mushroom) |
 | Total reinforcements (per player) | 16 |
 | Hand limit | 7 cards |
-| Garden tiles per type (per player) | 4 |
+| Garden tiles per type (per player) | 4 (configurable per type) |
 | Players | 2 or 4 (each seat human or CPU) |
-| Center Star | ON (toggleable) |
+| Center Star | ON, granting **Wish limit +1** (boon selectable, or off) |
 
 ## Definitions
 
@@ -41,9 +41,22 @@ rulebook was ambiguous, the designer's ruling is marked **[RULING]**.
    Home Garden harvest.
 4. The 5 Curse Cards are shuffled into the Whimsy deck from the start.
 5. Turn order: each player rolls d6, highest goes first (reroll ties), then clockwise.
-6. **Center Star** (if enabled): the center space is marked. While a player
-   **occupies** the center space, their wish limit is +1 (i.e. 4). This is a marker
-   on the space, not a garden — the space is otherwise normal (can be planted on).
+6. **Center Star** (if enabled): the center space is marked. This is a marker on
+   the space, not a garden — the space is otherwise normal (can be planted on).
+   Setup picks exactly one **boon** for it (advanced settings), or switches the
+   star off entirely:
+
+   | Boon | Effect |
+   |---|---|
+   | **Wish limit +1** (default) | While a player **occupies** the center space, their wish limit is +1 (i.e. 4). The rulebook star. |
+   | **Gnome limit +1** | While a player occupies the center space, their gnome board limit is +1. |
+   | **Free planting on the star** | Planting a garden **on the center space** costs no Wishes (this beats the Compost Combustion tax). |
+   | **Free upgrade on the star** | The garden **on the center space** upgrades for 0 Wishes instead of 2. |
+
+   The first two are held-while-you-stand-there bonuses; the last two are
+   properties of the space, so they pay off for whoever is standing on it when
+   they act. Every other rule that names the Center Star (wish cap, the AI's
+   interest in the middle) applies only to the boon that is actually selected.
 
 ## Turn structure
 
@@ -75,10 +88,13 @@ Available actions, any number, any order:
   movement action.
 - **Plant a garden**: when a gnome you control occupies an empty space (no garden,
   no enemies), pay 1 Wish and place any garden type from **your own supply**
-  (4 tiles of each type per player; never a second Home Garden).
+  (4 tiles of each type per player by default — setup may budget each type
+  separately, and a type set to 0 is out of the game; never a second Home
+  Garden). Free on the center space under the "free planting" Center Star.
 - **Upgrade a garden**: when a gnome you control occupies a non-Home garden you
   control (no enemy critters on the space), pay **2 Wishes** to flip it to its
-  upgraded form. See **Garden Upgrades**.
+  upgraded form — free on the center space under the "free upgrade" Center
+  Star. See **Garden Upgrades**.
 - **Draw a Whimsy Card**: pay 1 Wish. Draw as many as you can afford. Hand limit 7 —
   if exceeded, discard down to 7 immediately.
 - Play Whimsy Cards (Ritual Magic: own turn only; Sudden Magic: anytime, including

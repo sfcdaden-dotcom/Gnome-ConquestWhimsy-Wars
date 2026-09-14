@@ -39,6 +39,7 @@ import type {
 } from './types';
 import { CARD_DEFINITIONS, CURSE_DEFINITIONS } from './cards';
 import { centerPos, gardenIsActive, parsePos, samePos, wishCap } from './helpers';
+import { tileBudget } from './setup';
 
 /** Bump whenever any encoder layout changes; trained weights gate on this. */
 // v2: garden upgrades (upgraded plane + dest flag, 'upgrade' action type) and
@@ -301,7 +302,12 @@ export function encodeObservation(state: GameState, seat: PlayerId): Float32Arra
       i += PLANTABLE_TYPES.length;
       continue;
     }
-    for (const t of PLANTABLE_TYPES) put(state.players[id].supply[t] / cfg.tilesPerType);
+    // Normalized against each type's own budget, which a per-type garden
+    // configuration can move; a type budgeted to 0 encodes as an empty supply.
+    for (const t of PLANTABLE_TYPES) {
+      const budget = tileBudget(cfg, t);
+      put(budget > 0 ? state.players[id].supply[t] / budget : 0);
+    }
   }
 
   put(N / 9);

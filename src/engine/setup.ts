@@ -18,6 +18,7 @@
  */
 
 import type {
+  CenterStarBoon,
   CreateGameOptions,
   GameConfig,
   GameState,
@@ -46,6 +47,7 @@ export const DEFAULT_CONFIG = {
   totalReinforcements: 16,
   handLimit: 7,
   centerStar: true,
+  centerStarBoon: 'wishCap' as CenterStarBoon,
   tilesPerType: 4,
   gardenPreset: DEFAULT_GARDEN_PRESET_ID as GardenPreset,
 } as const;
@@ -53,18 +55,64 @@ export const DEFAULT_CONFIG = {
 /** Per-player supply: 4 tiles of each plantable type (see config.tilesPerType). */
 export const TILES_PER_TYPE = 4;
 
+/** Most tiles of one type a player's supply may be configured to hold. */
+export const MAX_TILES_PER_TYPE = 20;
+
+/**
+ * The Center Star boons offered at setup, in menu order. The rules text lives
+ * here beside the engine that implements it — like the garden presets — so the
+ * setup screen has nothing to keep in sync beyond rendering the list.
+ */
+export const CENTER_STAR_BOONS: ReadonlyArray<{
+  id: CenterStarBoon;
+  label: string;
+  blurb: string;
+}> = [
+  {
+    id: 'wishCap',
+    label: 'Wish limit +1',
+    blurb: 'While you occupy the center, your wish limit is one higher. The rulebook star.',
+  },
+  {
+    id: 'gnomeLimit',
+    label: 'Gnome limit +1',
+    blurb: 'While you occupy the center, you may keep one more gnome on the board.',
+  },
+  {
+    id: 'freePlant',
+    label: 'Free planting on the star',
+    blurb: 'Planting a garden on the center space costs no Wishes.',
+  },
+  {
+    id: 'freeUpgrade',
+    label: 'Free upgrade on the star',
+    blurb: 'A garden planted on the center space can be upgraded for free.',
+  },
+];
+
 export { PLANTABLE_GARDEN_TYPES } from './types';
 
+/**
+ * A player's budget for one garden type: the per-type override when the
+ * configuration names one, otherwise the flat `tilesPerType`.
+ */
+export function tileBudget(
+  config: Pick<GameConfig, 'tilesPerType' | 'tileCounts'>,
+  type: PlantableGardenType,
+): number {
+  return config.tileCounts?.[type] ?? config.tilesPerType;
+}
+
 /** A fresh per-player tile supply. */
-export function makeSupply(tilesPerType: number): Record<PlantableGardenType, number> {
-  return {
-    dandelion: tilesPerType,
-    mushroom: tilesPerType,
-    flytrap: tilesPerType,
-    maize: tilesPerType,
-    slippery: tilesPerType,
-    tunnel: tilesPerType,
-  };
+export function makeSupply(
+  tilesPerType: number,
+  tileCounts?: Partial<Record<PlantableGardenType, number>>,
+): Record<PlantableGardenType, number> {
+  const supply = {} as Record<PlantableGardenType, number>;
+  for (const type of PLANTABLE_GARDEN_TYPES) {
+    supply[type] = tileCounts?.[type] ?? tilesPerType;
+  }
+  return supply;
 }
 
 // ---------------------------------------------------------------------------
@@ -130,6 +178,28 @@ function validateDeckCounts(counts: Record<string, number> | undefined): void {
   if (whimsy < 1) badConfig('deckCounts must leave at least one Whimsy card in the deck');
 }
 
+/**
+ * A configured garden budget has to leave something to plant: known types,
+ * sane counts, and at least one tile somewhere. A table with every type at 0
+ * could never plant at all, which takes a whole action (and several cards)
+ * out of the game — the same reason an all-curse deck is refused above.
+ */
+function validateTileCounts(
+  counts: Partial<Record<PlantableGardenType, number>> | undefined,
+  tilesPerType: number,
+): void {
+  if (!counts) return;
+  const plantable = new Set<string>(PLANTABLE_GARDEN_TYPES);
+  for (const [type, n] of Object.entries(counts)) {
+    if (!plantable.has(type)) badConfig(`tileCounts names an unknown garden type "${type}"`);
+    if (!Number.isInteger(n) || n < 0 || n > MAX_TILES_PER_TYPE) {
+      badConfig(`tileCounts["${type}"] must be an integer between 0 and ${MAX_TILES_PER_TYPE}`);
+    }
+  }
+  const total = PLANTABLE_GARDEN_TYPES.reduce((sum, t) => sum + (counts[t] ?? tilesPerType), 0);
+  if (total < 1) badConfig('tileCounts must leave at least one garden tile in a player supply');
+}
+
 function resolveConfig(options: CreateGameOptions): GameConfig {
   const playerCount = options.players.length;
   if (playerCount !== 2 && playerCount !== 4) badConfig('Whimsy Wars supports exactly 2 or 4 players');
@@ -181,7 +251,9 @@ function resolveConfig(options: CreateGameOptions): GameConfig {
     totalReinforcements: options.totalReinforcements ?? DEFAULT_CONFIG.totalReinforcements,
     handLimit: options.handLimit ?? DEFAULT_CONFIG.handLimit,
     centerStar: options.centerStar ?? DEFAULT_CONFIG.centerStar,
+    centerStarBoon: options.centerStarBoon ?? DEFAULT_CONFIG.centerStarBoon,
     tilesPerType: options.tilesPerType ?? DEFAULT_CONFIG.tilesPerType,
+    ...(options.tileCounts ? { tileCounts: { ...options.tileCounts } } : {}),
     ...(options.deckCounts ? { deckCounts: { ...options.deckCounts } } : {}),
     gardenPreset,
     ...(customGardens ? { customGardens } : {}),
@@ -201,7 +273,11 @@ function resolveConfig(options: CreateGameOptions): GameConfig {
   if (!Number.isInteger(cfg.tilesPerType) || cfg.tilesPerType < 1) {
     badConfig('tilesPerType must be a positive integer');
   }
+  if (!CENTER_STAR_BOONS.some((b) => b.id === cfg.centerStarBoon)) {
+    badConfig(`Unknown centerStarBoon "${cfg.centerStarBoon}"`);
+  }
   validateDeckCounts(cfg.deckCounts);
+  validateTileCounts(cfg.tileCounts, cfg.tilesPerType);
   return cfg;
 }
 
@@ -235,7 +311,7 @@ export function createGame(options: CreateGameOptions, seed: number): GameState 
     gnomesSpawned: 0,
     gnomesLost: 0,
     homePos: homes[i],
-    supply: makeSupply(config.tilesPerType),
+    supply: makeSupply(config.tilesPerType, config.tileCounts),
     quickChatsThisTurn: 0,
   }));
 
