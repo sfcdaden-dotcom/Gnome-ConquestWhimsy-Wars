@@ -92,9 +92,23 @@ handful of things anyone actually needs to do.
   on a pan-and-zoom stage (`src/ui/PanZoom.tsx`, maths in `panZoom.ts`) that
   fills the screen, with the naming fields, palette and exits floating over it
   as HUD panels — so the zoom magnifies the board and nothing else, and the fit
-  aims at the gap the panels leave rather than the raw viewport. Still owed:
-  the same pass for the GAME screen, where a 13×13 board is squeezed into the
-  middle column between the side panels.
+  aims at the gap the panels leave rather than the raw viewport.
+
+  The GAME screen followed (2026-09-14) on the same machinery. The board is no
+  longer a grid cell in the middle column capped at 580px: it is a layer of its
+  own across the play area, with the three columns floating over it, and it
+  fits into the gap they leave (their widths and the action-bar slot are
+  measured, since the right column is a `clamp` of the viewport and the left
+  grows with seats and curses). So a 13×13 board opens whole as before and can
+  now be zoomed to full size and panned, sliding under the panels as it goes,
+  while the panels keep their own scale. Below 1080px the layout still stacks
+  and the stage is an ordinary row with no insets — nothing floats over the
+  board down there. A view the player sets is kept: the stage re-fits only
+  while nobody has zoomed or panned, so the action bar appearing no longer
+  flings the board back. What is still unexamined at 11×11 and 13×13 is the
+  LEGIBILITY question this entry opened with — whether a cell's garden art and
+  unit token read at the size the clamps leave them — though zooming is now an
+  answer a player has to hand.
 
 ### P3
 

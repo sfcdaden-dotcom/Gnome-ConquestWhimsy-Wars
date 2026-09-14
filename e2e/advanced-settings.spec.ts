@@ -146,3 +146,55 @@ test('a raised wish economy is what the game starts with', async ({ page }) => {
   await expect(page.getByTestId('game-screen')).toBeVisible();
   await expect(page.locator('.player-panel').first()).toContainText('8');
 });
+
+test('a big game board zooms and pans under the panels, which keep their size', async ({ page }) => {
+  await openSetup(page);
+  await page.getByTestId('preset-select').selectOption('few');
+  await openAdvanced(page);
+  await page.getByTestId('board-size-13').click();
+  await page.getByTestId('advanced-done').click();
+
+  await page.getByTestId('player-count-2').click();
+  await page.getByTestId('seat-1-human').click();
+  await setSeed(page, 4242);
+  await page.getByTestId('start-game').click();
+  await expect(page.getByTestId('game-screen')).toBeVisible();
+
+  const board = page.locator('.board-stage .board');
+  const content = page.locator('.board-stage .panzoom-content');
+  const panels = page.locator('.right-col');
+  const scaleOf = () => content.evaluate((el) => new DOMMatrix(getComputedStyle(el).transform).a);
+
+  await expect(board.locator('button.cell')).toHaveCount(169);
+
+  // It opens fitted into the gap the panels leave: fully on screen, and clear
+  // of both columns rather than tucked under one.
+  const fitted = await scaleOf();
+  const [boardBox, leftBox, rightBox] = [
+    await board.boundingBox(),
+    await page.locator('.left-col').boundingBox(),
+    await panels.boundingBox(),
+  ];
+  expect(boardBox!.x).toBeGreaterThanOrEqual(leftBox!.x + leftBox!.width);
+  expect(boardBox!.x + boardBox!.width).toBeLessThanOrEqual(rightBox!.x + 1);
+
+  // Zooming magnifies the board alone — the panels are siblings of the stage.
+  const panelsBefore = await panels.boundingBox();
+  await page.getByRole('button', { name: 'Zoom in' }).click();
+  expect(await scaleOf()).toBeGreaterThan(fitted);
+  expect(await panels.boundingBox()).toEqual(panelsBefore);
+
+  // Dragging pans the board rather than selecting the space it started on.
+  for (let i = 0; i < 6; i += 1) await page.getByRole('button', { name: 'Zoom in' }).click();
+  const before = await content.boundingBox();
+  await page.mouse.move(before!.x + before!.width / 2, before!.y + before!.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(before!.x + before!.width / 2 - 90, before!.y + before!.height / 2, { steps: 6 });
+  await page.mouse.up();
+  expect((await content.boundingBox())!.x).toBeLessThan(before!.x);
+  await expect(page.locator('.board .cell[data-selected="true"]')).toHaveCount(0);
+
+  // Fit puts it back.
+  await page.getByRole('button', { name: 'Fit board to screen' }).click();
+  expect(await scaleOf()).toBeCloseTo(fitted, 3);
+});

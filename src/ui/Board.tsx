@@ -2,6 +2,10 @@
  * The 7×7 (N×N) board. Pure presentation: gardens, the Center Star, unit
  * stacks, and highlight overlays; all legality comes from the parent via the
  * `highlights` map.
+ *
+ * It draws at whatever pixel size it is given rather than one it works out
+ * from the space around it: the board sits on a pan-and-zoom stage
+ * (PanZoom.tsx), which is what decides how much of it is on screen.
  */
 
 import type { CSSProperties } from 'react';
@@ -22,6 +26,8 @@ export interface BoardProps {
   selectedKey: string | null;
   /** Deaths on screen right now, keyed to the space they happened on. */
   poofs?: readonly UnitPoof[];
+  /** Rendered width/height in px at zoom 1 (see boardGeometry.ts). */
+  sizePx: number;
   onCellClick: (pos: Pos) => void;
 }
 
@@ -53,7 +59,7 @@ function groupUnits(state: GameState, units: Unit[]): StackGroup[] {
   return [...map.values()];
 }
 
-export function Board({ state, highlights, selectedKey, poofs = [], onCellClick }: BoardProps) {
+export function Board({ state, highlights, selectedKey, poofs = [], sizePx, onCellClick }: BoardProps) {
   const n = state.config.boardSize;
   const center = centerPos(state);
   const cells = [];
@@ -141,7 +147,7 @@ export function Board({ state, highlights, selectedKey, poofs = [], onCellClick 
   return (
     <div
       className="board"
-      style={{ '--n': n } as CSSProperties}
+      style={{ '--n': n, width: `${sizePx}px`, height: `${sizePx}px` } as CSSProperties}
       role="grid"
       aria-label="Game board"
     >

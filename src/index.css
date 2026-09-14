@@ -19,8 +19,6 @@
   --cell: #d8e7bf;
   --cell-alt: #cfe0b3;
   --shadow: 0 4px 14px rgba(44, 66, 24, 0.12);
-  /* Vertical chrome around the board: topbar + paddings + footer slot. */
-  --board-chrome: 172px;
   /* One puff of smoke, start to gone. Mirrored by POOF_MS in fxAssets.ts —
      the timer that takes the element off screen has to outlast the frames. */
   --poof-ms: 620ms;
@@ -415,7 +413,9 @@ h2 {
   min-height: 100dvh;
   overflow: hidden;
 }
-.editor-stage {
+/* Child selector so the generic `.panzoom` rule further down (same specificity,
+   later in the file) cannot take this placement back. */
+.editor-screen > .editor-stage {
   position: absolute;
   inset: 0;
 }
@@ -477,6 +477,10 @@ h2 {
 /* ------------------------------------------------------------------ */
 
 .panzoom {
+  /* Always a containing block: the content layer and the zoom cluster are
+     positioned against it, and a static viewport would hand them to whatever
+     positioned ancestor came next (the play area, in the stacked layout). */
+  position: relative;
   overflow: hidden;
   /* The component handles every gesture itself; leaving the browser its own
      pan/pinch would fight the transform. */
@@ -499,8 +503,10 @@ h2 {
    to the viewport's corner rather than to the board. */
 .panzoom-controls {
   position: absolute;
-  right: 10px;
-  top: 50%;
+  right: calc(var(--pz-inset-right, 0px) + 10px);
+  top: calc(
+    (var(--pz-inset-top, 0px) + 100% - var(--pz-inset-bottom, 0px)) / 2
+  );
   transform: translateY(-50%);
   display: flex;
   /* Down the right edge, in the gap the HUD leaves between its panels — a
@@ -694,13 +700,42 @@ h2 {
   }
 }
 
+/* The play area. The board is a LAYER here rather than a grid cell: it sits on
+   its own pan-and-zoom stage across the whole area, and the three columns float
+   over it, so zooming magnifies the board and leaves the panels alone. The
+   stage fits the board into the gap the columns leave (GameScreen measures
+   them), which is why nothing is hidden until the player drags it under one. */
 .main {
+  position: relative;
   flex: 1;
   display: grid;
   grid-template-columns: 224px minmax(0, 1fr) clamp(280px, 26vw, 360px);
   gap: 12px;
   padding: 12px;
   min-height: 0;
+}
+.main > .board-stage {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+/* Panels over the board, and their own backgrounds are what hides it — the
+   gaps between them deliberately show it through. */
+.main > .left-col,
+.main > .board-wrap,
+.main > .right-col {
+  position: relative;
+  z-index: 1;
+}
+/* Middle column: the board no longer lives here, so the chat feed, the replay
+   card and the action-bar slot hang at the bottom of the play area over it.
+   Pointer events go to the stage in the empty space above them. */
+.main > .board-wrap {
+  justify-content: flex-end;
+  pointer-events: none;
+}
+.main > .board-wrap > * {
+  pointer-events: auto;
 }
 
 .left-col,
@@ -739,11 +774,11 @@ h2 {
 /* Board                                                               */
 /* ------------------------------------------------------------------ */
 
-/* The board fits its slot instead of dictating it: it never exceeds the
-   middle column's width, never pushes the footer slot off a short viewport
-   (100dvh minus the surrounding chrome), and is capped so it doesn't dwarf
-   the side panels on large monitors. Container-query units (cqi) below key
-   every token/emoji to the board's rendered size, scaled by --n. */
+/* Both live boards are drawn at an exact pixel size (see boardGeometry.ts) and
+   are sized from the element itself; how much of one is on screen is the pan-
+   and-zoom stage's business, not this rule's. The read-only preview overrides
+   the width below. Container-query units (cqi) key every token/emoji to the
+   board's own rendered size, scaled by --n, so they hold at any board size. */
 .board {
   display: grid;
   grid-template-columns: repeat(var(--n, 7), 1fr);
@@ -753,7 +788,6 @@ h2 {
   border: 1px solid var(--border);
   border-radius: 14px;
   box-shadow: var(--shadow);
-  width: min(100%, calc(100dvh - var(--board-chrome)), 580px);
   aspect-ratio: 1;
   container-type: inline-size;
 }
@@ -1883,9 +1917,18 @@ h2 {
   .board-wrap {
     min-height: auto;
   }
-  /* Stacked: the board shares the screen with the panels below it. */
-  .board {
-    width: min(100%, 62dvh, 520px);
+  /* Stacked: the stage is an ordinary row between the panels, tall enough to
+     show a fitted board, and nothing floats over it. */
+  .main > .board-stage {
+    position: relative;
+    inset: auto;
+    /* An explicit height, not an aspect-ratio: the stage's own children are
+       absolutely positioned, so a grid row sized from its content would
+       collapse and the board would spill over the panels below. */
+    height: min(88vw, 62dvh, 520px);
+  }
+  .main > .board-wrap {
+    justify-content: flex-start;
   }
   /* Player cards sit side by side instead of a tall stack. */
   .player-panels {
@@ -1915,9 +1958,6 @@ h2 {
 /* Short-but-wide screens (small laptops): shave the chrome so the board and
    its footer always fit without scrolling. */
 @media (max-height: 640px) and (min-width: 1081px) {
-  :root {
-    --board-chrome: 140px;
-  }
   .main {
     gap: 8px;
     padding: 8px;

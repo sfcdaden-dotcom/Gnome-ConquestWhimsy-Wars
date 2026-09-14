@@ -719,3 +719,24 @@ test('the home screen shows the credits, and three ways out of them', async ({ p
   await page.getByTestId('home-local').click();
   await expect(page.getByTestId('start-game')).toBeVisible();
 });
+
+test('a zoomed-in board stays where the player put it when the action bar appears', async ({ page }) => {
+  const g = new Game(page);
+  await g.startTwoPlayer(SEED);
+
+  const content = page.locator('.board-stage .panzoom-content');
+  const transform = () => content.evaluate((el) => getComputedStyle(el).transform);
+
+  await page.getByRole('button', { name: 'Zoom in' }).click();
+  await page.getByRole('button', { name: 'Zoom in' }).click();
+  const zoomed = await transform();
+
+  // Playing on changes what surrounds the board — the action bar takes up the
+  // footer slot, the decision panel comes and goes — and the stage fits the
+  // board into whatever that leaves. A view the player set is theirs, though:
+  // it must survive all of it, or zooming in would be undone by every click.
+  await g.completeRollOff();
+  await g.resolveHarvest('wish');
+  await expect(page.getByTestId('action-bar')).toBeVisible();
+  expect(await transform()).toBe(zoomed);
+});
