@@ -343,8 +343,12 @@ function RoomView({
     s.look ? sanitizeLook(s.look) : undefined,
   );
 
-  // A closed room is not a lobby with a problem — there is nothing left to
-  // render and nothing to reconnect to.
+  // Neither of these is a lobby with a problem: in both the socket is down for
+  // good and there is nothing left to render around.
+  if (net.status === 'stale') {
+    return <RoomStale reason={net.staleReason} />;
+  }
+
   if (net.status === 'closed') {
     return <RoomClosed code={code} reason={net.closedReason} onLeave={onLeave} />;
   }
@@ -363,6 +367,36 @@ function RoomView({
     <GnomeLooksContext value={looks}>
       <Lobby net={net} code={code} onLeave={onLeave} />
     </GnomeLooksContext>
+  );
+}
+
+/**
+ * This page and the room disagree about the protocol, so the socket is down
+ * and staying down.
+ *
+ * The only button is the one that fixes it. Going "back to the menu" would
+ * leave a stale app to fail again on the next room, and the previous behaviour
+ * — redialling forever behind an error toast per attempt — was worse still:
+ * the game looked joinable and simply never worked.
+ */
+function RoomStale({ reason }: { reason: string | null }) {
+  return (
+    <div className="home-screen" data-testid="room-stale">
+      <div className="home-card">
+        <h1 className="home-title">This page is out of date</h1>
+        <p className="home-tagline">
+          {reason ?? 'This page is running a different version of the game than the room.'}
+        </p>
+        <button
+          type="button"
+          className="btn accent big"
+          data-testid="room-stale-reload"
+          onClick={() => window.location.reload()}
+        >
+          Reload
+        </button>
+      </div>
+    </div>
   );
 }
 

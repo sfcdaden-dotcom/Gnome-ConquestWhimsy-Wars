@@ -555,7 +555,7 @@ test('quick chat sends fixed phrases only, and runs out for the turn', async ({ 
   for (const [group, phrase] of [
     ['greetings', 'hi'],
     ['compliments', 'wow'],
-    ['musings', 'why-the-hats'],
+    ['musings', 'why-fighting'],
   ]) {
     await page.getByTestId('quickchat-open').click();
     await page.getByTestId(`quickchat-group-${group}`).click();
@@ -577,7 +577,7 @@ test('the phrase picker steps back out of a category and closes', async ({ page 
 
   await page.getByTestId('quickchat-open').click();
   await page.getByTestId('quickchat-group-tactics').click();
-  await expect(page.getByTestId('quickchat-say-watch-the-flytrap')).toBeVisible();
+  await expect(page.getByTestId('quickchat-say-dig-dig-dig')).toBeVisible();
 
   // Back returns to the wheel without spending anything.
   await page.getByTestId('quickchat-back').click();
@@ -637,7 +637,7 @@ test('chat and game log share one window, and unread chat is badged', async ({ p
 
   // Reading the chat clears the badge.
   await page.getByTestId('chat-tab-chat').click();
-  await expect(page.getByTestId('chat-transcript')).toContainText('Good luck!');
+  await expect(page.getByTestId('chat-transcript')).toContainText('Good Luck!');
   await expect(page.getByTestId('chat-unread')).toBeHidden();
 
   // Collapsing hides both bodies but keeps the composer reachable.
@@ -739,4 +739,124 @@ test('a zoomed-in board stays where the player put it when the action bar appear
   await g.resolveHarvest('wish');
   await expect(page.getByTestId('action-bar')).toBeVisible();
   expect(await transform()).toBe(zoomed);
+});
+
+/**
+ * The two quick-chat lines that name something.
+ *
+ * Everything else in the catalogue is fixed words for a fixed id, which is what
+ * keeps the set of sendable things closed. These two vary — by a seat id or a
+ * coordinate, never by text — so they take a third step in the picker, and the
+ * line they produce has to arrive on screen with the blank filled in.
+ *
+ * A LIST rather than a click on the board, deliberately: chat is sendable out
+ * of turn and while somebody else's decision is open, which is exactly when a
+ * picker that captured board clicks would be fighting the game for them.
+ */
+test('a chat line that names a rival is completed before it is sent', async ({ page }) => {
+  await page.goto('/');
+  await page.getByTestId('home-local').click();
+  await page.getByTestId('start-game').click();
+  await expect(page.getByTestId('game-screen')).toBeVisible();
+
+  const roll = page.getByTestId('roll-off');
+  while (await roll.count()) {
+    await roll.click();
+    await page.waitForTimeout(100);
+  }
+
+  await page.getByTestId('quickchat-open').click();
+  await page.getByTestId('quickchat-group-tactics').click();
+
+  // Choosing it does not send it — there is a blank in it.
+  await page.getByTestId('quickchat-say-coming-for-you').click();
+  await expect(page.getByTestId('quickchat-targets')).toBeVisible();
+  await expect(page.getByTestId('chat-transcript')).toHaveText(/Nobody has said a word yet/);
+
+  // Back returns to the phrases rather than closing the whole picker.
+  await page.getByTestId('quickchat-target-back').click();
+  await expect(page.getByTestId('quickchat-say-coming-for-you')).toBeVisible();
+
+  await page.getByTestId('quickchat-say-coming-for-you').click();
+  await page.locator('[data-testid^="quickchat-target-p"]').first().click();
+
+  // The placeholder is gone, replaced by the rival it names.
+  const transcript = page.getByTestId('chat-transcript');
+  await expect(transcript).toContainText("I'm coming for you");
+  await expect(transcript).not.toContainText('{{');
+
+  // A plain line still goes straight out, with no second step.
+  await page.getByTestId('quickchat-open').click();
+  await page.getByTestId('quickchat-group-greetings').click();
+  await page.getByTestId('quickchat-say-yaaargh').click();
+  await expect(transcript).toContainText('YAAAARGH');
+});
+
+/**
+ * The category flower by keyboard.
+ *
+ * `role="menu"` is a promise: a menu is ONE tab stop whose items are reached
+ * with the arrows. The markup claimed that before the arrows existed, which is
+ * the worse of the two failures — a screen reader announces a menu and then the
+ * keys it tells you to press do nothing.
+ */
+test('the category wheel is one tab stop that the arrow keys walk around', async ({ page }) => {
+  const g = new Game(page);
+  await g.startTwoPlayer(SEED);
+  await g.completeRollOff();
+  await g.resolveHarvest('wish');
+
+  const focusedId = () =>
+    page.evaluate(() => document.activeElement?.getAttribute('data-testid') ?? null);
+
+  // Opening a menu moves focus into it — the arrows are useless otherwise.
+  await page.getByTestId('quickchat-open').click();
+  await expect(page.getByTestId('quickchat-menu')).toBeVisible();
+  expect(await focusedId()).toBe('quickchat-group-greetings');
+
+  // Both axes step around the ring: on a circle there is no row or column, so
+  // "next" is the only direction that means anything.
+  await page.keyboard.press('ArrowRight');
+  expect(await focusedId()).toBe('quickchat-group-compliments');
+  await page.keyboard.press('ArrowDown');
+  expect(await focusedId()).toBe('quickchat-group-reactions');
+  await page.keyboard.press('ArrowLeft');
+  expect(await focusedId()).toBe('quickchat-group-compliments');
+
+  // And it wraps, because a ring has no ends.
+  await page.keyboard.press('Home');
+  expect(await focusedId()).toBe('quickchat-group-greetings');
+  await page.keyboard.press('ArrowLeft');
+  expect(await focusedId()).toBe('quickchat-group-manners');
+
+  // Enter opens that category, like a click.
+  await page.keyboard.press('Enter');
+  await expect(page.getByTestId('quickchat-say-sorry')).toBeVisible();
+});
+
+/**
+ * Each petal has to occupy its own bounding box, not the whole flower.
+ *
+ * Clipping a full-size button looks identical and hit-tests correctly, but
+ * leaves every category reporting the same box centred on the hub — so a click
+ * aimed at "that category" lands on Close instead. Pinned here as well as in
+ * quickChatWheel.test.ts, because the browser is where the two can disagree.
+ */
+test('clicking a category hits that category, not the hub behind it', async ({ page }) => {
+  const g = new Game(page);
+  await g.startTwoPlayer(SEED);
+  await g.completeRollOff();
+  await g.resolveHarvest('wish');
+
+  await page.getByTestId('quickchat-open').click();
+
+  // A petal is a part of the flower, not the whole of it.
+  const petal = (await page.getByTestId('quickchat-group-greetings').boundingBox())!;
+  const ring = (await page.locator('.qc-ring').boundingBox())!;
+  expect(petal.width).toBeLessThan(ring.width * 0.8);
+  expect(petal.height).toBeLessThan(ring.height * 0.8);
+
+  // Playwright clicks the element's centre — the same aim the bug broke.
+  await page.getByTestId('quickchat-group-schemes').click();
+  await expect(page.getByTestId('quickchat-say-scram')).toBeVisible();
 });

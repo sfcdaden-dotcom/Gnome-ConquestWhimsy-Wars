@@ -15,6 +15,13 @@
  *
  * When a heuristic is INTENTIONALLY changed, these digests move — update them
  * in the same commit as the change, never separately.
+ *
+ * `actions` and `winner` are pinned alongside the digest for a reason: together
+ * they say WHAT changed. A digest that moves while both hold means the CPU
+ * played the identical game and only the bytes of some action differed — which
+ * is what a change to the quick-chat catalogue looks like, since the phrase id
+ * is part of the action key. A move in `actions` or `winner` is a change to how
+ * it PLAYS, and wants a much harder look before it is re-pinned.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -65,11 +72,11 @@ describe('AI fingerprints (behavior lock)', () => {
     actions: number;
     winner: number | null;
   }> = [
-    { label: '2p normal seed 1', state: () => game(1, 'normal'), digest: '0f61b02d', actions: 191, winner: 0 },
-    { label: '2p normal seed 2', state: () => game(2, 'normal'), digest: '6f08f684', actions: 275, winner: 0 },
-    { label: '2p hard seed 3', state: () => game(3, 'hard'), digest: '1b7975cc', actions: 250, winner: 1 },
-    { label: '2p easy seed 4', state: () => game(4, 'easy'), digest: '034649f0', actions: 248, winner: 1 },
-    { label: '4p normal seed 5', state: () => game(5, 'normal', 4), digest: 'ec8fe5cd', actions: 607, winner: 2 },
+    { label: '2p normal seed 1', state: () => game(1, 'normal'), digest: '9aa3db58', actions: 191, winner: 0 },
+    { label: '2p normal seed 2', state: () => game(2, 'normal'), digest: '2c2e2b1c', actions: 275, winner: 0 },
+    { label: '2p hard seed 3', state: () => game(3, 'hard'), digest: 'e45c37e8', actions: 250, winner: 1 },
+    { label: '2p easy seed 4', state: () => game(4, 'easy'), digest: '73c7b855', actions: 248, winner: 1 },
+    { label: '4p normal seed 5', state: () => game(5, 'normal', 4), digest: 'eea315ec', actions: 607, winner: 2 },
   ];
 
   for (const c of cases) {

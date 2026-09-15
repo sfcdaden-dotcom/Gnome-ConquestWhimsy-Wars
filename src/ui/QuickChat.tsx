@@ -6,17 +6,25 @@
  * phrase ids from its catalogue, so the UI's whole job is picking one. The
  * picker is two-step: a wheel of categories, then a plain list of that
  * category's phrases (a list, not a second ring, because the lines are
- * sentences — "Have you ever really looked at a dandelion?" does not fit in a
- * 60px petal). The remaining allowance comes from the engine too, so the
- * button disables for exactly the same reason a dispatch would be rejected.
+ * sentences — "Where'd all my friends go?" does not fit in a 60px petal). The
+ * remaining allowance comes from the engine too, so the button disables for
+ * exactly the same reason a dispatch would be rejected.
+ *
+ * Two phrases name something — a rival, or a square — and take a third step: a
+ * list of who or what. A LIST, not a click on the board, and that is the
+ * load-bearing choice: quick chat is sendable at any moment, including out of
+ * turn and while somebody else's decision is open, so a picker that captured
+ * board clicks would be fighting the game for them at exactly the times chat is
+ * most likely to be used.
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { GameState, PlayerId, QuickChatId } from '../engine';
+import type { GameState, PlayerId, QuickChatId, QuickChatPhrase, QuickChatTarget } from '../engine';
 import { QUICK_CHAT_GROUPS, QUICK_CHAT_PER_TURN, quickChatsLeft } from '../engine';
 import type { ChatBubble } from './useGame';
 import { GameLogView } from './panels';
-import { playerColor, pname, quickChatText } from './meta';
+import { GARDEN_META, playerColor, pname, posStr, quickChatText } from './meta';
+import { wedgeGeometry } from './quickChatWheel';
 
 // ---------------------------------------------------------------------------
 // The chat window
@@ -29,7 +37,7 @@ export interface ChatPanelProps {
   disabled: boolean;
   muted: boolean;
   onToggleMute: () => void;
-  onSay: (player: PlayerId, phraseId: QuickChatId) => void;
+  onSay: (player: PlayerId, phraseId: QuickChatId, target?: QuickChatTarget) => void;
 }
 
 type Tab = 'chat' | 'log';
@@ -42,7 +50,9 @@ export function ChatPanel({ state, seat, disabled, muted, onToggleMute, onSay }:
   const lines = useMemo(
     () =>
       state.events.flatMap((e, i) =>
-        e.type === 'quickChatSaid' ? [{ key: i, player: e.player, phraseId: e.phraseId }] : [],
+        e.type === 'quickChatSaid'
+          ? [{ key: i, player: e.player, phraseId: e.phraseId, target: e.target }]
+          : [],
       ),
     [state.events],
   );
@@ -128,7 +138,7 @@ function ChatTranscript({
   lines,
 }: {
   state: GameState;
-  lines: ReadonlyArray<{ key: number; player: PlayerId; phraseId: QuickChatId }>;
+  lines: ReadonlyArray<{ key: number; player: PlayerId; phraseId: QuickChatId; target?: QuickChatTarget }>;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -141,7 +151,7 @@ function ChatTranscript({
       {lines.map((l) => (
         <div key={l.key} className="chat-line">
           <b style={{ color: playerColor(l.player) }}>{pname(state, l.player)}</b>{' '}
-          {quickChatText(l.phraseId)}
+          {quickChatText(l.phraseId, l.target)}
         </div>
       ))}
       {lines.length === 0 && <div className="chat-line muted">Nobody has said a word yet.</div>}
@@ -153,10 +163,6 @@ function ChatTranscript({
 // The picker: a wheel of categories, then that category's phrases
 // ---------------------------------------------------------------------------
 
-/** Wheel geometry (px). The column is 280–360 wide, so the ring must fit 260. */
-const WHEEL_SIZE = 240;
-const WHEEL_RADIUS = 88;
-
 function QuickChatComposer({
   state,
   seat,
@@ -166,15 +172,21 @@ function QuickChatComposer({
   state: GameState;
   seat: PlayerId | null;
   disabled: boolean;
-  onSay: (player: PlayerId, phraseId: QuickChatId) => void;
+  onSay: (player: PlayerId, phraseId: QuickChatId, target?: QuickChatTarget) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [groupId, setGroupId] = useState<string | null>(null);
+  /** A chosen phrase still waiting for the thing it names. */
+  const [pending, setPending] = useState<QuickChatPhrase | null>(null);
+  /** Which wedge the roving tabindex is currently on. */
+  const [cursor, setCursor] = useState(0);
+  const petalRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const ref = useRef<HTMLDivElement>(null);
 
   const close = () => {
     setOpen(false);
     setGroupId(null);
+    setPending(null);
   };
 
   // Escape steps back one level (phrases → wheel → closed); an outside click
@@ -188,7 +200,8 @@ function QuickChatComposer({
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
       e.stopPropagation();
-      if (groupId !== null) setGroupId(null);
+      if (pending !== null) setPending(null);
+      else if (groupId !== null) setGroupId(null);
       else close();
     };
     const onDown = (e: MouseEvent) => {
@@ -200,7 +213,39 @@ function QuickChatComposer({
       document.removeEventListener('keydown', onKey, true);
       document.removeEventListener('mousedown', onDown);
     };
-  }, [open, groupId]);
+  }, [open, groupId, pending]);
+
+  // Opening a menu moves the focus into it — the rest of the keyboard
+  // behaviour is useless otherwise, since there would be nothing to arrow away
+  // from. Only for the wheel: the phrase list and the target picker are
+  // ordinary lists and the browser handles those.
+  useEffect(() => {
+    if (!open || groupId !== null || pending !== null) return;
+    setCursor(0);
+    petalRefs.current[0]?.focus();
+  }, [open, groupId, pending]);
+
+  /**
+   * Move the focus around the ring.
+   *
+   * `role="menu"` is a promise that the arrow keys work — a menu is a single
+   * tab stop whose items are reached with the arrows — so implementing it is
+   * not a flourish but the other half of the semantics already claimed here.
+   * Both axes step around the ring because there is no row or column to speak
+   * of: on a circle, "next" is the only direction that means anything.
+   */
+  function onWheelKey(e: React.KeyboardEvent<HTMLDivElement>): void {
+    const n = QUICK_CHAT_GROUPS.length;
+    let next: number | null = null;
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') next = (cursor + 1) % n;
+    else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') next = (cursor - 1 + n) % n;
+    else if (e.key === 'Home') next = 0;
+    else if (e.key === 'End') next = n - 1;
+    if (next === null) return;
+    e.preventDefault(); // the arrows would otherwise scroll the column behind
+    setCursor(next);
+    petalRefs.current[next]?.focus();
+  }
 
   if (seat === null) return null;
 
@@ -224,59 +269,107 @@ function QuickChatComposer({
         }
         onClick={() => (open ? close() : setOpen(true))}
       >
-        💬 Say something…
+        Say something…
         <span className="qc-left" data-testid="quickchat-left" title={`${QUICK_CHAT_PER_TURN} per player per turn`}>
           {left}/{QUICK_CHAT_PER_TURN}
         </span>
       </button>
 
-      {open && canSay && group === null && (
-        <div className="qc-wheel" role="menu" aria-label="Quick chat categories" data-testid="quickchat-menu">
+      {open && canSay && pending === null && group === null && (
+        <div className="qc-wheel" data-testid="quickchat-menu">
+          <div className="qc-wheel-head" id="qc-wheel-title">
+            Quick chat
+          </div>
           <div
             className="qc-ring"
-            style={{ width: WHEEL_SIZE, height: WHEEL_SIZE }}
+            role="menu"
+            aria-labelledby="qc-wheel-title"
+            onKeyDown={onWheelKey}
           >
             {QUICK_CHAT_GROUPS.map((g, i) => {
-              // Start at the top and go clockwise, so the first category is
-              // always under the thumb's natural resting arc.
-              const angle = (i / QUICK_CHAT_GROUPS.length) * 2 * Math.PI - Math.PI / 2;
+              const w = wedgeGeometry(i, QUICK_CHAT_GROUPS.length);
               return (
                 <button
                   key={g.id}
                   type="button"
                   role="menuitem"
+                  ref={(el) => {
+                    petalRefs.current[i] = el;
+                  }}
+                  // Roving tabindex: the menu is ONE tab stop and the arrows
+                  // move within it. Seven separate stops would mean tabbing past
+                  // six categories to reach the seventh, which is the thing a
+                  // radial menu exists to avoid.
+                  tabIndex={i === cursor ? 0 : -1}
                   className="qc-petal"
                   style={{
-                    left: `calc(50% + ${Math.cos(angle) * WHEEL_RADIUS}px)`,
-                    top: `calc(50% + ${Math.sin(angle) * WHEEL_RADIUS}px)`,
+                    left: `${w.left}%`,
+                    top: `${w.top}%`,
+                    width: `${w.width}%`,
+                    height: `${w.height}%`,
+                    clipPath: w.clipPath,
+                    transformOrigin: `${w.originX}% ${w.originY}%`,
                   }}
                   data-testid={`quickchat-group-${g.id}`}
+                  // The visible text lives in the layer below, outside the
+                  // clip, so the button carries the name instead.
+                  aria-label={g.label}
+                  onFocus={() => setCursor(i)}
                   onClick={() => setGroupId(g.id)}
-                >
-                  <span className="qc-petal-emoji">{g.emoji}</span>
-                  <span className="qc-petal-label">{g.label}</span>
-                </button>
+                />
               );
             })}
-            <div className="qc-hub">
-              <span className="qc-hub-title">Quick chat</span>
-              <button type="button" className="btn small" data-testid="quickchat-close" onClick={close}>
-                ✕ Close
-              </button>
+            {/* Labels, above every petal and clipped by none of them. Inert, so
+                a click still reaches the petal underneath. */}
+            <div className="qc-labels" aria-hidden="true">
+              {QUICK_CHAT_GROUPS.map((g, i) => {
+                const w = wedgeGeometry(i, QUICK_CHAT_GROUPS.length);
+                return (
+                  <span
+                    key={g.id}
+                    className="qc-petal-label"
+                    style={{ left: `${w.labelX}%`, top: `${w.labelY}%` }}
+                  >
+                    {g.label}
+                  </span>
+                );
+              })}
             </div>
+            {/* The hole in the middle is the way out — where a radial menu's
+                cancel has always been, and the one place a stray click can
+                land without choosing something. */}
+            <button
+              type="button"
+              className="qc-hub"
+              data-testid="quickchat-close"
+              onClick={close}
+            >
+              Close
+            </button>
           </div>
         </div>
       )}
 
-      {open && canSay && group !== null && (
+      {open && canSay && pending !== null && (
+        <TargetPicker
+          state={state}
+          seat={seat}
+          phrase={pending}
+          onBack={() => setPending(null)}
+          onPick={(target) => {
+            onSay(seat, pending.id, target);
+            close();
+          }}
+        />
+      )}
+
+      {open && canSay && pending === null && group !== null && (
         <div className="qc-list" role="menu" aria-label={group.label} data-testid="quickchat-menu">
           <div className="qc-list-head">
             <button type="button" className="btn small" data-testid="quickchat-back" onClick={() => setGroupId(null)}>
               ‹ Back
             </button>
-            <span className="qc-list-title">
-              {group.emoji} {group.label}
-            </span>
+            <span className="qc-list-title">{group.label}</span>
           </div>
           {group.phrases.map((p) => (
             <button
@@ -286,11 +379,17 @@ function QuickChatComposer({
               className="btn qc-phrase"
               data-testid={`quickchat-say-${p.id}`}
               onClick={() => {
+                // A phrase that names something cannot be sent yet: the engine
+                // refuses it without a target, so ask for one first.
+                if (p.needs) {
+                  setPending(p);
+                  return;
+                }
                 onSay(seat, p.id);
                 close();
               }}
             >
-              {p.emoji} {p.text}
+              {p.text}
             </button>
           ))}
           <div className="small muted qc-note">Fixed phrases only — no typing, no surprises.</div>
@@ -305,6 +404,86 @@ function QuickChatComposer({
 // ---------------------------------------------------------------------------
 
 /** Recent quickchats, newest last. Rendered over the board and auto-expiring. */
+/**
+ * Step three: who, or where.
+ *
+ * Rendered in place of the phrase list, with a Back that returns to it. Both
+ * kinds are plain lists for the reason in the module comment — the board is not
+ * available to click on while somebody else is mid-decision, and chat is
+ * specifically the thing people do at that moment.
+ */
+function TargetPicker({
+  state,
+  seat,
+  phrase,
+  onBack,
+  onPick,
+}: {
+  state: GameState;
+  seat: PlayerId;
+  phrase: QuickChatPhrase;
+  onBack: () => void;
+  onPick: (target: QuickChatTarget) => void;
+}) {
+  const options = useMemo(() => {
+    if (phrase.needs === 'player') {
+      // Everyone still in the game but you. A seat that is out cannot be
+      // threatened, and the engine refuses aiming a line at yourself.
+      return state.players
+        .filter((p) => p.id !== seat && p.status === 'playing')
+        .map((p) => ({
+          key: `p${p.id}`,
+          label: pname(state, p.id),
+          color: playerColor(p.id),
+          target: { kind: 'player', player: p.id } as QuickChatTarget,
+        }));
+    }
+    // Gardens you do not already own — the line is about wanting one.
+    return Object.entries(state.gardens)
+      .filter(([, g]) => g.owner !== seat)
+      .map(([key, g]) => {
+        const [x, y] = key.split(',').map(Number);
+        const pos = { x, y };
+        return {
+          key,
+          label: `${GARDEN_META[g.type].label} ${posStr(pos)}`,
+          color: g.owner === undefined ? undefined : playerColor(g.owner),
+          target: { kind: 'space', pos } as QuickChatTarget,
+        };
+      })
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [state, seat, phrase.needs]);
+
+  return (
+    <div className="qc-list" role="menu" aria-label="Choose a target" data-testid="quickchat-targets">
+      <div className="qc-list-head">
+        <button type="button" className="btn small" data-testid="quickchat-target-back" onClick={onBack}>
+          ‹ Back
+        </button>
+        <span className="qc-list-title">{phrase.needs === 'player' ? 'Aim at…' : 'Which garden?'}</span>
+      </div>
+      {options.length === 0 && (
+        <div className="qc-phrase muted" data-testid="quickchat-targets-empty">
+          Nothing to point at right now.
+        </div>
+      )}
+      {options.map((o) => (
+        <button
+          key={o.key}
+          type="button"
+          role="menuitem"
+          className="btn qc-phrase"
+          data-testid={`quickchat-target-${o.key}`}
+          style={o.color ? { borderLeftColor: o.color, borderLeftWidth: 4 } : undefined}
+          onClick={() => onPick(o.target)}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function QuickChatFeed({ state, bubbles }: { state: GameState; bubbles: readonly ChatBubble[] }) {
   if (bubbles.length === 0) return null;
   return (
@@ -317,7 +496,7 @@ export function QuickChatFeed({ state, bubbles }: { state: GameState; bubbles: r
           data-testid={`quickchat-bubble-${b.phraseId}`}
         >
           <b style={{ color: playerColor(b.player) }}>{pname(state, b.player)}</b>{' '}
-          {quickChatText(b.phraseId)}
+          {quickChatText(b.phraseId, b.target)}
         </div>
       ))}
     </div>

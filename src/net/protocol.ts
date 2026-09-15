@@ -56,6 +56,21 @@ export const CLOSE_SEAT_TAKEN_OVER = 4000;
  */
 export const CLOSE_RATE_LIMITED = 4001;
 
+/**
+ * The client speaks a different version of this protocol than the room does —
+ * one side is running an older build.
+ *
+ * A client must NOT redial: nothing about reconnecting changes which version
+ * it speaks, so a retry loop is infinite by construction and every pass costs
+ * the room a connection and the player another error. The only fix is loading
+ * the app again, which is a thing to TELL somebody rather than something to
+ * keep failing at quietly.
+ *
+ * In the application range rather than the standard 1002 so a client can tell
+ * this apart from any other protocol-level close and say something useful.
+ */
+export const CLOSE_PROTOCOL = 4002;
+
 /** The room is already holding as many connections as it will hold. */
 export const CLOSE_TOO_MANY_CONNECTIONS = 4003;
 
@@ -380,7 +395,8 @@ export type RoomClosedReason =
   | 'abandoned';
 
 export type RoomErrorCode =
-  | 'PROTOCOL' // unparseable, unknown, or wrong-version message
+  | 'PROTOCOL' // unparseable or unknown message
+  | 'STALE_CLIENT' // right messages, wrong protocol version: reload the app
   | 'NOT_YOUR_SEAT' // the action's player is not this connection's seat
   | 'NOT_HOST' // a lobby command from someone who does not own the lobby
   | 'WRONG_PHASE' // right message, wrong moment (start twice, act in a lobby)

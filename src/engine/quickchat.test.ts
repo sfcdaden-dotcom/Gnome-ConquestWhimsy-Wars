@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import type { Action, CreateGameOptions, GameState } from './index';
+import type { Action, CreateGameOptions, GameState, QuickChatTarget } from './index';
 import {
   EngineError,
   QUICK_CHAT_GROUPS,
@@ -27,7 +27,12 @@ import {
 import { CPU_SCHEME_LINES } from './ai/chatter';
 import { activePlayer, drive, newGame, toActionPhase } from './testkit';
 
-const say = (player: number, phraseId: string): Action => ({ type: 'quickChat', player, phraseId });
+const say = (player: number, phraseId: string, target?: QuickChatTarget): Action => ({
+  type: 'quickChat',
+  player,
+  phraseId,
+  ...(target ? { target } : {}),
+});
 
 /** Last quickchat event on the log. */
 function lastChat(s: GameState) {
@@ -40,7 +45,6 @@ describe('quick chat catalogue', () => {
     expect(new Set(ids).size).toBe(ids.length);
     for (const p of QUICK_CHAT_PHRASES) {
       expect(p.text.trim().length).toBeGreaterThan(0);
-      expect(p.emoji.trim().length).toBeGreaterThan(0);
       expect(getQuickChatPhrase(p.id)).toEqual(p);
     }
   });
@@ -90,7 +94,7 @@ describe('quick chat action', () => {
     const s = toActionPhase(3);
     const me = activePlayer(s);
     const other = (me + 1) % s.players.length;
-    const after = applyAction(s, say(other, 'take-your-time'));
+    const after = applyAction(s, say(other, 'no-worries'));
     expect(lastChat(after)).toMatchObject({ player: other });
     // The turn is untouched.
     expect(after.turn?.activePlayer).toBe(me);
@@ -111,15 +115,98 @@ describe('quick chat action', () => {
     expect(strip(after)).toEqual(strip(s));
   });
 
-  it('still works after the game is over (“gg”), unlike every other action', () => {
+  it('still works after the game is over (a parting “Good Game!”), unlike every other action', () => {
     const s = drive(newGame(9, { gardenPreset: 'many' }), () => false, 4000);
     expect(isGameOver(s)).toBe(true);
     expect(() => applyAction(s, { type: 'endTurn', player: 0 })).toThrow(/game is over/i);
 
-    const after = applyAction(s, say(0, 'gg'));
-    expect(lastChat(after)).toMatchObject({ phraseId: 'gg', player: 0 });
+    const after = applyAction(s, say(0, 'good-game'));
+    expect(lastChat(after)).toMatchObject({ phraseId: 'good-game', player: 0 });
     expect(after.status).toBe('finished');
     expect(after.winner).toBe(s.winner);
+  });
+
+  /**
+   * The two lines that name something.
+   *
+   * A target is an id or a coordinate, never text — which is what keeps the set
+   * of things a player can say closed even though two of the lines vary. The
+   * rules run both ways on purpose: a line that needs a target cannot go
+   * without one, and a line that shows no target cannot carry one. The second
+   * is the one worth enforcing, because a target rides in the match record and
+   * out to every seat, so an unshown one would be a free side-channel for
+   * pointing at a square.
+   */
+  describe('lines that name something', () => {
+    it('carries a player target on the line that names a rival', () => {
+      const s = toActionPhase(3);
+      const me = activePlayer(s);
+      const other = (me + 1) % s.players.length;
+      const after = applyAction(s, say(me, 'coming-for-you', { kind: 'player', player: other }));
+      expect(lastChat(after)).toMatchObject({
+        phraseId: 'coming-for-you',
+        target: { kind: 'player', player: other },
+      });
+    });
+
+    it('carries a space target on the line that names a square', () => {
+      const s = toActionPhase(3);
+      const me = activePlayer(s);
+      const after = applyAction(s, say(me, 'one-day-that-garden', { kind: 'space', pos: { x: 1, y: 2 } }));
+      expect(lastChat(after)).toMatchObject({ target: { kind: 'space', pos: { x: 1, y: 2 } } });
+    });
+
+    it('refuses a line that names something when nothing is named', () => {
+      const s = toActionPhase(3);
+      const me = activePlayer(s);
+      expect(() => applyAction(s, say(me, 'coming-for-you'))).toThrow(EngineError);
+      expect(() => applyAction(s, say(me, 'one-day-that-garden'))).toThrow(EngineError);
+    });
+
+    it('refuses a target on a line that would never show it', () => {
+      const s = toActionPhase(3);
+      const me = activePlayer(s);
+      expect(() => applyAction(s, say(me, 'hi', { kind: 'space', pos: { x: 0, y: 0 } }))).toThrow(
+        EngineError,
+      );
+    });
+
+    it('refuses the wrong kind of target', () => {
+      const s = toActionPhase(3);
+      const me = activePlayer(s);
+      expect(() => applyAction(s, say(me, 'coming-for-you', { kind: 'space', pos: { x: 0, y: 0 } }))).toThrow(
+        EngineError,
+      );
+    });
+
+    it('refuses a square that is not on the board', () => {
+      const s = toActionPhase(3);
+      const me = activePlayer(s);
+      const off = s.config.boardSize;
+      expect(() => applyAction(s, say(me, 'one-day-that-garden', { kind: 'space', pos: { x: off, y: 0 } }))).toThrow(
+        EngineError,
+      );
+    });
+
+    it('refuses a seat that does not exist, and refuses aiming at yourself', () => {
+      const s = toActionPhase(3);
+      const me = activePlayer(s);
+      expect(() => applyAction(s, say(me, 'coming-for-you', { kind: 'player', player: 99 }))).toThrow(
+        EngineError,
+      );
+      // A mis-click, not a taunt.
+      expect(() => applyAction(s, say(me, 'coming-for-you', { kind: 'player', player: me }))).toThrow(
+        /yourself/i,
+      );
+    });
+
+    it('spends an allowance like any other line', () => {
+      const s = toActionPhase(3);
+      const me = activePlayer(s);
+      const other = (me + 1) % s.players.length;
+      const after = applyAction(s, say(me, 'coming-for-you', { kind: 'player', player: other }));
+      expect(quickChatsLeft(after, me)).toBe(QUICK_CHAT_PER_TURN - 1);
+    });
   });
 
   it('is never offered as a legal action (chat is not a move)', () => {
@@ -173,15 +260,39 @@ describe('CPU chatter', () => {
     expect(allChats.length).toBeGreaterThan(0);
   });
 
-  it('says only lines from the two groups it speaks from', () => {
-    const speakable = new Set([
-      ...QUICK_CHAT_MUSINGS.map((p) => p.id),
-      ...QUICK_CHAT_SCHEMES.map((p) => p.id),
-    ]);
+  /**
+   * The CPU's whole vocabulary, asserted against the tables rather than against
+   * a list of groups.
+   *
+   * It used to be exactly two groups, Schemes and Musings. It no longer is: the
+   * line for marching on somebody's Home names whose, and a phrase that names a
+   * person sits with the other targeted lines in Tactics. Deriving the set from
+   * `CPU_SCHEME_LINES` keeps this honest when the tables move again.
+   */
+  it('says only lines the objective tables and the musings list allow', () => {
+    const speakable = new Set([...QUICK_CHAT_MUSINGS.map((p) => p.id), ...CPU_SCHEME_LINES]);
     for (const c of allChats) {
       expect(c.action.type).toBe('quickChat');
       if (c.action.type !== 'quickChat') continue;
       expect(speakable.has(c.action.phraseId)).toBe(true);
+    }
+  });
+
+  /**
+   * A templated line arrives complete or not at all.
+   *
+   * The CPU fills `{{player.color}}` and `{{space}}` from the objective that
+   * prompted the line (`targetFor` in ai/chatter.ts). `doQuickChat` refuses a
+   * phrase that needs a target and has none, so a gap here would not be a
+   * cosmetic bug — it would throw mid-turn and take the CPU's turn with it.
+   */
+  it('fills in every line that names something', () => {
+    for (const { action } of allChats) {
+      if (action.type !== 'quickChat') continue;
+      const phrase = getQuickChatPhrase(action.phraseId);
+      expect(phrase).not.toBeNull();
+      if (phrase?.needs) expect(action.target?.kind).toBe(phrase.needs);
+      else expect(action.target).toBeUndefined();
     }
   });
 

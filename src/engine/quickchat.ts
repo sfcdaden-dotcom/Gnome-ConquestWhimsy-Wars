@@ -28,7 +28,7 @@
  * only when you mean it.
  */
 
-import type { GameState, PlayerId, QuickChatId, QuickChatPhrase } from './types';
+import type { GameState, PlayerId, QuickChatId, QuickChatPhrase, QuickChatTarget } from './types';
 import { badArg, getPlayer, illegal, pushEvent } from './helpers';
 
 /**
@@ -46,7 +46,6 @@ export type QuickChatGroupId = string;
 export interface QuickChatGroup {
   id: QuickChatGroupId;
   label: string;
-  emoji: string;
   phrases: readonly QuickChatPhrase[];
 }
 
@@ -55,44 +54,44 @@ export const QUICK_CHAT_GROUPS: readonly QuickChatGroup[] = [
   {
     id: 'greetings',
     label: 'Greetings',
-    emoji: '👋',
     phrases: [
-      { id: 'hi', emoji: '👋', text: 'Hi!' },
-      { id: 'good-luck', emoji: '🍀', text: 'Good luck!' },
-      { id: 'have-fun', emoji: '🎉', text: 'Have fun!' },
-      { id: 'gg', emoji: '🤝', text: 'Good game!' },
+      { id: 'yaaargh', text: 'YAAAARGH' },
+      { id: 'hi', text: 'Hi!' },
+      { id: 'good-luck', text: 'Good Luck!' },
+      { id: 'good-game', text: 'Good Game!' },
     ],
   },
   {
     id: 'compliments',
     label: 'Compliments',
-    emoji: '👏',
     phrases: [
-      { id: 'nice-move', emoji: '👏', text: 'Nice move!' },
-      { id: 'great-garden', emoji: '🌻', text: 'Great garden!' },
-      { id: 'well-played', emoji: '🏅', text: 'Well played!' },
-      { id: 'wow', emoji: '😲', text: 'Wow!' },
+      { id: 'nice-one', text: 'Nice One!' },
+      { id: 'well-played', text: 'Well Played!' },
+      { id: 'wow', text: 'Wow!' },
+      { id: 'beautiful', text: 'Beautiful!' },
     ],
   },
   {
     id: 'reactions',
     label: 'Reactions',
-    emoji: '😱',
     phrases: [
-      { id: 'oh-no', emoji: '😱', text: 'Oh no!' },
-      { id: 'my-gnomes', emoji: '🧙', text: 'My gnomes!' },
-      { id: 'so-lucky', emoji: '🎲', text: 'That was lucky!' },
-      { id: 'close-one', emoji: '😅', text: 'Close one!' },
+      { id: 'uh-oh', text: 'Uh Oh..' },
+      { id: 'how-could-you', text: 'How could you!' },
+      { id: 'hehe', text: 'Hehe' },
+      { id: 'my-revenge', text: "I'll have my revenge!" },
     ],
   },
   {
     id: 'tactics',
     label: 'Tactics',
-    emoji: '🧭',
     phrases: [
-      { id: 'watch-the-flytrap', emoji: '🪰', text: 'Watch the flytrap!' },
-      { id: 'taking-the-tunnel', emoji: '🕳️', text: 'Taking the tunnel!' },
-      { id: 'need-gnomes', emoji: '📦', text: 'I need more gnomes…' },
+      // The only line that names a person. `needs` is what makes the target
+      // part of the phrase rather than an optional extra a client could attach
+      // to anything (see `doQuickChat`).
+      { id: 'coming-for-you', text: "I'm coming for you {{player.color}}...", needs: 'player' },
+      { id: 'truce', text: 'Truce?' },
+      { id: 'dig-dig-dig', text: 'Dig Dig Dig!' },
+      { id: 'wheres-my-friends', text: "Where'd all my friends go?" },
     ],
   },
   {
@@ -106,35 +105,23 @@ export const QUICK_CHAT_GROUPS: readonly QuickChatGroup[] = [
      * meant to be READ, and a plan nobody can see is not a plan anybody enjoys
      * playing against.
      *
-     * It follows that a CPU seat now leaks its intentions. That is deliberate:
+     * It follows that a CPU seat leaks its intentions. That is deliberate:
      * telegraphing beats inscrutability for a game this size, and a human
-     * reading these lines gets a chance to respond to the plan (which is what
-     * makes the CPU feel like an opponent rather than a dice roll). Humans get
-     * the same lines and, unlike the CPU, can lie with them.
+     * reading these lines gets a chance to respond to the plan. Humans get the
+     * same lines and, unlike the CPU, can lie with them.
      */
     id: 'schemes',
     label: 'Schemes',
-    emoji: '🗺️',
     phrases: [
-      // Going after a garden.
-      { id: 'eyeing-that-garden', emoji: '🌷', text: "I've got my eye on that garden." },
-      { id: 'that-mushroom-is-mine', emoji: '🍄', text: 'That mushroom is mine.' },
-      { id: 'dandelion-calling', emoji: '🌼', text: 'That dandelion is calling my name.' },
-      { id: 'staking-a-claim', emoji: '🚩', text: 'Staking my claim.' },
-      { id: 'that-one-there', emoji: '👀', text: "That one. That's the one I want." },
-      // Defending our own.
-      { id: 'off-my-lawn', emoji: '🧹', text: 'Get off my lawn!' },
-      { id: 'not-today', emoji: '🛡️', text: 'Not my home. Not today.' },
-      { id: 'everyone-home', emoji: '🏡', text: 'Everyone back to the garden!' },
-      // Marching on somebody else's.
-      { id: 'coming-for-you', emoji: '⚔️', text: "I'm coming for you!" },
-      { id: 'knock-knock', emoji: '🚪', text: 'Knock knock.' },
-      { id: 'pack-your-pots', emoji: '📦', text: "Pack your pots, I'm moving in." },
-      // Posture, when there is no one target to name.
-      { id: 'just-growing', emoji: '🌱', text: 'Just growing quietly over here.' },
-      { id: 'feeling-brave', emoji: '😈', text: 'Feeling brave today.' },
-      { id: 'regrouping', emoji: '🐌', text: 'Regrouping. Ignore me.' },
-      { id: 'almost-there', emoji: '🏁', text: 'Almost there…' },
+      { id: 'need-a-wish', text: 'I could really use a wish right now...' },
+      { id: 'staking-a-claim', text: "I'm staking my claim." },
+      // Names a square. The CPU fills it from the objective it just adopted,
+      // which is what turns "Blue is up to something" into "Blue wants (3,4)".
+      { id: 'one-day-that-garden', text: "One day I'll have the garden on ({{space}})", needs: 'space' },
+      { id: 'scram', text: 'SCRAM!' },
+      { id: 'retreat', text: 'RETREAT!' },
+      { id: 'love-gardening', text: 'I love gardening.' },
+      { id: 'life-on-the-edge', text: "I'm gonna live life on the edge." },
     ],
   },
   {
@@ -143,25 +130,22 @@ export const QUICK_CHAT_GROUPS: readonly QuickChatGroup[] = [
     // announce — the filler between schemes (see `idleChatter` in ai/chatter.ts).
     id: 'musings',
     label: 'Musings',
-    emoji: '🤔',
     phrases: [
-      { id: 'why-the-hats', emoji: '🎩', text: 'Why do we even wear the hats?' },
-      { id: 'under-a-mushroom', emoji: '🍄', text: "Ever wonder what's under a mushroom?" },
-      { id: 'snail-dreams', emoji: '🐌', text: 'Do snails dream of faster gardens?' },
-      { id: 'gnome-without-garden', emoji: '🧙', text: 'What is a gnome without a garden?' },
-      { id: 'unmade-wishes', emoji: '✨', text: 'Where do Wishes go when nobody makes them?' },
-      { id: 'where-tunnels-go', emoji: '🕳️', text: 'Where does that tunnel actually go?' },
+      { id: 'why-fighting', text: 'Why are we fighting again?' },
+      { id: 'ever-seen-a-snail', text: 'Has anyone ever SEEN a snail?' },
+      { id: 'looove-gardening', text: 'I Looove Gardening!' },
+      { id: 'wish-for-more-wishes', text: 'Can I wish for more wishes?' },
+      { id: 'too-old-for-this', text: "I'm too old for this." },
     ],
   },
   {
     id: 'manners',
     label: 'Manners',
-    emoji: '🙇',
     phrases: [
-      { id: 'sorry', emoji: '🙇', text: 'Sorry!' },
-      { id: 'no-worries', emoji: '😊', text: 'No worries!' },
-      { id: 'take-your-time', emoji: '⏳', text: 'Take your time.' },
-      { id: 'thanks', emoji: '💚', text: 'Thanks!' },
+      { id: 'sorry', text: 'Sorry!' },
+      { id: 'thanks', text: 'Thanks!' },
+      { id: 'no-worries', text: 'No Worries!' },
+      { id: 'oops', text: 'Oops...' },
     ],
   },
 ];
@@ -201,13 +185,60 @@ export function refillQuickChat(draft: GameState): void {
   for (const p of draft.players) p.quickChatsThisTurn = 0;
 }
 
-export function doQuickChat(draft: GameState, player: PlayerId, phraseId: QuickChatId): void {
+/**
+ * Check a target against the phrase that is supposed to carry it.
+ *
+ * Both directions matter. A phrase that needs a target cannot be sent without
+ * one, or its line renders with a hole in it. A phrase that needs none cannot
+ * be sent WITH one, which is the part worth enforcing: the target travels in
+ * the match record and out to every seat, so a line that never displays it
+ * would otherwise be a free side-channel for pointing at a square.
+ */
+function checkTarget(
+  draft: GameState,
+  speaker: PlayerId,
+  phrase: QuickChatPhrase,
+  target?: QuickChatTarget,
+): void {
+  if (!phrase.needs) {
+    if (target) badArg(`Quick chat phrase ${phrase.id} takes no target`);
+    return;
+  }
+  if (!target) badArg(`Quick chat phrase ${phrase.id} needs a ${phrase.needs} target`);
+  if (target.kind !== phrase.needs) {
+    badArg(`Quick chat phrase ${phrase.id} needs a ${phrase.needs} target, got ${target.kind}`);
+  }
+  if (target.kind === 'player') {
+    if (!draft.players[target.player]) badArg(`No such player: ${target.player}`);
+    // Pointing this at yourself is a mis-click, not a taunt.
+    if (target.player === speaker) badArg('Cannot aim that line at yourself');
+  } else {
+    const n = draft.config.boardSize;
+    const { x, y } = target.pos;
+    if (!Number.isInteger(x) || !Number.isInteger(y) || x < 0 || y < 0 || x >= n || y >= n) {
+      badArg(`Target space (${x},${y}) is off the board`);
+    }
+  }
+}
+
+export function doQuickChat(
+  draft: GameState,
+  player: PlayerId,
+  phraseId: QuickChatId,
+  target?: QuickChatTarget,
+): void {
   const p = getPlayer(draft, player);
   const phrase = getQuickChatPhrase(phraseId);
   if (!phrase) badArg(`Unknown quick chat phrase: ${phraseId}`);
+  checkTarget(draft, player, phrase, target);
   if (p.quickChatsThisTurn >= QUICK_CHAT_PER_TURN) {
     illegal(`Quick chat limit reached (${QUICK_CHAT_PER_TURN} per turn) — wait for the next turn`);
   }
   p.quickChatsThisTurn += 1;
-  pushEvent(draft, { type: 'quickChatSaid', player, phraseId: phrase.id });
+  pushEvent(draft, {
+    type: 'quickChatSaid',
+    player,
+    phraseId: phrase.id,
+    ...(target ? { target } : {}),
+  });
 }

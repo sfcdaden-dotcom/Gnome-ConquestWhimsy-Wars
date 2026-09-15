@@ -115,7 +115,7 @@ export function dispatch(draft: GameState, action: Action): void {
     case 'endTurn':
       return doEndTurn(draft, action.player);
     case 'quickChat':
-      return doQuickChat(draft, action.player, action.phraseId);
+      return doQuickChat(draft, action.player, action.phraseId, action.target);
     default: {
       const t: never = action;
       badArg(`Unknown action type: ${JSON.stringify(t)}`);

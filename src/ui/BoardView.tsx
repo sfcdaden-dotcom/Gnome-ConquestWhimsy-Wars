@@ -20,11 +20,11 @@
  * sofa, not at a desk.
  */
 
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { PlayerPanels } from './panels';
 import { Board } from './Board';
 import { PanZoom } from './PanZoom';
-import { QuickChatFeed } from './QuickChat';
+import { quickChatText } from './meta';
 import { GnomeLooksContext } from './gnomeLooks';
 import type { SeatLooks } from './gnomeLooks';
 import { sanitizeLook } from './gnomeArt';
@@ -32,12 +32,21 @@ import { boardPixelSize } from './boardGeometry';
 import { useNetGame } from './useNetGame';
 import { boardViewHref, roomHref } from './netClient';
 import { playerColor } from './meta';
+import type { GameState, PlayerId, QuickChatId, QuickChatTarget } from '../engine';
 import { lobbyBlocker, blockerText } from './lobbyStatus';
 import type { HighlightKind } from './Board';
 import type { RoomSnapshot } from '../net/protocol';
 
 /** A board is a backdrop here, not a thing to fit around: fill the wall. */
 const BOARD_MAX_FIT = 2.5;
+
+/**
+ * How many lines of chat stand on the TV at once.
+ *
+ * Few enough to read in the second somebody glances up, and few enough that a
+ * burst of quick chat cannot wall off the board behind it.
+ */
+const BOARD_CHAT_LINES = 5;
 
 export function BoardView({ code }: { code: string }) {
   // A screen, not a player: the room never seats it and never deals it in.
@@ -52,6 +61,20 @@ export function BoardView({ code }: { code: string }) {
   const looks: SeatLooks = (net.room?.seats ?? []).map((s) =>
     s.look ? sanitizeLook(s.look) : undefined,
   );
+
+  // A projector showing a spinner forever is the worst version of this: nobody
+  // is standing at it to wonder why. Say what is wrong, in words readable from
+  // the sofa, and name the fix.
+  if (net.status === 'stale') {
+    return (
+      <BoardStage>
+        <h1 className="bv-code">Out of date</h1>
+        <p className="bv-line" data-testid="bv-stale">
+          {net.staleReason}
+        </p>
+      </BoardStage>
+    );
+  }
 
   if (net.status === 'closed') {
     return (
@@ -199,8 +222,57 @@ function BoardGame({ net, code }: { net: ReturnType<typeof useNetGame>; code: st
           <PlayerPanels state={state} takenOverSeats={g.takenOverSeats} />
         </aside>
 
-        <QuickChatFeed state={state} bubbles={g.chatBubbles} />
+        <BoardChat state={state} />
       </div>
+    </div>
+  );
+}
+
+/**
+ * What people are saying, standing on the screen rather than flashing past it.
+ *
+ * The player screens show chat as bubbles that fade after a few seconds, which
+ * is right for a phone you are already looking at. A projector is the opposite
+ * case: nobody is watching it continuously, and the whole reason to glance up
+ * is to catch what you missed. So this keeps the last few lines up until they
+ * are pushed off, oldest faded rather than gone.
+ *
+ * It reads the same `quickChatSaid` events the players' transcript does, so the
+ * TV and the phones cannot disagree about who said what. There is no composer,
+ * because there is nothing here to type on.
+ */
+function BoardChat({ state }: { state: GameState }) {
+  const lines = useMemo(() => {
+    const out: Array<{
+      key: number;
+      player: PlayerId;
+      phraseId: QuickChatId;
+      target?: QuickChatTarget;
+    }> = [];
+    state.events.forEach((e, i) => {
+      if (e.type === 'quickChatSaid') {
+        out.push({ key: i, player: e.player, phraseId: e.phraseId, target: e.target });
+      }
+    });
+    return out.slice(-BOARD_CHAT_LINES);
+  }, [state.events]);
+
+  if (lines.length === 0) return null;
+
+  return (
+    <div className="bv-chat" data-testid="bv-chat" aria-live="polite">
+      {lines.map((l, i) => (
+        <div
+          key={l.key}
+          className="bv-chat-line"
+          // Oldest at the top and faintest: the newest line is the one somebody
+          // looking up from a sofa should land on first.
+          style={{ opacity: (i + 1) / lines.length }}
+        >
+          <b style={{ color: playerColor(l.player) }}>{state.players[l.player]?.name}</b>{' '}
+          {quickChatText(l.phraseId, l.target)}
+        </div>
+      ))}
     </div>
   );
 }

@@ -32,6 +32,7 @@ import type { GameSeal, MatchRecord } from '../engine';
 import { verifySeal } from '../net/commitment';
 import type { ClientMessage, GnomeLookWire, RoomSnapshot, SeatConfig } from '../net/protocol';
 import {
+  CLOSE_PROTOCOL,
   CLOSE_RATE_LIMITED,
   CLOSE_ROOM_CLOSED,
   CLOSE_SEAT_TAKEN_OVER,
@@ -72,6 +73,7 @@ export type NetStatus =
   | 'playing'
   | 'finished'
   | 'taken-over' // another tab holds the seat; we stay down deliberately
+  | 'stale' // this build and the room's disagree; we stay down until a reload
   | 'closed'; // the room is gone; we stay down because there is nothing to dial
 
 export interface NetGame {
@@ -85,6 +87,12 @@ export interface NetGame {
   revealed: { seal: GameSeal; record: MatchRecord } | null;
   /** Why the room shut down, once it has. */
   closedReason: RoomClosedReason | null;
+  /**
+   * Set when this build and the room's speak different protocol versions. The
+   * socket is deliberately down and will not come back: reloading the page is
+   * the only thing that changes the answer.
+   */
+  staleReason: string | null;
   /** Host lobby controls (server-rejected for anyone else). */
   configure: (config: Omit<Extract<ClientMessage, { t: 'configure' }>, 't'>) => void;
   start: () => void;
@@ -113,6 +121,7 @@ export function useNetGame(
   const [view, setView] = useState<PlayerView | null>(null);
   const [revealed, setRevealed] = useState<{ seal: GameSeal; record: MatchRecord } | null>(null);
   const [takenOver, setTakenOver] = useState(false);
+  const [stale, setStale] = useState<string | null>(null);
   const [closedReason, setClosedReason] = useState<RoomClosedReason | null>(null);
   const [shotClock, setShotClock] = useState<{ seat: PlayerId; deadlineAt: number } | null>(null);
   // Bumped to force a fresh dial (see `rejoin`); the socket effect keys on it.
@@ -240,6 +249,13 @@ export function useNetGame(
             recentRoom.forget(localStorage, code);
             return;
           case 'error':
+            // A version mismatch gets a screen of its own rather than a toast:
+            // it is not something that went wrong with one message, it is the
+            // whole connection being impossible until the page is reloaded.
+            if (msg.code === 'STALE_CLIENT') {
+              setStale(msg.message);
+              return;
+            }
             pushToast(msg.message, 'error');
             return;
           case 'pong':
@@ -253,6 +269,14 @@ export function useNetGame(
         if (e.code === CLOSE_SEAT_TAKEN_OVER) {
           setTakenOver(true);
           return; // deliberate: re-dialing would fight the newer tab forever
+        }
+        if (e.code === CLOSE_PROTOCOL) {
+          // Redialing cannot help: this build speaks what it speaks, so the
+          // loop would be infinite — a connection and an error per pass, for
+          // as long as the tab is open. Stay down and let the screen ask for
+          // the one thing that does fix it.
+          setStale((was) => was ?? 'This page is running a different version of the game than the room. Reload it to carry on.');
+          return;
         }
         if (e.code === CLOSE_ROOM_CLOSED) {
           // Never redial: addressing a room is what CREATES it, so a redial
@@ -404,7 +428,9 @@ export function useNetGame(
   const start = useCallback(() => send({ t: 'start' }), [send]);
   const takeOverRoom = useCallback(() => send({ t: 'takeOverRoom' }), [send]);
 
-  const status: NetStatus = closedReason
+  const status: NetStatus = stale
+    ? 'stale'
+    : closedReason
     ? 'closed'
     : takenOver
       ? 'taken-over'
@@ -423,6 +449,7 @@ export function useNetGame(
     game,
     revealed,
     closedReason,
+    staleReason: stale,
     configure,
     start,
     takeOverRoom,
