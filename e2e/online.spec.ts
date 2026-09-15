@@ -348,3 +348,53 @@ test('a board view opens a room and hands the lobby to the first player', async 
   await p1Ctx.close();
   await p2Ctx.close();
 });
+
+/**
+ * A player whose page is older than the room.
+ *
+ * Protocol versions are bumped when the wire changes, so this happens for real
+ * every time a build ships while somebody has a tab open. The old behaviour was
+ * the bad kind of broken: the room hung up, the client treated it as a dropped
+ * tunnel and redialled forever, and the player got an error toast every few
+ * seconds on a game whose buttons quietly did nothing.
+ *
+ * The mismatch is forced by rewriting the version on the way out of the socket,
+ * which is as close to a stale bundle as a single build can get.
+ */
+test('a page older than the room is told to reload, not left redialling', async ({ browser }) => {
+  const ctx = await browser.newContext();
+  const page = await ctx.newPage();
+
+  await page.addInitScript(() => {
+    const send = WebSocket.prototype.send;
+    WebSocket.prototype.send = function (data: string) {
+      if (typeof data === 'string' && data.includes('"t":"hello"')) {
+        const msg = JSON.parse(data);
+        (window as unknown as { dials: number }).dials =
+          ((window as unknown as { dials?: number }).dials ?? 0) + 1;
+        msg.protocol = 1; // an older build than any room speaks
+        return send.call(this, JSON.stringify(msg));
+      }
+      return send.call(this, data);
+    };
+  });
+
+  await page.goto('/');
+  await page.getByTestId('home-online').click();
+  await page.getByTestId('online-host').click();
+
+  // One screen, naming the one thing that fixes it.
+  await expect(page.getByTestId('room-stale')).toBeVisible();
+  await expect(page.getByTestId('room-stale-reload')).toBeVisible();
+  await expect(page.getByTestId('room-stale')).toContainText(/[Rr]eload/);
+
+  // And it STAYS down. The old build redialled on a 10s ceiling, so this window
+  // would have carried several more attempts and an error toast for each.
+  const dialsAfterFirst = await page.evaluate(() => (window as unknown as { dials: number }).dials);
+  await page.waitForTimeout(12_000);
+  const dialsLater = await page.evaluate(() => (window as unknown as { dials: number }).dials);
+  expect(dialsLater).toBe(dialsAfterFirst);
+  await expect(page.locator('.toast')).toHaveCount(0);
+
+  await ctx.close();
+});

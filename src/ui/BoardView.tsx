@@ -53,6 +53,20 @@ export function BoardView({ code }: { code: string }) {
     s.look ? sanitizeLook(s.look) : undefined,
   );
 
+  // A projector showing a spinner forever is the worst version of this: nobody
+  // is standing at it to wonder why. Say what is wrong, in words readable from
+  // the sofa, and name the fix.
+  if (net.status === 'stale') {
+    return (
+      <BoardStage>
+        <h1 className="bv-code">Out of date</h1>
+        <p className="bv-line" data-testid="bv-stale">
+          {net.staleReason}
+        </p>
+      </BoardStage>
+    );
+  }
+
   if (net.status === 'closed') {
     return (
       <BoardStage>

@@ -74,6 +74,7 @@ import type {
   ShotClock,
 } from './protocol';
 import {
+  CLOSE_PROTOCOL,
   CLOSE_RATE_LIMITED,
   CLOSE_ROOM_CLOSED,
   CLOSE_SEAT_TAKEN_OVER,
@@ -453,13 +454,19 @@ export class Room {
    * up while they were away.
    */
   async hello(conn: RoomConnection, message: Extract<ClientMessage, { t: 'hello' }>): Promise<void> {
+    // One side is on an older build. Say it in words a player can act on —
+    // "unsupported protocol 2" is a sentence for whoever wrote the room, and
+    // the person reading it is holding a phone in somebody's living room.
     if (message.protocol !== PROTOCOL_VERSION) {
       conn.send({
         t: 'error',
-        code: 'PROTOCOL',
-        message: `Unsupported protocol ${message.protocol}; this room speaks ${PROTOCOL_VERSION}`,
+        code: 'STALE_CLIENT',
+        message:
+          message.protocol < PROTOCOL_VERSION
+            ? 'This page is running an old version of the game. Reload it to join the room.'
+            : 'This room is running an old version of the game. It cannot be joined from this page.',
       });
-      conn.close(1002, 'protocol');
+      conn.close(CLOSE_PROTOCOL, 'protocol');
       return;
     }
 

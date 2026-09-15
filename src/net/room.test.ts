@@ -17,6 +17,7 @@ import { commitmentFor, verifySeal } from './commitment';
 import type { PersistedRoom, RoomConnection, RoomHost } from './room';
 import { Room, generateRoomCode } from './room';
 import {
+  CLOSE_PROTOCOL,
   CLOSE_RATE_LIMITED,
   CLOSE_ROOM_CLOSED,
   CLOSE_SEAT_TAKEN_OVER,
@@ -244,8 +245,41 @@ describe('seats and identity', () => {
     const c = new FakeConn('c');
     await room.hello(c, { t: 'hello', protocol: 99 });
 
-    expect(c.errors()).toContain('PROTOCOL');
+    expect(c.errors()).toContain('STALE_CLIENT');
     expect(c.closed).not.toBeNull();
+  });
+
+  /**
+   * The close code is load-bearing, not decoration.
+   *
+   * A version mismatch cannot be fixed by reconnecting — the client speaks what
+   * it speaks — so a client that treats this like a dropped tunnel redials
+   * forever, costing the room a connection and the player an error toast per
+   * pass, while their actions go nowhere because the socket is never open.
+   * `CLOSE_PROTOCOL` is how the client knows to stay down and ask for a reload
+   * instead (see useNetGame).
+   */
+  it('hangs up a mismatched client with a code that means "do not redial"', async () => {
+    const host = makeHost();
+    const room = await Room.open(host, 'ABC123');
+
+    const old = new FakeConn('old');
+    await room.hello(old, { t: 'hello', protocol: PROTOCOL_VERSION - 1 });
+    expect(old.closed?.code).toBe(CLOSE_PROTOCOL);
+    // And in words for the person holding the phone, not for whoever wrote
+    // the room: the error names the fix.
+    expect(old.last('error')?.message).toMatch(/[Rr]eload/);
+
+    // A client from the FUTURE is the same refusal with the blame the other
+    // way round — there is nothing for them to reload.
+    const ahead = new FakeConn('ahead');
+    await room.hello(ahead, { t: 'hello', protocol: PROTOCOL_VERSION + 1 });
+    expect(ahead.closed?.code).toBe(CLOSE_PROTOCOL);
+    expect(ahead.last('error')?.message).toMatch(/room is running an old version/);
+
+    // Neither of them is in the room, holding a seat or a token.
+    expect(room.snapshot().seats.some((s) => s.connected)).toBe(false);
+    expect(room.snapshot().spectators).toBe(0);
   });
 
   /**

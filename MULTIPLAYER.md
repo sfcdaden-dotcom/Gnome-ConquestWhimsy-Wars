@@ -66,6 +66,15 @@ bots, deliberately.
 
 **More than it will serve.** See below.
 
+**A client whose build disagrees with the room's.** Protocol versions are bumped
+when the wire changes, so this happens for real every time a build ships while
+somebody has a tab open. The room answers `STALE_CLIENT` and hangs up with
+`CLOSE_PROTOCOL` (4002) — a code that means *do not redial*, because nothing
+about reconnecting changes which version a client speaks. The client stays down
+and asks for a reload. Treating it as a dropped tunnel instead meant an infinite
+loop: a connection and an error toast every few seconds, on a game whose buttons
+quietly did nothing, for as long as the tab stayed open.
+
 ## The board view
 
 A TV or a projector in the middle of the room, showing the table to everybody
