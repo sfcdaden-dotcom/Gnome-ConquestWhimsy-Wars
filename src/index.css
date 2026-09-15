@@ -2677,3 +2677,43 @@ h2 {
     width: auto;
   }
 }
+
+/* The chat standing on the board view (BoardView.tsx, BoardChat).
+
+   Bottom-left, opposite the seats, so the two HUD corners never fight over the
+   same space and the board keeps the middle. It does not take pointer events:
+   nothing on this screen is for pressing. */
+.bv-chat {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 0.8vmin;
+  max-width: 34vw;
+  padding: 2vmin;
+  pointer-events: none;
+}
+
+.bv-chat-line {
+  padding: 0.9vmin 1.8vmin;
+  border-radius: 1.4vmin;
+  background: var(--panel);
+  border: 0.25vmin solid var(--border);
+  box-shadow: var(--shadow);
+  font-size: 2.2vmin;
+  line-height: 1.25;
+  /* A long phrase wraps rather than pushing the panel across the board. */
+  overflow-wrap: anywhere;
+}
+
+/* Stacked under the board on a portrait screen, where the bottom-left corner
+   is already spoken for by the seats. */
+@media (max-aspect-ratio: 1/1) {
+  .bv-chat {
+    position: static;
+    max-width: none;
+    align-self: stretch;
+  }
+}

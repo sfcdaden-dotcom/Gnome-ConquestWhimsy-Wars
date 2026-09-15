@@ -94,6 +94,24 @@ then treats the connection as furniture:
 - **Never sent a hand.** It sits at no seat, so `viewFor(state, null)` is what
   it gets. Nothing is hidden on the shared screen because nothing private ever
   reaches it — which is the property that makes the whole idea safe.
+- **Shows chat standing, not fading.** The phones render quick chat as bubbles
+  that disappear after a few seconds, which suits a screen you are already
+  looking at. Nobody watches a projector continuously, and the reason to glance
+  up is to catch what was missed, so the board view keeps the last few lines up
+  until they are pushed off, oldest faded rather than gone. Same
+  `quickChatSaid` events the players' transcript reads, so the TV and the
+  phones cannot disagree about who said what.
+
+Chat stays the fixed catalogue (`engine/quickchat.ts`) rather than free text,
+and the reason is worth writing down because it looks like a missing feature.
+Free text needs moderation, and moderation needs somewhere to attach a
+consequence. This game has no accounts: seats are anonymous, a room is a
+six-character code that lasts one game, and there is no mute, no ban and no
+record that survives it. A filter could refuse a message, but the sender would
+simply retype it — refusal without enforcement is friction, not moderation. The
+catalogue is not a weaker substitute for that; it is the thing that works in its
+absence, because an unknown phrase id is an illegal action and there is nothing
+to moderate in the first place.
 
 **It opens the room without owning it.** The host binds to whoever presents the
 `hostKey` first, and setting the TV up before anybody arrives is the obvious

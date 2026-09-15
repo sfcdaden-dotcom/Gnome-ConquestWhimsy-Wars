@@ -398,3 +398,63 @@ test('a page older than the room is told to reload, not left redialling', async 
 
   await ctx.close();
 });
+
+/**
+ * Chat on the projector.
+ *
+ * The phones show chat as bubbles that fade, which suits a screen you are
+ * already looking at. A TV is the opposite: nobody watches it continuously, and
+ * the reason to glance up is to catch what was missed — so the board view keeps
+ * the last few lines standing until they are pushed off.
+ */
+test('the board view keeps recent chat on screen', async ({ browser }) => {
+  const tvCtx = await browser.newContext();
+  const p1Ctx = await browser.newContext();
+  const p2Ctx = await browser.newContext();
+  const tv = await tvCtx.newPage();
+  const p1 = await p1Ctx.newPage();
+  const p2 = await p2Ctx.newPage();
+
+  await tv.goto('/');
+  await tv.getByTestId('home-online').click();
+  await tv.getByTestId('online-board-view').click();
+  const code = (await tv.getByTestId('bv-code').textContent())!.trim();
+
+  for (const [page, name] of [[p1, 'Ada'], [p2, 'Bo']] as const) {
+    await page.goto('/');
+    await page.getByTestId('home-online').click();
+    await page.getByTestId('online-name').fill(name);
+    await page.getByTestId('online-join').click();
+    await page.getByTestId('online-join-code').fill(code);
+    await page.getByTestId('online-join-go').click();
+    await expect(page.getByTestId('room-lobby')).toBeVisible();
+  }
+  await p1.getByTestId('lobby-start').click();
+  await expect(tv.getByTestId('bv-turn')).toBeVisible();
+
+  // Nothing said yet, so nothing in the way of the board.
+  await expect(tv.getByTestId('bv-chat')).toHaveCount(0);
+
+  async function say(page: typeof p1, group: string, index: number) {
+    await page.getByTestId('quickchat-open').click();
+    await page.getByTestId(`quickchat-group-${group}`).click();
+    await page.locator('[data-testid^="quickchat-say-"]').nth(index).click();
+  }
+
+  await say(p1, 'greetings', 0);
+  await expect(tv.getByTestId('bv-chat')).toContainText('Ada');
+
+  await say(p2, 'greetings', 1);
+  await expect(tv.getByTestId('bv-chat')).toContainText('Bo');
+
+  // Both lines are still standing — this is the difference from the phones,
+  // where the first would already have faded out.
+  await expect(tv.locator('.bv-chat-line')).toHaveCount(2);
+
+  // And the screen is still a screen: no composer, nothing to press.
+  await expect(tv.getByTestId('quickchat-open')).toHaveCount(0);
+
+  await tvCtx.close();
+  await p1Ctx.close();
+  await p2Ctx.close();
+});
