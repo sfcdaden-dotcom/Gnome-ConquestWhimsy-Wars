@@ -112,19 +112,38 @@ describe('wedge geometry', () => {
    * two ends. If this ever collapses back to the diagonal, the wheel is a pie
    * chart again and nothing else in the file will say so.
    */
-  it('bows the sides outward instead of running them straight', () => {
-    expect(petalWidth(0)).toBeCloseTo(0, 5); // a point where it meets the hub
-    for (const u of [0.25, 0.5, 0.75]) {
-      expect(petalWidth(u)).toBeGreaterThan(u + 0.1);
-    }
-  });
+  /**
+   * The petal profile, stated as the three things that make it a bloom rather
+   * than a pie slice. Each would be visible immediately if it broke, and none
+   * of them is obvious from reading the formula.
+   */
+  describe('the petal profile', () => {
+    it('meets the eye narrow and closes at the tip', () => {
+      expect(petalWidth(0)).toBeCloseTo(0, 5);
+      expect(petalWidth(1)).toBeCloseTo(0, 5);
+    });
 
-  it('draws the tip back in, so the end is a lobe and not a flat chord', () => {
-    const widest = Math.max(...Array.from({ length: 101 }, (_, k) => petalWidth(k / 100)));
-    // Still broad at the very end — this is a rounded petal, not a point.
-    expect(petalWidth(1)).toBeGreaterThan(0.75);
-    // ...but past its widest, which is what rounds it.
-    expect(petalWidth(1)).toBeLessThan(widest);
-    expect(widest).toBeLessThanOrEqual(1);
+    it('has broad shoulders — most of its width in the first third', () => {
+      // A straight-sided wedge would be at 0.25 here. A forget-me-not petal is
+      // a lobe hanging off the eye, so it is most of the way out already.
+      expect(petalWidth(0.25)).toBeGreaterThan(0.6);
+      expect(petalWidth(0.1)).toBeGreaterThan(0.4);
+    });
+
+    it('holds that width across the middle instead of peaking', () => {
+      for (const u of [0.4, 0.5, 0.62, 0.75]) {
+        expect(petalWidth(u)).toBeGreaterThan(0.8);
+      }
+    });
+
+    /**
+     * The end is ROUND, which is a claim about how it closes rather than that
+     * it closes. A circular falloff still has real width very near the tip and
+     * then turns hard; a straight taper to the same point would be a spike.
+     */
+    it('rounds over at the end rather than coming to a spike', () => {
+      expect(petalWidth(0.95)).toBeGreaterThan(0.4);
+      expect(petalWidth(0.99)).toBeGreaterThan(0.15);
+    });
   });
 });

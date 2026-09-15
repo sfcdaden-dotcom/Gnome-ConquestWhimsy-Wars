@@ -5,7 +5,8 @@
  * arithmetic, it has invariants worth asserting, and neither needs React to
  * say so. `QuickChat.tsx` renders what this returns.
  *
- * The wheel is a ring of petals. Every number here is a PERCENTAGE of the ring
+ * The wheel is a bloom: broad rounded petals around a small pale eye, after a
+ * forget-me-not. Every number here is a PERCENTAGE of the ring
  * box rather than a pixel, so one CSS width decides how big the menu is and the
  * petals, their labels and the hub all follow. That only works because the box
  * is square: `polygon()` reads x as a share of width and y as a share of
@@ -20,34 +21,48 @@ export const RING_INNER = 17;
 /**
  * The gap between neighbouring petals, in degrees.
  *
- * Generous on purpose. A hairline reads as a dividing line drawn on a disc; it
- * takes real background between the shapes before the eye stops seeing a pie
- * with its slices separated and starts seeing petals with air around them.
+ * Enough that the shapes read as separate and no more. A forget-me-not's petals
+ * very nearly touch — the bloom is a rounded disc with seams in it, not a star
+ * — so the gap is a seam rather than a wedge of background.
  */
-const PETAL_GAP_DEG = 8;
-/** Samples along each curved side. */
-const SIDE_STEPS = 14;
-/** Samples across the rounded tip. */
-const TIP_STEPS = 10;
+const PETAL_GAP_DEG = 5;
+
+/**
+ * Samples along each side of a petal.
+ *
+ * Spaced unevenly, bunched towards the tip: that is where the outline turns
+ * fastest, and evenly-spaced points there leave a rounded end looking like a
+ * cut corner.
+ */
+const SIDE_STEPS = 22;
+/** How hard the sampling crowds towards the tip. 1 would be even spacing. */
+const SIDE_EASE = 1.6;
 
 /**
  * How wide a petal is, as a fraction of its maximum, at `u` along its length
- * (0 at the hub, 1 at the rim).
+ * (0 where it meets the eye, 1 at the rim).
  *
- * This is the shape. A straight-sided sector is a pie chart: correct, and about
- * as charming as one, in a game whose whole subject is gardens. Bowing the
- * sides out turns the same ring into a flower — the petal narrows to a point
- * where it meets the hub and swells as it goes, which is how a petal actually
- * attaches.
- *
- * The exponent is what does it. A plain `sin` ramp is barely distinguishable
- * from a straight edge; taking it to a power below 1 lifts the middle well
- * clear of the diagonal, so the side reads as a curve rather than a bevel.
+ * This is the shape, and it is the whole difference between a pie chart and a
+ * flower. Two terms, doing two different jobs — see below. Between them the
+ * petal leaves the eye narrow, is broad almost at once, holds that width for
+ * most of its length, and closes over into a round end.
  */
 export function petalWidth(u: number): number {
-  // The sine term swells the petal out from its base; the second draws the very
-  // tip back in so the end is a lobe rather than a flat chord across the rim.
-  return Math.sin((Math.PI / 2) * u) ** 0.55 * (1 - 0.16 * u ** 6);
+  // Shoulders: a low exponent makes the petal reach most of its width within
+  // the first third, so it is a broad lobe hanging off the eye rather than a
+  // wedge that widens all the way out. This is most of what separates a
+  // forget-me-not from a daisy.
+  const shoulder = Math.sin((Math.PI / 2) * u) ** 0.3;
+  // Cap: a circular falloff, which closes the outline with a vertical tangent.
+  // That is what makes the end read as ROUND. A linear taper to the same point
+  // would come to a spike, and a flat chord across the rim would look cut off.
+  const cap = Math.sqrt(1 - u ** 6);
+  return shoulder * cap;
+}
+
+/** Where along its length a petal is sampled, crowded towards the tip. */
+function sideAt(k: number): number {
+  return 1 - (1 - k / SIDE_STEPS) ** SIDE_EASE;
 }
 
 /**
@@ -127,15 +142,12 @@ export function wedgeGeometry(i: number, n: number): WedgeGeometry {
   const at = (u: number, side: number): [number, number] =>
     ringPoint(RING_INNER + u * span, mid + side * halfMax * petalWidth(u));
 
-  // Up one side from the hub, across the tip, and back down the other.
+  // Up one side from the hub and back down the other. There is no separate arc
+  // across the end: the profile closes to nothing at the tip, so the two sides
+  // meet there and the cap above is what rounds the join.
   const points: Array<[number, number]> = [];
-  for (let k = 0; k <= SIDE_STEPS; k++) points.push(at(k / SIDE_STEPS, -1));
-  // The tip, at whatever width the profile actually ends on.
-  const tipHalf = halfMax * petalWidth(1);
-  for (let k = 1; k < TIP_STEPS; k++) {
-    points.push(ringPoint(RING_OUTER, mid - tipHalf + (2 * tipHalf * k) / TIP_STEPS));
-  }
-  for (let k = SIDE_STEPS; k >= 0; k--) points.push(at(k / SIDE_STEPS, 1));
+  for (let k = 0; k <= SIDE_STEPS; k++) points.push(at(sideAt(k), -1));
+  for (let k = SIDE_STEPS; k >= 0; k--) points.push(at(sideAt(k), 1));
 
   const xs = points.map(([x]) => x);
   const ys = points.map(([, y]) => y);
