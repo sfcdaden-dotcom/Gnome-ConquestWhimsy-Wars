@@ -35,6 +35,23 @@ export function roomSocketUrl(code: string, loc: { protocol: string; host: strin
  */
 export const ROOM_PARAM = 'room';
 
+/**
+ * The screen's role, for the one role that is not "a player": `view=board` is
+ * the board view, the HUD-less screen that goes on a TV or a projector.
+ *
+ * In the URL rather than in component state for the same reason the room code
+ * is. The projector is the one screen nobody is standing at — a reload that
+ * dropped it back to the menu, or worse dealt it into the game, is a reload
+ * nobody is there to undo.
+ */
+export const VIEW_PARAM = 'view';
+const BOARD_VIEW = 'board';
+
+/** Is this address a board view? */
+export function isBoardView(search: string): boolean {
+  return new URLSearchParams(search).get(VIEW_PARAM) === BOARD_VIEW;
+}
+
 /** The room code in a query string, or null when there isn't a usable one. */
 export function roomCodeFromSearch(search: string): string | null {
   const raw = new URLSearchParams(search).get(ROOM_PARAM);
@@ -55,8 +72,23 @@ export function roomHref(
   const params = new URLSearchParams(loc.search);
   if (code === null) params.delete(ROOM_PARAM);
   else params.set(ROOM_PARAM, code);
+  // A player's address, always. This is what the lobby offers as the invite
+  // link, and a board view sharing its OWN address would send everybody a
+  // screen that cannot be played on instead of a seat at the table.
+  params.delete(VIEW_PARAM);
   const query = params.toString();
   return `${loc.origin}${loc.pathname}${query ? `?${query}` : ''}`;
+}
+
+/** The same page as the board view of `code` — the address for the TV. */
+export function boardViewHref(
+  loc: { origin: string; pathname: string; search: string },
+  code: string,
+): string {
+  const params = new URLSearchParams(loc.search);
+  params.set(ROOM_PARAM, code);
+  params.set(VIEW_PARAM, BOARD_VIEW);
+  return `${loc.origin}${loc.pathname}?${params.toString()}`;
 }
 
 // ---------------------------------------------------------------------------

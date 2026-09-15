@@ -7,11 +7,16 @@
  *
  * The one address the app answers to is a room: `?room=CODE` opens straight
  * into online play, which is what makes an invite link work and what lets a
- * player reload the page without losing the table (see netClient.ts).
+ * player reload the page without losing the table (see netClient.ts). Adding
+ * `&view=board` opens the same room as the screen in the MIDDLE of the room —
+ * a TV or a projector with no hand and no controls (see BoardView.tsx). It is
+ * checked before anything else because it is the one screen nobody is standing
+ * at: a reload must put the board back, not a menu.
  */
 
 import { useState } from 'react';
-import { roomCodeFromSearch } from './ui/netClient';
+import { isBoardView, roomCodeFromSearch } from './ui/netClient';
+import { BoardView } from './ui/BoardView';
 import type { CreateGameOptions } from './engine';
 import { GameScreen } from './ui/GameScreen';
 import { HomeScreen } from './ui/HomeScreen';
@@ -40,6 +45,14 @@ export default function App() {
     roomCodeFromSearch(window.location.search) ? 'online' : 'home',
   );
   const [session, setSession] = useState<Session | null>(null);
+
+  // Settled from the address once, on the way in. A board view has no menu to
+  // go back to and no way to leave — it is a screen on a wall, and the way to
+  // close it is to close the tab.
+  const [boardRoom] = useState<string | null>(() =>
+    isBoardView(window.location.search) ? roomCodeFromSearch(window.location.search) : null,
+  );
+  if (boardRoom) return <BoardView code={boardRoom} />;
 
   if (screen === 'rules') return <RulesScreen onBack={() => setScreen('home')} />;
   if (screen === 'online') return <OnlineScreen onBack={() => setScreen('home')} />;

@@ -134,6 +134,31 @@ export interface PersistedRoom {
    * room, the original host cannot silently reclaim it.
    */
   hostKey: string | null;
+  /**
+   * The room was opened by a board view that declined the lobby: the first
+   * connection to hold a seat becomes host.
+   *
+   * Set by a SPECTATING connection presenting the room's `hostKey` — which is
+   * the projector saying "I opened this, but I am furniture". Consumed the
+   * moment it is honoured, so it fires exactly once: after that the room has a
+   * host and the ordinary rules apply, including the deliberate takeover a
+   * lobby falls back on when that host leaves for good.
+   */
+  hostDelegated: boolean;
+  /**
+   * This room has had a host at some point.
+   *
+   * It exists to tell two "no host key" states apart, which `hostKey === null`
+   * alone cannot. A room persisted before `hostKey` existed has no key and
+   * never had one, and the first connection to it must become its host or it
+   * would have none at all. A room whose host LEFT — or which was taken over,
+   * or delegated — also has no key, because both paths spend it, and there the
+   * opposite is required: the lobby is claimed by pressing the takeover
+   * button, in front of everybody, and never by being the next person through
+   * the door. Without this the legacy fallback fired in both cases and quietly
+   * handed a hostless room to whoever reloaded first.
+   */
+  hostSettled: boolean;
   /** token → seat index, or null for a spectator. Never leaves the server. */
   tokens: Record<string, number | null>;
   boardSize: number;
@@ -288,6 +313,12 @@ interface ConnState {
   conn: RoomConnection;
   token: string;
   seat: number | null;
+  /**
+   * A screen rather than a player — a board view on a TV. Never seated, never
+   * host. Held per connection rather than per token because it is a fact about
+   * the screen, which is why every hello re-asserts it (see protocol.ts).
+   */
+  spectating: boolean;
   /** The last identity this connection was told, so `welcome` is re-sent only
    *  when it actually changed (see `announceIdentities`). */
   announced: { seat: number | null; isHost: boolean } | null;
@@ -360,13 +391,24 @@ export class Room {
     const room = new Room(
       host,
       // A room written before `hostKey` existed comes back without one;
-      // normalise it here so the fallback in `hello` can recognise it.
-      (stored && { ...stored, hostKey: stored.hostKey ?? null }) ?? {
+      // normalise it here so the fallback in `hello` can recognise it. A room
+      // written before delegation existed was opened by a player, so it was
+      // never delegated.
+      (stored && {
+        ...stored,
+        hostKey: stored.hostKey ?? null,
+        hostDelegated: stored.hostDelegated === true,
+        // A room written before this field existed has settled its host if it
+        // has one; if it does not, it is the legacy case the fallback serves.
+        hostSettled: stored.hostSettled ?? stored.hostToken !== null,
+      }) ?? {
         code,
         phase: 'lobby',
         seats: defaultSeats(2),
         hostToken: null,
         hostKey: null,
+        hostDelegated: false,
+        hostSettled: false,
         tokens: {},
         boardSize: 7,
         gardenPreset: 'random',
@@ -466,8 +508,17 @@ export class Room {
       existing.conn.close(CLOSE_SEAT_TAKEN_OVER, 'seat taken over by a newer connection');
     }
 
+    // A board view declares itself on every hello, reconnects included: it is
+    // what the screen IS, not something it did once. A projector that redialled
+    // without it would be handed the seat it spent the whole game not taking.
+    const spectating = message.spectate === true;
+
     let seat: number | null;
-    if (known) {
+    if (spectating) {
+      // Not "no seat for now" but "no seat, ever". A screen nobody touches must
+      // not be holding a chair at a table of four.
+      seat = null;
+    } else if (known) {
       seat = this.data.tokens[token] ?? null;
       // A seat flipped to CPU while its player was away is not theirs to take
       // back mid-game; they return as a spectator rather than fighting the AI
@@ -478,8 +529,9 @@ export class Room {
     }
     // A returning spectator is a player who never got a seat (or lost one to a
     // CPU flip). If the table has opened up since, sit them down — there is no
-    // other moment at which their seat is ever reconsidered.
-    if (seat === null) seat = this.claimSeat();
+    // other moment at which their seat is ever reconsidered. A board view is
+    // not offered one.
+    if (seat === null && !spectating) seat = this.claimSeat();
     this.data.tokens[token] = seat;
 
     if (message.name && seat !== null) this.data.seats[seat].name = message.name.slice(0, 24);
@@ -487,8 +539,8 @@ export class Room {
     // restores their character along with their seat and their hand.
     if (message.look && seat !== null) this.data.seats[seat].look = message.look;
 
-    this.conns.set(conn.id, { conn, token, seat, announced: null });
-    this.bindHost(token, message.hostKey);
+    this.conns.set(conn.id, { conn, token, seat, spectating, announced: null });
+    this.settleHost(token, message.hostKey, spectating, seat);
     // The host walking back in is what stops the countdown, and any arrival
     // at all means the room is not abandoned.
     await this.syncGrace();
@@ -578,10 +630,14 @@ export class Room {
    * turned a CPU seat back into a human one) stayed a spectator for the life
    * of the room no matter what the host did. Earlier arrivals get first
    * refusal, since `conns` is in arrival order.
+   *
+   * A board view is not waiting for a seat, so it is not offered one — this is
+   * the path that would otherwise put a projector in a chair the moment the
+   * host opened the table from 2 to 4.
    */
   private seatSpectators(): void {
     for (const c of this.conns.values()) {
-      if (c.seat !== null) continue;
+      if (c.seat !== null || c.spectating) continue;
       const seat = this.claimSeat();
       if (seat === null) return; // no seats left; the rest keep watching
       c.seat = seat;
@@ -606,6 +662,11 @@ export class Room {
       this.data.closed = undefined;
       this.data.reapAt = null;
       this.data.hostKey = null;
+      // A reused code is a NEW room, so it has never had a host — otherwise
+      // the tombstone's settled flag would outlive it and the fresh key below
+      // would be the only way in, for a room nobody has the key to yet.
+      this.data.hostSettled = false;
+      this.data.hostDelegated = false;
     }
     if (this.data.hostKey === null) {
       this.data.hostKey = hex(this.host.randomBytes(16));
@@ -633,10 +694,72 @@ export class Room {
   private bindHost(token: string, hostKey: string | undefined): void {
     if (this.data.hostToken !== null) return;
     if (this.data.hostKey !== null) {
-      if (hostKey === this.data.hostKey) this.data.hostToken = token;
+      if (hostKey === this.data.hostKey) this.claimHost(token);
       return;
     }
+    // No key and no host yet. Only a room that has NEVER had one falls to
+    // whoever connects first — see `hostSettled`.
+    if (this.data.hostSettled) return;
+    this.claimHost(token);
+  }
+
+  /** Hand the lobby to `token`, whichever path got here. */
+  private claimHost(token: string): void {
     this.data.hostToken = token;
+    this.data.hostSettled = true;
+  }
+
+  /**
+   * Work out what this `hello` does to the host, which is one of three things.
+   *
+   * The problem it solves is an ordering trap. The host binds to whoever
+   * presents the `hostKey` first, and setting a room up on the TV is the
+   * obvious thing to do before anyone arrives — so the projector would bind,
+   * and the start button would spend the evening on a screen across the room
+   * with no keyboard in front of it. Telling people "create the room on your
+   * phone first" is not a fix; it is a rule nobody will remember at a party.
+   *
+   * So a spectating creator DELEGATES instead of claiming. The room is held
+   * open by the board view — a connected screen is enough to keep it off the
+   * reaper, and `syncGrace` never starts a countdown for a host that does not
+   * exist yet — and the lobby goes to the first person who sits down.
+   *
+   * The delegation is consumed when it is honoured. That matters: `hostToken`
+   * also goes null when a host leaves and their grace expires, and a room in
+   * THAT state must stay the deliberate, announced takeover it was designed to
+   * be rather than quietly falling to the next arrival.
+   */
+  private settleHost(
+    token: string,
+    hostKey: string | undefined,
+    spectating: boolean,
+    seat: number | null,
+  ): void {
+    if (this.data.hostToken !== null) return;
+
+    if (spectating) {
+      // A board view never holds the lobby. Presenting the key proves this
+      // screen opened the room, which is what makes the offer its to make;
+      // any other spectator's key (or none) changes nothing.
+      if (this.data.hostKey !== null && hostKey === this.data.hostKey) {
+        this.data.hostDelegated = true;
+      }
+      return;
+    }
+
+    // The delegated lobby lands on the first player to hold a seat — not
+    // merely the first to connect, or a second board view opened on a laptop
+    // would take it and we would be back to a host nobody can reach.
+    if (this.data.hostDelegated && seat !== null) {
+      this.claimHost(token);
+      this.data.hostDelegated = false;
+      // Spent, like a takeover spends it: the screen that opened the room
+      // cannot present the key later and take the lobby back.
+      this.data.hostKey = null;
+      return;
+    }
+
+    this.bindHost(token, hostKey);
   }
 
   /**
@@ -786,7 +909,13 @@ export class Room {
     if (this.data.hostToken !== null) {
       throw new RoomError('HAS_HOST', 'This room already has a host');
     }
-    this.data.hostToken = c.token;
+    // A board view cannot inherit a room any more than it can be dealt into
+    // one. Its screen shows no takeover button, but the rule belongs here as
+    // well: the client is not what decides who may hold the lobby.
+    if (c.spectating) {
+      throw new RoomError('NOT_YOUR_SEAT', 'A board view cannot take a room over');
+    }
+    this.claimHost(c.token);
     this.data.hostKey = null;
     this.data.graceUntil = null;
     await this.save();
@@ -1404,6 +1533,7 @@ export class Room {
       seats,
       hostSeat: this.hostSeat(),
       hasHost: this.data.hostToken !== null,
+      hostDelegated: this.data.hostDelegated,
       hostGrace:
         this.data.graceUntil === null
           ? null
