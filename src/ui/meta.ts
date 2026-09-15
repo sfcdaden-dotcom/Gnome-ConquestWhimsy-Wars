@@ -16,6 +16,7 @@ import type {
   PlayerId,
   Pos,
   QuickChatId,
+  QuickChatTarget,
 } from '../engine';
 import { getCardDef, getCurseDef, getQuickChatPhrase, nameSaltOf, whyCannotPlayNow } from '../engine';
 import type { UnitEventRef } from './gnomeNames';
@@ -41,10 +42,26 @@ export function playerColor(id: number): string {
   return PLAYER_COLORS[id % PLAYER_COLORS.length];
 }
 
-/** "👋 Hi!" for a quick-chat phrase id (raw id if it is not in the catalogue). */
-export function quickChatText(phraseId: QuickChatId): string {
+/**
+ * The words for a quick-chat phrase id, with its placeholder filled in.
+ *
+ * Two phrases name something — a rival, or a square — and carry a target to say
+ * which (see `QuickChatTarget`). Everything else is fixed text and ignores the
+ * argument. A missing or mismatched target leaves the placeholder visible
+ * rather than guessing: the engine refuses that combination anyway, so seeing
+ * one on screen means something upstream is wrong and should look wrong.
+ *
+ * Falls back to the raw id for a phrase the catalogue does not have, which is
+ * what an old match record replayed against a newer build produces.
+ */
+export function quickChatText(phraseId: QuickChatId, target?: QuickChatTarget): string {
   const p = getQuickChatPhrase(phraseId);
-  return p ? `${p.emoji} ${p.text}` : phraseId;
+  if (!p) return phraseId;
+  if (!target) return p.text;
+  if (target.kind === 'player') {
+    return p.text.replace('{{player.color}}', PLAYER_COLOR_NAMES[target.player % PLAYER_COLOR_NAMES.length]);
+  }
+  return p.text.replace('{{space}}', posStr(target.pos));
 }
 
 /** A fresh random game seed (UI convenience; the engine itself never rolls). */
@@ -236,7 +253,7 @@ export function describeEvent(state: GameState, ev: GameEvent): string {
     case 'entryEffectDeclined':
       return `${who(state, ev)} declines the entry effect at ${posStr(ev.pos)}.`;
     case 'quickChatSaid':
-      return `💬 ${pname(state, ev.player)}: ${quickChatText(ev.phraseId)}`;
+      return `${pname(state, ev.player)}: ${quickChatText(ev.phraseId, ev.target)}`;
     case 'entryChainCapped':
       return `${who(state, ev)} is too dizzy to keep hopping (${ev.hops} in a row) and stays at ${posStr(ev.pos)}.`;
     case 'gardenPlanted':

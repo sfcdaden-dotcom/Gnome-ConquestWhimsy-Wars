@@ -1129,7 +1129,7 @@ describe('quick chat after the final fight', () => {
     expect(revealsBefore).toBe(1);
     const eventsBefore = room.gameState!.eventCount;
 
-    await room.handle('c0', { t: 'action', action: { type: 'quickChat', player: 0, phraseId: 'gg' } });
+    await room.handle('c0', { t: 'action', action: { type: 'quickChat', player: 0, phraseId: 'good-game' } });
 
     expect(c0.last('error')).toBeUndefined();
     expect(room.gameState!.eventCount).toBeGreaterThan(eventsBefore);

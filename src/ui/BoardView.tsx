@@ -32,7 +32,7 @@ import { boardPixelSize } from './boardGeometry';
 import { useNetGame } from './useNetGame';
 import { boardViewHref, roomHref } from './netClient';
 import { playerColor } from './meta';
-import type { GameState, PlayerId, QuickChatId } from '../engine';
+import type { GameState, PlayerId, QuickChatId, QuickChatTarget } from '../engine';
 import { lobbyBlocker, blockerText } from './lobbyStatus';
 import type { HighlightKind } from './Board';
 import type { RoomSnapshot } from '../net/protocol';
@@ -243,9 +243,16 @@ function BoardGame({ net, code }: { net: ReturnType<typeof useNetGame>; code: st
  */
 function BoardChat({ state }: { state: GameState }) {
   const lines = useMemo(() => {
-    const out: Array<{ key: number; player: PlayerId; phraseId: QuickChatId }> = [];
+    const out: Array<{
+      key: number;
+      player: PlayerId;
+      phraseId: QuickChatId;
+      target?: QuickChatTarget;
+    }> = [];
     state.events.forEach((e, i) => {
-      if (e.type === 'quickChatSaid') out.push({ key: i, player: e.player, phraseId: e.phraseId });
+      if (e.type === 'quickChatSaid') {
+        out.push({ key: i, player: e.player, phraseId: e.phraseId, target: e.target });
+      }
     });
     return out.slice(-BOARD_CHAT_LINES);
   }, [state.events]);
@@ -263,7 +270,7 @@ function BoardChat({ state }: { state: GameState }) {
           style={{ opacity: (i + 1) / lines.length }}
         >
           <b style={{ color: playerColor(l.player) }}>{state.players[l.player]?.name}</b>{' '}
-          {quickChatText(l.phraseId)}
+          {quickChatText(l.phraseId, l.target)}
         </div>
       ))}
     </div>

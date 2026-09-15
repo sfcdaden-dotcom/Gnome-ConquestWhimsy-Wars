@@ -35,12 +35,37 @@ export type CardId = string;
 export type QuickChatId = string;
 
 /** One entry of the quick-chat catalogue. */
+/**
+ * What a templated quick-chat line points at.
+ *
+ * Most phrases say the same thing every time, which is the whole basis of the
+ * catalogue: an id resolves to fixed words and there is nothing to moderate. A
+ * couple of lines name something instead — a rival, or a square — and that one
+ * piece of information rides here rather than as text, so the set of things a
+ * player can say is still closed. A target is an id or a coordinate; it is
+ * never a string somebody typed.
+ */
+export type QuickChatTarget =
+  | { kind: 'player'; player: PlayerId }
+  | { kind: 'space'; pos: Pos };
+
 export interface QuickChatPhrase {
   id: QuickChatId;
-  /** Leading emoji, shown with the text everywhere. */
-  emoji: string;
-  /** The one and only wording a player can send with this id. */
+  /**
+   * The one and only wording a player can send with this id.
+   *
+   * May contain a single placeholder, which `needs` declares and
+   * `quickChatText` fills: `{{player.color}}` for a rival's colour name, and
+   * `{{space}}` for a coordinate.
+   */
   text: string;
+  /**
+   * The target this phrase's placeholder requires, if it has one. A phrase
+   * that needs a target cannot be sent without one, and a phrase that does not
+   * cannot be sent with one — `doQuickChat` enforces both, so a client cannot
+   * smuggle an unrelated coordinate into a line that never shows it.
+   */
+  needs?: QuickChatTarget['kind'];
 }
 /** `"x,y"` string key into `GameState.gardens`. */
 export type PosKey = string;
@@ -574,7 +599,7 @@ export type Action =
   | { type: 'playCard'; player: PlayerId; cardId: CardId; targets?: CardTargets }
   | { type: 'endTurn'; player: PlayerId }
   // --- out-of-band (not a game move; never enumerated as a legal action) -------
-  | { type: 'quickChat'; player: PlayerId; phraseId: QuickChatId };
+  | { type: 'quickChat'; player: PlayerId; phraseId: QuickChatId; target?: QuickChatTarget };
 
 export type ActionType = Action['type'];
 
@@ -602,7 +627,7 @@ export type GameEvent =
   | { type: 'unitTunneled'; player: PlayerId; unitId: UnitId; unitKind: UnitKind; from: Pos; to: Pos; context: 'entry' | 'harvest' }
   | { type: 'entryEffectDeclined'; player: PlayerId; unitId: UnitId; unitKind: UnitKind; pos: Pos }
   | { type: 'entryChainCapped'; player: PlayerId; unitId: UnitId; unitKind: UnitKind; pos: Pos; hops: number }
-  | { type: 'quickChatSaid'; player: PlayerId; phraseId: QuickChatId }
+  | { type: 'quickChatSaid'; player: PlayerId; phraseId: QuickChatId; target?: QuickChatTarget }
   | { type: 'gardenPlanted'; player: PlayerId; pos: Pos; gardenType: PlantableGardenType }
   | { type: 'gardenUpgraded'; player: PlayerId; pos: Pos; gardenType: PlantableGardenType }
   | { type: 'gardenDestroyed'; pos: Pos; gardenType: GardenType; cause: 'snail' | 'card' | 'elimination' }

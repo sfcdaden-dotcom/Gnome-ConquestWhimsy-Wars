@@ -555,7 +555,7 @@ test('quick chat sends fixed phrases only, and runs out for the turn', async ({ 
   for (const [group, phrase] of [
     ['greetings', 'hi'],
     ['compliments', 'wow'],
-    ['musings', 'why-the-hats'],
+    ['musings', 'why-fighting'],
   ]) {
     await page.getByTestId('quickchat-open').click();
     await page.getByTestId(`quickchat-group-${group}`).click();
@@ -577,7 +577,7 @@ test('the phrase picker steps back out of a category and closes', async ({ page 
 
   await page.getByTestId('quickchat-open').click();
   await page.getByTestId('quickchat-group-tactics').click();
-  await expect(page.getByTestId('quickchat-say-watch-the-flytrap')).toBeVisible();
+  await expect(page.getByTestId('quickchat-say-dig-dig-dig')).toBeVisible();
 
   // Back returns to the wheel without spending anything.
   await page.getByTestId('quickchat-back').click();
@@ -637,7 +637,7 @@ test('chat and game log share one window, and unread chat is badged', async ({ p
 
   // Reading the chat clears the badge.
   await page.getByTestId('chat-tab-chat').click();
-  await expect(page.getByTestId('chat-transcript')).toContainText('Good luck!');
+  await expect(page.getByTestId('chat-transcript')).toContainText('Good Luck!');
   await expect(page.getByTestId('chat-unread')).toBeHidden();
 
   // Collapsing hides both bodies but keeps the composer reachable.
@@ -739,4 +739,55 @@ test('a zoomed-in board stays where the player put it when the action bar appear
   await g.resolveHarvest('wish');
   await expect(page.getByTestId('action-bar')).toBeVisible();
   expect(await transform()).toBe(zoomed);
+});
+
+/**
+ * The two quick-chat lines that name something.
+ *
+ * Everything else in the catalogue is fixed words for a fixed id, which is what
+ * keeps the set of sendable things closed. These two vary — by a seat id or a
+ * coordinate, never by text — so they take a third step in the picker, and the
+ * line they produce has to arrive on screen with the blank filled in.
+ *
+ * A LIST rather than a click on the board, deliberately: chat is sendable out
+ * of turn and while somebody else's decision is open, which is exactly when a
+ * picker that captured board clicks would be fighting the game for them.
+ */
+test('a chat line that names a rival is completed before it is sent', async ({ page }) => {
+  await page.goto('/');
+  await page.getByTestId('home-local').click();
+  await page.getByTestId('start-game').click();
+  await expect(page.getByTestId('game-screen')).toBeVisible();
+
+  const roll = page.getByTestId('roll-off');
+  while (await roll.count()) {
+    await roll.click();
+    await page.waitForTimeout(100);
+  }
+
+  await page.getByTestId('quickchat-open').click();
+  await page.getByTestId('quickchat-group-tactics').click();
+
+  // Choosing it does not send it — there is a blank in it.
+  await page.getByTestId('quickchat-say-coming-for-you').click();
+  await expect(page.getByTestId('quickchat-targets')).toBeVisible();
+  await expect(page.getByTestId('chat-transcript')).toHaveText(/Nobody has said a word yet/);
+
+  // Back returns to the phrases rather than closing the whole picker.
+  await page.getByTestId('quickchat-target-back').click();
+  await expect(page.getByTestId('quickchat-say-coming-for-you')).toBeVisible();
+
+  await page.getByTestId('quickchat-say-coming-for-you').click();
+  await page.locator('[data-testid^="quickchat-target-p"]').first().click();
+
+  // The placeholder is gone, replaced by the rival it names.
+  const transcript = page.getByTestId('chat-transcript');
+  await expect(transcript).toContainText("I'm coming for you");
+  await expect(transcript).not.toContainText('{{');
+
+  // A plain line still goes straight out, with no second step.
+  await page.getByTestId('quickchat-open').click();
+  await page.getByTestId('quickchat-group-greetings').click();
+  await page.getByTestId('quickchat-say-yaaargh').click();
+  await expect(transcript).toContainText('YAAAARGH');
 });

@@ -33,8 +33,9 @@
  * from a hash of (seed, turn, seat), so a seeded game still replays exactly.
  */
 
-import type { Action, GameState, PlayerId, QuickChatId } from '../types';
-import { QUICK_CHAT_MUSINGS, QUICK_CHAT_SCHEMES } from '../quickchat';
+import type { Action, GameState, PlayerId, QuickChatId, QuickChatTarget } from '../types';
+import { QUICK_CHAT_MUSINGS, QUICK_CHAT_PHRASES, getQuickChatPhrase } from '../quickchat';
+import { posKey } from '../helpers';
 import { normalizeSeed } from '../rng';
 import type { AiPlan, Objective } from './objectives';
 
@@ -45,24 +46,18 @@ import type { AiPlan, Objective } from './objectives';
  * Mushroom".
  */
 const SCHEME_LINES: Record<Objective['kind'], readonly QuickChatId[]> = {
-  CAPTURE_GARDEN: ['eyeing-that-garden', 'staking-a-claim', 'that-one-there'],
-  DEFEND_HOME: ['off-my-lawn', 'not-today', 'everyone-home'],
-  ATTACK_ENEMY_HOME: ['coming-for-you', 'knock-knock', 'pack-your-pots'],
-};
-
-/** Garden-specific lines, which beat the generic CAPTURE_GARDEN ones. */
-const GARDEN_LINES: Partial<Record<string, readonly QuickChatId[]>> = {
-  mushroom: ['that-mushroom-is-mine', 'eyeing-that-garden', 'staking-a-claim'],
-  dandelion: ['dandelion-calling', 'eyeing-that-garden', 'that-one-there'],
+  CAPTURE_GARDEN: ['one-day-that-garden', 'staking-a-claim', 'love-gardening'],
+  DEFEND_HOME: ['scram', 'retreat'],
+  ATTACK_ENEMY_HOME: ['coming-for-you'],
 };
 
 /** What to say about a posture, when there is no one target worth naming. */
 const POSTURE_LINES: Record<AiPlan['strategy'], readonly QuickChatId[]> = {
-  EXPAND: ['just-growing'],
-  DEFEND: ['not-today'],
-  PRESSURE: ['feeling-brave'],
-  SURVIVE: ['regrouping'],
-  FINISH: ['almost-there'],
+  EXPAND: ['love-gardening'],
+  DEFEND: ['scram'],
+  PRESSURE: ['life-on-the-edge'],
+  SURVIVE: ['retreat'],
+  FINISH: ['need-a-wish'],
 };
 
 /**
@@ -87,11 +82,38 @@ function announcementKey(objective: Objective | null, plan: AiPlan): string {
 /** The lines that fit this plan, best-fitting first. */
 function linesFor(objective: Objective | null, plan: AiPlan): readonly QuickChatId[] {
   if (!objective) return POSTURE_LINES[plan.strategy];
-  if (objective.kind === 'CAPTURE_GARDEN' && objective.gardenType) {
-    const specific = GARDEN_LINES[objective.gardenType];
-    if (specific) return specific;
-  }
   return SCHEME_LINES[objective.kind];
+}
+
+/**
+ * Fill in a line that names something, from the objective that prompted it.
+ *
+ * This is the part that makes the CPU's chatter worth reading rather than
+ * atmospheric: `targetPos` is the square the plan is ABOUT, so the gnome going
+ * for a garden can name it, and the one marching on a Home can name whose. A
+ * phrase that needs no target gets none, which `doQuickChat` insists on.
+ *
+ * Returns null when the target cannot be worked out — an enemy-home line with
+ * nobody owning the square, say. The caller then simply says nothing, rather
+ * than throwing mid-turn on an action the engine would refuse.
+ */
+function targetFor(
+  state: GameState,
+  actor: PlayerId,
+  phraseId: QuickChatId,
+  objective: Objective | null,
+): QuickChatTarget | null | undefined {
+  const phrase = getQuickChatPhrase(phraseId);
+  if (!phrase?.needs) return undefined; // no target wanted
+  if (!objective) return null;
+  if (phrase.needs === 'space') return { kind: 'space', pos: objective.targetPos };
+  // A player target: the square the plan points at belongs to somebody, and
+  // that somebody is who the line is aimed at. An unowned square gives nobody
+  // to name, and one's own garden would be aimed at oneself — which the engine
+  // refuses, so it must not be proposed.
+  const owner = state.gardens[posKey(objective.targetPos)]?.owner;
+  if (owner === undefined || owner === actor) return null;
+  return { kind: 'player', player: owner };
 }
 
 /**
@@ -134,7 +156,13 @@ export function idleChatter(
     const lines = linesFor(objective, plan);
     const known = lines.filter((id) => SPEAKABLE.has(id));
     if (known.length > 0) {
-      return { type: 'quickChat', player: actor, phraseId: known[(h >>> 4) % known.length] };
+      const phraseId = known[(h >>> 4) % known.length];
+      const target = targetFor(state, actor, phraseId, objective);
+      // A line whose target could not be resolved is not said at all: the
+      // engine would refuse it, and a throw here would take the turn with it.
+      if (target !== null) {
+        return { type: 'quickChat', player: actor, phraseId, ...(target ? { target } : {}) };
+      }
     }
   }
 
@@ -153,13 +181,9 @@ export function idleChatter(
  * is simply not said. `quickchat.test.ts` asserts the tables are complete, so a
  * typo fails the suite rather than silently muting the CPU.
  */
-const SPEAKABLE = new Set<QuickChatId>(QUICK_CHAT_SCHEMES.map((p) => p.id));
+const SPEAKABLE = new Set<QuickChatId>(QUICK_CHAT_PHRASES.map((p) => p.id));
 
 /** Every phrase id the CPU can say for a plan — for tests and for the docs. */
 export const CPU_SCHEME_LINES: readonly QuickChatId[] = [
-  ...new Set([
-    ...Object.values(SCHEME_LINES).flat(),
-    ...Object.values(GARDEN_LINES).flatMap((v) => v ?? []),
-    ...Object.values(POSTURE_LINES).flat(),
-  ]),
+  ...new Set([...Object.values(SCHEME_LINES).flat(), ...Object.values(POSTURE_LINES).flat()]),
 ];

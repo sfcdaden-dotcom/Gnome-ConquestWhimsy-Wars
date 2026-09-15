@@ -570,7 +570,7 @@ export function GameScreen({ game: g, onPlayAgain, onQuit }: GameScreenProps) {
             disabled={needsPass}
             muted={g.chatMuted}
             onToggleMute={g.toggleChatMuted}
-            onSay={(player, phraseId) => act({ type: 'quickChat', player, phraseId })}
+            onSay={(player, phraseId, target) => act({ type: 'quickChat', player, phraseId, ...(target ? { target } : {}) })}
           />
         </aside>
       </div>

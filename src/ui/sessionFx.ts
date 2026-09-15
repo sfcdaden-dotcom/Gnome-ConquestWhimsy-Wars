@@ -12,7 +12,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { GameEvent, GameState, PlayerId, QuickChatId, UnitId } from '../engine';
+import type { GameEvent, GameState, PlayerId, QuickChatId, QuickChatTarget, UnitId } from '../engine';
 import { posKey } from '../engine';
 import { POOF_MS, randomPoofVariant } from './fxAssets';
 
@@ -196,6 +196,8 @@ export interface ChatBubble {
   id: number;
   player: PlayerId;
   phraseId: QuickChatId;
+  /** Carried through so a templated line reads the same here as everywhere. */
+  target?: QuickChatTarget;
 }
 
 /** How long a quickchat bubble stays on the board, and how many stack up. */
@@ -216,7 +218,10 @@ export function useChatBubbles() {
     for (const e of added) {
       if (e.type !== 'quickChatSaid') continue;
       const id = chatSeq++;
-      setChatBubbles((bs) => [...bs.slice(-(CHAT_BUBBLE_MAX - 1)), { id, player: e.player, phraseId: e.phraseId }]);
+      setChatBubbles((bs) => [
+        ...bs.slice(-(CHAT_BUBBLE_MAX - 1)),
+        { id, player: e.player, phraseId: e.phraseId, target: e.target },
+      ]);
       window.setTimeout(() => setChatBubbles((bs) => bs.filter((b) => b.id !== id)), CHAT_BUBBLE_MS);
     }
   }, []);
