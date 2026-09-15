@@ -24,6 +24,7 @@ import { QUICK_CHAT_GROUPS, QUICK_CHAT_PER_TURN, quickChatsLeft } from '../engin
 import type { ChatBubble } from './useGame';
 import { GameLogView } from './panels';
 import { GARDEN_META, playerColor, pname, posStr, quickChatText } from './meta';
+import { wedgeGeometry } from './quickChatWheel';
 
 // ---------------------------------------------------------------------------
 // The chat window
@@ -162,10 +163,6 @@ function ChatTranscript({
 // The picker: a wheel of categories, then that category's phrases
 // ---------------------------------------------------------------------------
 
-/** Wheel geometry (px). The column is 280–360 wide, so the ring must fit 260. */
-const WHEEL_SIZE = 240;
-const WHEEL_RADIUS = 88;
-
 function QuickChatComposer({
   state,
   seat,
@@ -181,6 +178,9 @@ function QuickChatComposer({
   const [groupId, setGroupId] = useState<string | null>(null);
   /** A chosen phrase still waiting for the thing it names. */
   const [pending, setPending] = useState<QuickChatPhrase | null>(null);
+  /** Which wedge the roving tabindex is currently on. */
+  const [cursor, setCursor] = useState(0);
+  const petalRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const ref = useRef<HTMLDivElement>(null);
 
   const close = () => {
@@ -215,6 +215,38 @@ function QuickChatComposer({
     };
   }, [open, groupId, pending]);
 
+  // Opening a menu moves the focus into it — the rest of the keyboard
+  // behaviour is useless otherwise, since there would be nothing to arrow away
+  // from. Only for the wheel: the phrase list and the target picker are
+  // ordinary lists and the browser handles those.
+  useEffect(() => {
+    if (!open || groupId !== null || pending !== null) return;
+    setCursor(0);
+    petalRefs.current[0]?.focus();
+  }, [open, groupId, pending]);
+
+  /**
+   * Move the focus around the ring.
+   *
+   * `role="menu"` is a promise that the arrow keys work — a menu is a single
+   * tab stop whose items are reached with the arrows — so implementing it is
+   * not a flourish but the other half of the semantics already claimed here.
+   * Both axes step around the ring because there is no row or column to speak
+   * of: on a circle, "next" is the only direction that means anything.
+   */
+  function onWheelKey(e: React.KeyboardEvent<HTMLDivElement>): void {
+    const n = QUICK_CHAT_GROUPS.length;
+    let next: number | null = null;
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') next = (cursor + 1) % n;
+    else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') next = (cursor - 1 + n) % n;
+    else if (e.key === 'Home') next = 0;
+    else if (e.key === 'End') next = n - 1;
+    if (next === null) return;
+    e.preventDefault(); // the arrows would otherwise scroll the column behind
+    setCursor(next);
+    petalRefs.current[next]?.focus();
+  }
+
   if (seat === null) return null;
 
   const left = quickChatsLeft(state, seat);
@@ -244,38 +276,76 @@ function QuickChatComposer({
       </button>
 
       {open && canSay && pending === null && group === null && (
-        <div className="qc-wheel" role="menu" aria-label="Quick chat categories" data-testid="quickchat-menu">
+        <div className="qc-wheel" data-testid="quickchat-menu">
+          <div className="qc-wheel-head" id="qc-wheel-title">
+            Quick chat
+          </div>
           <div
             className="qc-ring"
-            style={{ width: WHEEL_SIZE, height: WHEEL_SIZE }}
+            role="menu"
+            aria-labelledby="qc-wheel-title"
+            onKeyDown={onWheelKey}
           >
             {QUICK_CHAT_GROUPS.map((g, i) => {
-              // Start at the top and go clockwise, so the first category is
-              // always under the thumb's natural resting arc.
-              const angle = (i / QUICK_CHAT_GROUPS.length) * 2 * Math.PI - Math.PI / 2;
+              const w = wedgeGeometry(i, QUICK_CHAT_GROUPS.length);
               return (
                 <button
                   key={g.id}
                   type="button"
                   role="menuitem"
+                  ref={(el) => {
+                    petalRefs.current[i] = el;
+                  }}
+                  // Roving tabindex: the menu is ONE tab stop and the arrows
+                  // move within it. Seven separate stops would mean tabbing past
+                  // six categories to reach the seventh, which is the thing a
+                  // radial menu exists to avoid.
+                  tabIndex={i === cursor ? 0 : -1}
                   className="qc-petal"
                   style={{
-                    left: `calc(50% + ${Math.cos(angle) * WHEEL_RADIUS}px)`,
-                    top: `calc(50% + ${Math.sin(angle) * WHEEL_RADIUS}px)`,
+                    left: `${w.left}%`,
+                    top: `${w.top}%`,
+                    width: `${w.width}%`,
+                    height: `${w.height}%`,
+                    clipPath: w.clipPath,
+                    transformOrigin: `${w.originX}% ${w.originY}%`,
                   }}
                   data-testid={`quickchat-group-${g.id}`}
+                  // The visible text lives in the layer below, outside the
+                  // clip, so the button carries the name instead.
+                  aria-label={g.label}
+                  onFocus={() => setCursor(i)}
                   onClick={() => setGroupId(g.id)}
-                >
-                  <span className="qc-petal-label">{g.label}</span>
-                </button>
+                />
               );
             })}
-            <div className="qc-hub">
-              <span className="qc-hub-title">Quick chat</span>
-              <button type="button" className="btn small" data-testid="quickchat-close" onClick={close}>
-                ✕ Close
-              </button>
+            {/* Labels, above every petal and clipped by none of them. Inert, so
+                a click still reaches the petal underneath. */}
+            <div className="qc-labels" aria-hidden="true">
+              {QUICK_CHAT_GROUPS.map((g, i) => {
+                const w = wedgeGeometry(i, QUICK_CHAT_GROUPS.length);
+                return (
+                  <span
+                    key={g.id}
+                    className="qc-petal-label"
+                    style={{ left: `${w.labelX}%`, top: `${w.labelY}%` }}
+                  >
+                    {g.label}
+                  </span>
+                );
+              })}
             </div>
+            {/* The hole in the middle is the way out — where a radial menu's
+                cancel has always been, and the one place a stray click can
+                land without choosing something. */}
+            <button
+              type="button"
+              className="qc-hub"
+              data-testid="quickchat-close"
+              onClick={close}
+            >
+              Close
+            </button>
           </div>
         </div>
       )}

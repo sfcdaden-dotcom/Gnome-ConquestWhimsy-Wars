@@ -134,7 +134,9 @@ h2 {
   padding: 4px 10px;
 }
 .btn.ghost:hover:not(:disabled) {
-  background: var(--panel-2);
+  /* A garden green rather than the near-white panel tint: the petals have to
+     be a shape you can see against the panel now that nothing outlines them. */
+  background: var(--cell);
   color: var(--text);
 }
 
@@ -1789,57 +1791,145 @@ h2 {
   box-shadow: var(--shadow);
   padding: 10px;
 }
-/* Level 1: the category wheel. */
+/* The wheel is as wide as its ring — which is itself viewport-relative — so it
+   never has to be told a width twice. */
+.qc-wheel {
+  padding: 12px;
+}
+/* Level 1: the category wheel.
+
+   Segments of a ring rather than a scatter of circles. The circles were sized
+   around an emoji; with the emoji gone they were mostly empty, their labels
+   were squeezed to 9px, and the gaps between them were dead pixels that looked
+   clickable and were not. A ring has no dead pixels: every point between the
+   hub and the rim belongs to exactly one category, so the target is as big as
+   the space it occupies rather than a disc floating inside it.
+
+   Each wedge is a real <button> clipped to its sector (see wedgeClipPath), so
+   the shape you see and the shape you hit are one element and cannot drift
+   apart. `clip-path` also clips the focus ring, which is why focus is drawn
+   with an INSET shadow below — that paints inside the clip and survives. */
 .qc-ring {
   position: relative;
-}
-.qc-petal {
-  position: absolute;
-  transform: translate(-50%, -50%);
-  width: 64px;
-  height: 64px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 1px;
-  border: 1px solid var(--border);
+  /* One number decides the size of the whole menu; the wedges are in %. */
+  width: min(268px, 74vw);
+  aspect-ratio: 1;
+  /* Square is load-bearing, not tidiness: polygon() takes x as a % of width
+     and y as a % of height, and the geometry assumes those agree. */
   border-radius: 50%;
-  background: var(--panel-2);
-  cursor: pointer;
-  color: inherit;
-  font: inherit;
-  line-height: 1.1;
-  transition: transform 0.12s ease, border-color 0.12s ease;
+  /* No background: the petals are separate shapes with the panel showing
+     between them, which is what makes the ring read as a flower rather than a
+     pie. An earlier version coloured this surface to draw the dividers, which
+     only makes sense when the segments meet edge to edge. */
 }
-.qc-petal:hover,
-.qc-petal:focus-visible {
-  border-color: var(--accent);
-  transform: translate(-50%, -50%) scale(1.08);
-}
-.qc-petal-emoji {
-  font-size: 1.15rem;
-}
-.qc-petal-label {
-  font-size: 0.56rem;
-  letter-spacing: 0.02em;
+
+.qc-wheel-head {
+  text-align: center;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--muted);
+  padding-bottom: 8px;
 }
+
+.qc-petal {
+  /* Placed and sized inline, per wedge — see wedgeGeometry. */
+  position: absolute;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: var(--panel-2);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+  transition: background-color 0.12s ease, transform 0.12s ease;
+}
+
+/* Every state below is a FILL, never an outline.
+
+   A border or an `outline` is clipped away entirely, and an inset box-shadow —
+   the usual workaround — is no better here: it paints a RECTANGLE against the
+   element's box and the clip then keeps only the parts that fall inside the
+   wedge, so a "1px ring" showed up as a line down one edge and nothing on the
+   others. Colour is the one property that fills the clipped shape exactly. */
+/* A tint MIXED from the accent rather than a fixed colour: on the dark theme
+   `--bg-accent` and `--panel-2` are one hex apart, so a hover painted with it
+   was invisible there. Mixing against the wedge's own base lands a visible step
+   above it whichever theme is in play. */
+.qc-petal:hover {
+  background: color-mix(in srgb, var(--accent) 30%, var(--cell));
+}
+
+/* Focus lifts the petal away from the middle, the way one opens, and deepens
+   the tint under it. The movement is what makes it unmistakable next to hover,
+   which is the same colour family a step weaker — and it leaves the label dark
+   on light, so nothing has to recolour text that lives in another layer. */
+.qc-petal:focus-visible {
+  outline: none;
+  background: color-mix(in srgb, var(--accent) 48%, var(--cell));
+  transform: scale(1.07);
+}
+
+.qc-petal:active {
+  background: color-mix(in srgb, var(--accent) 55%, var(--cell));
+}
+
+/* The label layer: above every petal, clipped by none, and inert. */
+.qc-labels {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.qc-petal-label {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  /* Horizontal, never rotated to follow the arc: a label on its side is a
+     label nobody reads at a glance, and glancing is the whole use case. */
+  font-size: 0.68rem;
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  text-align: center;
+}
+
+/* The hole in the middle: cancel, where a radial menu has always put it. */
 .qc-hub {
   position: absolute;
   left: 50%;
   top: 50%;
   transform: translate(-50%, -50%);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-}
-.qc-hub-title {
-  font-size: 0.7rem;
+  /* Twice RING_INNER (19%) of the ring box — the exact hole the wedges leave. */
+  width: 38%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--panel);
   color: var(--muted);
+  font: inherit;
+  font-size: 0.74rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.12s ease, color 0.12s ease, border-color 0.12s ease;
 }
+
+.qc-hub:hover,
+.qc-hub:focus-visible {
+  border-color: var(--warn);
+  color: var(--warn);
+  background: var(--panel-2);
+}
+
+/* Motion here is decoration on a menu that must stay usable without it. */
+@media (prefers-reduced-motion: reduce) {
+  .qc-petal,
+  .qc-hub {
+    transition: none;
+  }
+}
+
 /* Level 2: the chosen category's phrases (a list — they are sentences). */
 .qc-list {
   width: 260px;

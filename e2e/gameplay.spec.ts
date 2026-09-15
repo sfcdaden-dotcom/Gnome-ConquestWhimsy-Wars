@@ -791,3 +791,72 @@ test('a chat line that names a rival is completed before it is sent', async ({ p
   await page.getByTestId('quickchat-say-yaaargh').click();
   await expect(transcript).toContainText('YAAAARGH');
 });
+
+/**
+ * The category flower by keyboard.
+ *
+ * `role="menu"` is a promise: a menu is ONE tab stop whose items are reached
+ * with the arrows. The markup claimed that before the arrows existed, which is
+ * the worse of the two failures — a screen reader announces a menu and then the
+ * keys it tells you to press do nothing.
+ */
+test('the category wheel is one tab stop that the arrow keys walk around', async ({ page }) => {
+  const g = new Game(page);
+  await g.startTwoPlayer(SEED);
+  await g.completeRollOff();
+  await g.resolveHarvest('wish');
+
+  const focusedId = () =>
+    page.evaluate(() => document.activeElement?.getAttribute('data-testid') ?? null);
+
+  // Opening a menu moves focus into it — the arrows are useless otherwise.
+  await page.getByTestId('quickchat-open').click();
+  await expect(page.getByTestId('quickchat-menu')).toBeVisible();
+  expect(await focusedId()).toBe('quickchat-group-greetings');
+
+  // Both axes step around the ring: on a circle there is no row or column, so
+  // "next" is the only direction that means anything.
+  await page.keyboard.press('ArrowRight');
+  expect(await focusedId()).toBe('quickchat-group-compliments');
+  await page.keyboard.press('ArrowDown');
+  expect(await focusedId()).toBe('quickchat-group-reactions');
+  await page.keyboard.press('ArrowLeft');
+  expect(await focusedId()).toBe('quickchat-group-compliments');
+
+  // And it wraps, because a ring has no ends.
+  await page.keyboard.press('Home');
+  expect(await focusedId()).toBe('quickchat-group-greetings');
+  await page.keyboard.press('ArrowLeft');
+  expect(await focusedId()).toBe('quickchat-group-manners');
+
+  // Enter opens that category, like a click.
+  await page.keyboard.press('Enter');
+  await expect(page.getByTestId('quickchat-say-sorry')).toBeVisible();
+});
+
+/**
+ * Each petal has to occupy its own bounding box, not the whole flower.
+ *
+ * Clipping a full-size button looks identical and hit-tests correctly, but
+ * leaves every category reporting the same box centred on the hub — so a click
+ * aimed at "that category" lands on Close instead. Pinned here as well as in
+ * quickChatWheel.test.ts, because the browser is where the two can disagree.
+ */
+test('clicking a category hits that category, not the hub behind it', async ({ page }) => {
+  const g = new Game(page);
+  await g.startTwoPlayer(SEED);
+  await g.completeRollOff();
+  await g.resolveHarvest('wish');
+
+  await page.getByTestId('quickchat-open').click();
+
+  // A petal is a part of the flower, not the whole of it.
+  const petal = (await page.getByTestId('quickchat-group-greetings').boundingBox())!;
+  const ring = (await page.locator('.qc-ring').boundingBox())!;
+  expect(petal.width).toBeLessThan(ring.width * 0.8);
+  expect(petal.height).toBeLessThan(ring.height * 0.8);
+
+  // Playwright clicks the element's centre — the same aim the bug broke.
+  await page.getByTestId('quickchat-group-schemes').click();
+  await expect(page.getByTestId('quickchat-say-scram')).toBeVisible();
+});
