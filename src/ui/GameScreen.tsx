@@ -668,8 +668,12 @@ function ShotClockPill({
  * The tooltip is position: fixed and placed from the row's rect because the
  * left column scrolls (`overflow-y: auto`), which would clip an absolutely
  * positioned bubble hanging off the last panel.
+ *
+ * Exported for the dev-only UI laboratory (`ui/preview/`), which shows it —
+ * and its tooltip — off a fixture rather than a live game. Nothing else
+ * outside this file uses it.
  */
-function CursePanel({ state }: { state: GameState }) {
+export function CursePanel({ state }: { state: GameState }) {
   const [openId, setOpenId] = useState<CardId | null>(null);
   const [pos, setPos] = useState<TipPos | null>(null);
   const anchor = useRef<HTMLElement | null>(null);

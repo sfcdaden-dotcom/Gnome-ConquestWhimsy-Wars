@@ -12,6 +12,13 @@
  * a TV or a projector with no hand and no controls (see BoardView.tsx). It is
  * checked before anything else because it is the one screen nobody is standing
  * at: a reload must put the board back, not a menu.
+ *
+ * One more address exists in a DEV build only: `?ui=preview` opens the UI
+ * laboratory (see `ui/preview/`), a page of every production component and
+ * class rendered from fixtures, so a CSS or art change can be judged without
+ * playing a game to reach the screen it affects. The `import.meta.env.DEV`
+ * guard is what keeps it out of a production bundle — the branch folds to
+ * `false` at build time and the import goes with it.
  */
 
 import { useState } from 'react';
@@ -24,6 +31,7 @@ import type { HomeChoice } from './ui/HomeScreen';
 import { OnlineScreen } from './ui/OnlineScreen';
 import { RulesScreen } from './ui/RulesScreen';
 import { SetupScreen } from './ui/SetupScreen';
+import { UiPreview } from './ui/preview/UiPreview';
 import { useGame } from './ui/useGame';
 import { GnomeLooksContext } from './ui/gnomeLooks';
 import type { GnomeLook } from './ui/gnomeLook';
@@ -53,6 +61,11 @@ export default function App() {
     isBoardView(window.location.search) ? roomCodeFromSearch(window.location.search) : null,
   );
   if (boardRoom) return <BoardView code={boardRoom} />;
+
+  // Dev-only, and checked here so it answers whatever else the address says.
+  if (import.meta.env.DEV && new URLSearchParams(window.location.search).get('ui') === 'preview') {
+    return <UiPreview />;
+  }
 
   if (screen === 'rules') return <RulesScreen onBack={() => setScreen('home')} />;
   if (screen === 'online') return <OnlineScreen onBack={() => setScreen('home')} />;

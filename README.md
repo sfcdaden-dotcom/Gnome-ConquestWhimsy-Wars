@@ -37,6 +37,35 @@ npm run test:e2e   # playwright: builds, serves and plays the app in a browser
 CI (`.github/workflows/ci.yml`) runs all of the above from a clean `npm ci` on
 every push and pull request.
 
+### The UI laboratory
+
+```
+npm run dev        # then open the printed URL with ?ui=preview
+```
+
+`?ui=preview` opens a single page holding every production component and CSS
+class the game has — typography, buttons, form controls, the icon inventory,
+the garden and gnome art, the board on its pan-and-zoom stage, player panels,
+hands and cards, decision and fight panels, curses and their tooltip, chat and
+the game log, and the modal. It exists so a CSS or art change can be judged in
+one refresh instead of by starting a four-player game and navigating to the
+screen that shows the thing you changed; half the states worth looking at (a
+fight mid-round, an eliminated seat, five active curses) are awkward to reach
+in a real game at all.
+
+It renders the REAL components, never look-alikes — a mock-up drifts and starts
+lying — and it restyles nothing, so what it shows is the current visual system
+including its inconsistencies. Components that need game state get a fixture
+(`src/ui/preview/fixtures.ts`), built the way the engine's scenario tests build
+one: `createGame`, clone, mutate the clone. Nothing there calls `applyAction`,
+so no rule is being simulated; the states exist to be looked at.
+
+The page is dev-only. App.tsx reaches it behind `import.meta.env.DEV`, so the
+branch folds to `false` in a production build and the module is dropped — which
+is also why `preview.css` is imported `?raw` and injected as a `<style>`: a
+plain CSS import is a side effect that survives tree-shaking and would ship its
+rules to players.
+
 ## Art
 
 Gardens and units are hand-drawn images in `src/assets/art/`, not emoji, so the
@@ -200,7 +229,8 @@ src/ui/       App shell + screen router, home screen, rules viewer, setup
               components), the gnome character creator (gnomeLook model +
               palette, gnomeArt catalogue + canvas recolour, GnomeCreator);
               the local (useGame) and networked (useNetGame) sessions behind
-              one GameSession shape
+              one GameSession shape; preview/ is the dev-only UI laboratory
+              (see Getting started)
 src/assets/   the game's picture assets (see Art above)
 e2e/          Playwright browser tests (play the real app through the DOM)
 RULES.md      tabletop rules (with [RULING] clarifications)

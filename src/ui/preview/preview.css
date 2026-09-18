@@ -1,0 +1,226 @@
+/*
+ * Chrome for the UI laboratory (`?ui=preview`) — dev-only, and imported by
+ * UiPreview.tsx alone so it never reaches a production bundle.
+ *
+ * Everything here is prefixed `uip-` and does nothing but LAY OUT the
+ * specimens: a column, some labels, a grid. It sets no radius, no shadow and
+ * no colour of its own beyond the theme variables index.css already defines,
+ * because the moment this file starts having opinions the page stops showing
+ * the game's visual system and starts showing this file's.
+ *
+ * The one exception is `.uip-stage`, which gives the specimens inside it the
+ * width their real column has (224px left, ~320px right) — a panel judged at
+ * the wrong width is a panel judged wrong.
+ */
+
+.uip {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 24px 16px 80px;
+}
+
+.uip-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding-bottom: 16px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.uip-h1 {
+  margin: 0 0 4px;
+}
+.uip-h2 {
+  margin: 0 0 4px;
+}
+.uip-h3 {
+  margin: 16px 0 8px;
+  font-size: 0.95rem;
+}
+
+.uip-note {
+  margin: 0 0 12px;
+  max-width: 78ch;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.uip-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  max-width: 520px;
+  font-size: 0.8rem;
+}
+.uip-nav a {
+  color: var(--muted);
+}
+
+.uip-section {
+  padding: 28px 0;
+  border-bottom: 1px solid var(--border);
+  scroll-margin-top: 16px;
+}
+
+/* A plain backdrop to sit specimens on. Deliberately flat: it must not read as
+   a card, or every specimen would look like it lives in one. */
+.uip-panel {
+  background: var(--panel-2);
+  padding: 16px;
+}
+
+.uip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: flex-end;
+}
+
+/* Specimens side by side, each no wider than the column it really lives in. */
+.uip-cols {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  align-items: flex-start;
+}
+.uip-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.uip-item.wide {
+  flex: 1 1 100%;
+}
+
+.uip-label {
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  color: var(--muted);
+  max-width: 44ch;
+}
+
+.uip-stage {
+  background: var(--panel-2);
+  padding: 12px;
+}
+
+/* The real column widths from `.main` in index.css, so a panel is judged at
+   the size it is actually drawn at. */
+.uip-leftcol {
+  width: 224px;
+}
+.uip-rightcol {
+  width: 320px;
+}
+.uip-rightcol.tall {
+  height: 340px;
+  display: flex;
+  flex-direction: column;
+}
+
+.uip-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* Typography specimens: sample on the left, computed numbers on the right. */
+.uip-type-row {
+  display: flex;
+  gap: 20px;
+  align-items: baseline;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+}
+.uip-type-row:last-child {
+  border-bottom: none;
+}
+.uip-type-sample {
+  flex: 1;
+  min-width: 0;
+}
+.uip-type-sample > * {
+  margin: 0;
+}
+.uip-type-meta {
+  flex: none;
+  width: 30ch;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 0.7rem;
+  color: var(--muted);
+}
+.uip-spec {
+  font-family: var(--mono);
+}
+
+.uip-table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.85rem;
+}
+.uip-table th,
+.uip-table td {
+  text-align: left;
+  padding: 5px 10px 5px 0;
+  border-bottom: 1px solid var(--border);
+}
+.uip-glyph {
+  font-size: 1.4rem;
+  width: 3ch;
+}
+
+/* Art at review size — big enough to judge a drawing, with the board's own
+   rendered size shown beside it in the board section. */
+.uip-art-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  padding: 8px 0;
+}
+.uip-art {
+  margin: 0;
+  width: 92px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  text-align: center;
+}
+.uip-art .art {
+  width: 64px;
+  height: 64px;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+.uip-art figcaption {
+  display: flex;
+  flex-direction: column;
+  font-size: 0.72rem;
+  line-height: 1.3;
+}
+
+/* The board needs a real viewport for PanZoom to fit into. */
+.uip-board-frame {
+  position: relative;
+  height: 560px;
+  background: var(--panel-2);
+}
+.uip-stage.panzoom {
+  position: absolute;
+  inset: 0;
+}
+
+.uip-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 8px;
+}
+
+.uip-foot {
+  padding-top: 24px;
+}
