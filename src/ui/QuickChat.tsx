@@ -72,7 +72,7 @@ export function ChatPanel({ state, seat, disabled, muted, onToggleMute, onSay }:
             type="button"
             role="tab"
             aria-selected={tab === 'chat'}
-            className={`btn small chip${tab === 'chat' ? ' on' : ''}`}
+            className={`btn small ghost chip${tab === 'chat' ? ' on' : ''}`}
             data-testid="chat-tab-chat"
             onClick={() => {
               setTab('chat');
@@ -90,7 +90,7 @@ export function ChatPanel({ state, seat, disabled, muted, onToggleMute, onSay }:
             type="button"
             role="tab"
             aria-selected={tab === 'log'}
-            className={`btn small chip${tab === 'log' ? ' on' : ''}`}
+            className={`btn small ghost chip${tab === 'log' ? ' on' : ''}`}
             data-testid="chat-tab-log"
             onClick={() => {
               setTab('log');
@@ -103,7 +103,7 @@ export function ChatPanel({ state, seat, disabled, muted, onToggleMute, onSay }:
         <span className="chat-head-right">
           <button
             type="button"
-            className={`btn small${muted ? ' on' : ''}`}
+            className={`btn small ghost${muted ? ' on' : ''}`}
             aria-pressed={muted}
             data-testid="quickchat-mute"
             title={muted ? 'Chat bubbles hidden — the transcript still records them' : 'Hide chat bubbles'}
@@ -113,7 +113,7 @@ export function ChatPanel({ state, seat, disabled, muted, onToggleMute, onSay }:
           </button>
           <button
             type="button"
-            className="btn small"
+            className="btn small ghost"
             aria-expanded={!collapsed}
             data-testid="chat-collapse"
             onClick={() => setCollapsed((c) => !c)}

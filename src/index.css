@@ -60,7 +60,6 @@
   --color-bloom-eye: #eccd6b;
 
   --shadow-raised: 0 4px 14px rgba(44, 66, 24, 0.12);
-  --focus-ring: 0 0 0 2px var(--color-surface), 0 0 0 4px var(--color-primary);
 
   /* --- Typography ---------------------------------------------------------
 
@@ -236,8 +235,10 @@ h2 {
      .btn.ghost      text only — Back, Cancel, Close-without-saving.
 
    Orthogonal to those: `.small` / `.big` set size, and `.on` (always with
-   aria-pressed) marks the selected member of a toggle group. Selected is
-   a STATE, never a primary: a picked option is not a call to action. */
+   aria-pressed or aria-selected) marks the selected member of a toggle group.
+   Selected is a STATE, never a primary: a picked option is not a call to
+   action. It is the only state with a green tint and a green edge; hover and
+   pressed stay neutral so the three never read alike. */
 .btn {
   font: inherit;
   font-size: var(--text-label);
@@ -259,11 +260,18 @@ h2 {
   border-color: var(--color-border-strong);
 }
 .btn:active:not(:disabled) {
-  background: var(--color-surface-tint);
+  background: color-mix(in srgb, var(--color-text) 8%, var(--color-surface));
 }
+/* Keyboard focus: a 2px green edge drawn OVER the button's own border, so it
+   is unmistakable without adding a halo around the button. A primary button
+   is already green at the edge, so its ring goes inside, in the label colour. */
 .btn:focus-visible {
-  outline: none;
-  box-shadow: var(--focus-ring);
+  outline: 2px solid var(--color-primary);
+  outline-offset: -1px;
+}
+.btn.primary:focus-visible {
+  outline-color: var(--color-on-primary);
+  outline-offset: -4px;
 }
 .btn:disabled {
   opacity: 0.45;
@@ -301,13 +309,16 @@ h2 {
   border-color: transparent;
   color: var(--color-text-muted);
 }
+/* Ghost hover and every pressed state are NEUTRAL (a wash of the text
+   colour): green tints belong to `.on`, so a pointer resting on a control can
+   never be mistaken for it being selected. */
 .btn.ghost:hover:not(:disabled) {
-  background: var(--color-cell);
+  background: color-mix(in srgb, var(--color-text) 6%, transparent);
   border-color: transparent;
   color: var(--color-text);
 }
 .btn.ghost:active:not(:disabled) {
-  background: color-mix(in srgb, var(--color-primary) 22%, var(--color-cell));
+  background: color-mix(in srgb, var(--color-text) 11%, transparent);
 }
 
 /* Selected member of a toggle group (tabs, seat controller, board size…). */
@@ -328,7 +339,7 @@ h2 {
 }
 .btn.big {
   padding: var(--space-md) var(--space-xl);
-  font-size: var(--text-section);
+  font-size: var(--text-body);
 }
 
 .btn-row {
@@ -409,9 +420,8 @@ h2 {
   align-items: center;
   gap: 10px;
   background: var(--color-surface-subtle);
-  border: 1px solid var(--color-border);
-  border-radius: 12px;
-  padding: 6px 10px;
+  border-radius: var(--radius-md);
+  padding: var(--space-sm) var(--space-md);
 }
 .seat-row input[type='text'] {
   font: inherit;
@@ -628,18 +638,14 @@ h2 {
 }
 .editor-panel {
   pointer-events: auto;
-  background: color-mix(in srgb, var(--color-surface) 92%, transparent);
-  border: 1px solid var(--color-border);
-  border-radius: 16px;
-  box-shadow: var(--shadow-raised);
-  padding: 12px 16px;
+  background: var(--color-surface);
+  border-radius: var(--radius-lg);
+  padding: var(--space-lg) var(--space-xl);
   display: flex;
   flex-direction: column;
   gap: 8px;
   width: min(680px, 100%);
   margin: 0 auto;
-  -webkit-backdrop-filter: blur(6px);
-  backdrop-filter: blur(6px);
   /* A tall palette or a long error must never grow past the screen and push
      the exits out of reach. */
   max-height: 45dvh;
@@ -1316,10 +1322,9 @@ h2 {
   align-items: baseline;
 }
 .respond-target {
-  background: var(--color-surface-subtle);
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  padding: 1px 6px;
+  background: var(--color-surface-tint);
+  border-radius: var(--radius-sm);
+  padding: 1px var(--space-sm);
   font-weight: 600;
 }
 
@@ -1372,19 +1377,42 @@ h2 {
   font-size: var(--text-label);
 }
 
-.curse-panel,
+/* Containers come in three kinds, and every bordered box in this file is
+   meant to be one of them on purpose:
+
+   A  STRONG BOUNDARY — an outline that says something: an object (a card, a
+      fighter's roll, a board cell), a state (selected, targeting, a curse in
+      force, a fight under way), or a thing floating over the page (a modal,
+      a popover, a toast). Inputs belong here too.
+   B  SUBTLE SURFACE — a region that only groups: the decision, the hand, the
+      chat window, the action bar, a setup row. A surface fill against the
+      page and the space around it do the grouping; no outline, no shadow.
+   C  NO CONTAINER — a heading and its copy, a row of stats or buttons,
+      metadata. Proximity already says they belong together.
+
+   The rule of thumb for nesting: a boundary inside a region is fine when the
+   inner one is an OBJECT (a card in the hand); a box drawn around a box that
+   only groups is not. */
+
+/* B: the sidebar's regions (the chat window, further down, is the third).
+   Over the board, the fill is also what hides it. */
 .decision-panel,
-.fight-panel,
 .hand-panel {
   background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   padding: var(--space-lg);
   flex: none;
 }
 
-.curse-panel {
-  border-color: var(--color-danger);
+/* A: a curse in force and a fight under way are STATES, and the red edge is
+   how they announce themselves. One pixel is enough to say it. */
+.curse-panel,
+.fight-panel {
+  background: var(--color-surface);
+  border: 1px solid color-mix(in srgb, var(--color-danger) 60%, var(--color-surface));
+  border-radius: var(--radius-md);
+  padding: var(--space-lg);
+  flex: none;
 }
 
 /* Curse rows: hover or keyboard focus reveals the curse's rules text. */
@@ -1420,20 +1448,24 @@ h2 {
   box-shadow: 0 0 0 2px var(--color-primary);
 }
 
+/* The decision is the most important thing in the sidebar, and it says so
+   with its 18px title, its one primary button and a little more air — not
+   with a heavy frame. */
 .decision-panel {
-  border: 2px solid var(--color-primary);
-  box-shadow: var(--shadow-raised);
+  padding: var(--space-xl) var(--space-lg);
 }
+.decision-panel .btn-row,
+.decision-panel .btn-col {
+  margin-top: var(--space-lg);
+}
+/* Someone else's decision: the same region, receded — it is status. */
 .decision-panel.waiting {
-  border-style: dashed;
-  opacity: 0.85;
+  padding: var(--space-md) var(--space-lg);
+  background: var(--color-surface-subtle);
 }
 
 /* Fight */
-.fight-panel {
-  border: 2px solid var(--color-danger);
-  box-shadow: var(--shadow-raised);
-}
+
 .side-role {
   font-size: var(--text-tiny);
   color: var(--color-text-muted);
@@ -1448,9 +1480,9 @@ h2 {
   font-size: var(--text-body);
 }
 .fight-respond {
-  margin-top: 6px;
-  border-top: 1px dashed var(--color-border);
-  padding-top: 6px;
+  margin-top: var(--space-md);
+  border-top: 1px solid var(--color-border);
+  padding-top: var(--space-md);
 }
 
 /* Hand */
@@ -1509,14 +1541,15 @@ h2 {
 }
 
 /* Log (the "Game log" tab of the chat window; the panel chrome lives there) */
+/* C-leaning: the scrolling part of the chat window. A faint well marks where
+   the scroll is; it is not framed again inside the window that holds it. */
 .game-log {
   flex: 1;
   min-height: 120px;
   overflow-y: auto;
   background: var(--color-surface-subtle);
-  border: 1px solid var(--color-border);
-  border-radius: 12px;
-  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  padding: var(--space-md) var(--space-md);
   font-size: var(--text-meta);
 }
 .log-line {
@@ -1583,13 +1616,13 @@ h2 {
   flex-wrap: wrap;
   justify-content: center;
   background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: 12px;
-  padding: 6px 10px;
+  border-radius: var(--radius-md);
+  padding: var(--space-sm) var(--space-md);
   max-width: 100%;
 }
+/* A: targeting is a mode the board is in, and the red edge is the warning. */
 .targeting-banner {
-  border: 2px solid #c23636;
+  border: 2px solid var(--color-danger);
   font-size: var(--text-body);
 }
 
@@ -1639,11 +1672,6 @@ h2 {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.btn.chip.on {
-  border-color: var(--color-primary);
-  background: color-mix(in srgb, var(--color-primary) 22%, var(--color-surface));
-  font-weight: 600;
 }
 
 /* ------------------------------------------------------------------ */
@@ -1947,12 +1975,16 @@ h2 {
 /* ------------------------------------------------------------------ */
 /* Chat window: tabs (chat / game log) + the radial phrase picker.      */
 /* Fixed phrases only — there is no text input to style.                */
+/* B: a region like the hand, which it sits under. */
 .chat-panel {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--space-sm);
   flex: 1;
   min-height: 0;
+  background: var(--color-surface);
+  border-radius: var(--radius-md);
+  padding: var(--space-lg);
 }
 .chat-panel.collapsed {
   flex: 0 0 auto;
@@ -1962,6 +1994,7 @@ h2 {
   align-items: center;
   justify-content: space-between;
   gap: 6px;
+  margin-bottom: 0;
 }
 .chat-tabs,
 .chat-head-right {
@@ -1987,9 +2020,8 @@ h2 {
   min-height: 120px;
   overflow-y: auto;
   background: var(--color-surface-subtle);
-  border: 1px solid var(--color-border);
-  border-radius: 12px;
-  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  padding: var(--space-md) var(--space-md);
   font-size: var(--text-meta);
 }
 .chat-line {
@@ -2480,8 +2512,7 @@ h2 {
   letter-spacing: 0.22em;
   padding: 10px 14px;
   background: var(--color-surface-tint);
-  border: 1px solid var(--color-border);
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   flex: 1;
   text-align: center;
 }
@@ -2499,8 +2530,7 @@ h2 {
   flex-wrap: wrap;
   padding: 10px 12px;
   background: var(--color-surface-subtle);
-  border: 1px solid var(--color-border);
-  border-radius: 12px;
+  border-radius: var(--radius-md);
 }
 
 .seat-dot {

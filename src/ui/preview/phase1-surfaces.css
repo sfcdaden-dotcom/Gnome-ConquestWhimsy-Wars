@@ -1,0 +1,316 @@
+/*
+ * The UI laboratory's "before" — the Phase 1 container and button rules,
+ * frozen, for the side-by-side in the Surfaces section. Dev-only, loaded as a
+ * string by UiPreview.tsx like preview.css.
+ *
+ * Every selector is scoped under `.uip-before`, so it restyles only the
+ * left-hand specimen of each pair. Generated from index.css as it stood at
+ * the end of Phase 1 (commit efa444a); the few rules at the end reset
+ * properties Phase 2 ADDED, which a frozen copy would otherwise inherit.
+ *
+ * This is the one deliberate exception to "the laboratory restyles nothing",
+ * and it is disposable: delete it (and the section) once the comparison has
+ * done its job.
+ */
+
+.uip-before .btn {
+  font: inherit;
+  font-size: var(--text-label);
+  font-weight: 600;
+  line-height: var(--leading-tight);
+  padding: var(--space-sm) var(--space-lg);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease;
+}
+.uip-before .btn:hover:not(:disabled) {
+  background: var(--color-surface-subtle);
+  border-color: var(--color-border-strong);
+}
+.uip-before .btn:active:not(:disabled) {
+  background: var(--color-surface-tint);
+}
+.uip-before .btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--color-surface), 0 0 0 4px var(--color-primary);
+}
+.uip-before .btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.uip-before .btn.primary {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: var(--color-on-primary);
+}
+.uip-before .btn.primary:hover:not(:disabled) {
+  background: var(--color-primary-hover);
+  border-color: var(--color-primary-hover);
+}
+.uip-before .btn.primary:active:not(:disabled) {
+  background: var(--color-primary-pressed);
+  border-color: var(--color-primary-pressed);
+}
+.uip-before .btn.danger {
+  color: var(--color-danger);
+  border-color: color-mix(in srgb, var(--color-danger) 45%, var(--color-border));
+}
+.uip-before .btn.danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--color-danger) 8%, var(--color-surface));
+  border-color: var(--color-danger);
+}
+.uip-before .btn.danger:active:not(:disabled) {
+  background: color-mix(in srgb, var(--color-danger) 16%, var(--color-surface));
+}
+.uip-before .btn.ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--color-text-muted);
+}
+.uip-before .btn.ghost:hover:not(:disabled) {
+  background: var(--color-cell);
+  border-color: transparent;
+  color: var(--color-text);
+}
+.uip-before .btn.ghost:active:not(:disabled) {
+  background: color-mix(in srgb, var(--color-primary) 22%, var(--color-cell));
+}
+.uip-before .btn.on {
+  border-color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 16%, var(--color-surface));
+  color: var(--color-text);
+}
+.uip-before .btn.on:hover:not(:disabled) {
+  border-color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 24%, var(--color-surface));
+}
+.uip-before .btn.small {
+  padding: var(--space-xs) var(--space-md);
+  font-size: var(--text-meta);
+  border-radius: var(--radius-sm);
+}
+.uip-before .btn.big {
+  padding: var(--space-md) var(--space-xl);
+  font-size: var(--text-section);
+}
+.uip-before .seat-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--color-surface-subtle);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  padding: 6px 10px;
+}
+.uip-before .seat-row input[type='text'] {
+  font: inherit;
+  flex: 1;
+  min-width: 0;
+  padding: 4px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+.uip-before .editor-panel {
+  pointer-events: auto;
+  background: color-mix(in srgb, var(--color-surface) 92%, transparent);
+  border: 1px solid var(--color-border);
+  border-radius: 16px;
+  box-shadow: var(--shadow-raised);
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(680px, 100%);
+  margin: 0 auto;
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  max-height: 45dvh;
+  overflow-y: auto;
+}
+.uip-before .editor-panel .setup-label {
+  width: 60px;
+}
+.uip-before .panel-title {
+  font-weight: 700;
+  font-size: var(--text-section);
+  line-height: var(--leading-tight);
+  color: var(--color-text);
+  margin-bottom: var(--space-md);
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0 var(--space-md);
+}
+.uip-before .decision-panel .panel-title,
+.uip-before .fight-panel .panel-title {
+  font-size: var(--text-decision);
+  align-items: center;
+  justify-content: flex-start;
+}
+.uip-before .decision-panel.waiting .panel-title {
+  font-size: var(--text-section);
+  color: var(--color-text-muted);
+  margin-bottom: 0;
+}
+.uip-before .respond-target {
+  background: var(--color-surface-subtle);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 1px 6px;
+  font-weight: 600;
+}
+.uip-before .curse-panel,
+.uip-before .decision-panel,
+.uip-before .fight-panel,
+.uip-before .hand-panel {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  padding: var(--space-lg);
+  flex: none;
+}
+.uip-before .curse-panel {
+  border-color: var(--color-danger);
+}
+.uip-before .decision-panel {
+  border: 2px solid var(--color-primary);
+  box-shadow: var(--shadow-raised);
+}
+.uip-before .decision-panel.waiting {
+  border-style: dashed;
+  opacity: 0.85;
+}
+.uip-before .fight-panel {
+  border: 2px solid var(--color-danger);
+  box-shadow: var(--shadow-raised);
+}
+.uip-before .fight-respond {
+  margin-top: 6px;
+  border-top: 1px dashed var(--color-border);
+  padding-top: 6px;
+}
+.uip-before .game-log {
+  flex: 1;
+  min-height: 120px;
+  overflow-y: auto;
+  background: var(--color-surface-subtle);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  padding: 8px 10px;
+  font-size: var(--text-meta);
+}
+.uip-before .action-bar,
+.uip-before .targeting-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  padding: 6px 10px;
+  max-width: 100%;
+}
+.uip-before .targeting-banner {
+  border: 2px solid #c23636;
+  font-size: var(--text-body);
+}
+.uip-before .btn:disabled .menu-badge {
+  color: inherit;
+}
+.uip-before .btn.chip {
+  max-width: 26ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.uip-before .btn.chip.on {
+  border-color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 22%, var(--color-surface));
+  font-weight: 600;
+}
+.uip-before .chat-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+  min-height: 0;
+}
+.uip-before .chat-panel.collapsed {
+  flex: 0 0 auto;
+}
+.uip-before .chat-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+.uip-before .chat-transcript {
+  flex: 1;
+  min-height: 120px;
+  overflow-y: auto;
+  background: var(--color-surface-subtle);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  padding: 8px 10px;
+  font-size: var(--text-meta);
+}
+.uip-before .room-code {
+  font: 700 var(--text-title) / 1 var(--mono);
+  letter-spacing: 0.22em;
+  padding: 10px 14px;
+  background: var(--color-surface-tint);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  flex: 1;
+  text-align: center;
+}
+.uip-before .lobby-seat {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  background: var(--color-surface-subtle);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+}
+.uip-before .lobby-seat .seat-name {
+  font-weight: 600;
+  flex: 1;
+  min-width: 6rem;
+}
+.uip-before .lobby-seat .seat-status {
+  flex: none;
+  white-space: nowrap;
+}
+
+/* --- Resets for what Phase 2 added ----------------------------------- */
+.uip-before .chat-panel {
+  background: none;
+  padding: 0;
+  border-radius: 0;
+}
+.uip-before .decision-panel .btn-row,
+.uip-before .decision-panel .btn-col {
+  margin-top: var(--space-md);
+}
+.uip-before .decision-panel.waiting {
+  background: var(--color-surface);
+  padding: var(--space-lg);
+}
+.uip-before .chat-head .btn.ghost:not(.on) {
+  background: var(--color-surface);
+  border-color: var(--color-border);
+  color: var(--color-text);
+}
