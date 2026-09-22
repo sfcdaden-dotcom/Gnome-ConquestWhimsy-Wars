@@ -244,7 +244,7 @@ function OnlineMenu({
         <div className="home-choices">
           <button
             type="button"
-            className="btn big accent home-choice"
+            className="btn big primary home-choice"
             data-testid="online-host"
             disabled={busy}
             onClick={host}
@@ -290,7 +290,7 @@ function OnlineMenu({
               </label>
               <button
                 type="button"
-                className="btn accent"
+                className="btn primary"
                 data-testid="online-join-go"
                 disabled={!codeReady}
                 onClick={() => onEnter(joinCode.trim())}
@@ -389,7 +389,7 @@ function RoomStale({ reason }: { reason: string | null }) {
         </p>
         <button
           type="button"
-          className="btn accent big"
+          className="btn primary big"
           data-testid="room-stale-reload"
           onClick={() => window.location.reload()}
         >
@@ -421,7 +421,7 @@ function RoomClosed({
         <p className="muted small">
           Rooms only last as long as somebody is in them. Host a new one and share the code again.
         </p>
-        <button type="button" className="btn accent big" data-testid="room-closed-back" onClick={onLeave}>
+        <button type="button" className="btn primary big" data-testid="room-closed-back" onClick={onLeave}>
           ← Back to the menu
         </button>
       </div>
@@ -654,7 +654,7 @@ function Lobby({
                   <>
                     <button
                       type="button"
-                      className="btn accent big"
+                      className="btn primary big"
                       data-testid="lobby-take-over"
                       onClick={net.takeOverRoom}
                     >
@@ -670,7 +670,7 @@ function Lobby({
                   isHost && (
                     <button
                       type="button"
-                      className="btn accent big"
+                      className="btn primary big"
                       data-testid="lobby-start"
                       disabled={!canStart(blocker)}
                       onClick={net.start}

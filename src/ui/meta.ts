@@ -21,6 +21,10 @@ import type {
 import { getCardDef, getCurseDef, getQuickChatPhrase, nameSaltOf, whyCannotPlayNow } from '../engine';
 import type { UnitEventRef } from './gnomeNames';
 import { gnomeName, unitNameFromEvent, unitNameLive } from './gnomeNames';
+import { UI_ICON_GLYPH } from './uiIcons';
+
+/** The Wish icon in plain text (log lines and generated labels hold no pictures). */
+const WISH = UI_ICON_GLYPH.wish;
 
 // ---------------------------------------------------------------------------
 // Player + garden presentation
@@ -231,7 +235,7 @@ export function describeEvent(state: GameState, ev: GameEvent): string {
     case 'homeHarvested':
       return ev.took === 'nothing'
         ? `${pname(state, ev.player)}'s Home Garden produces nothing (limits reached).`
-        : `${pname(state, ev.player)}'s Home Garden grants a ${ev.took === 'wish' ? 'Wish ✨' : 'Gnome'}.`;
+        : `${pname(state, ev.player)}'s Home Garden grants a ${ev.took === 'wish' ? `Wish ${WISH}` : 'Gnome'}.`;
     case 'dandelionHarvested':
       return `${pname(state, ev.player)}'s Dandelion at ${posStr(ev.pos)} blooms for ${ev.gnomes} gnome${ev.gnomes === 1 ? '' : 's'}.`;
     case 'mushroomHarvested':
@@ -355,7 +359,7 @@ export function describeAction(state: GameState, a: Action): string {
     case 'chooseHarvest':
       return `Harvest ${a.sourceKey === 'home' ? 'Home Garden' : `garden at (${a.sourceKey})`}`;
     case 'homeHarvest':
-      return a.take === 'wish' ? '✨ Take 1 Wish' : 'Spawn a Gnome';
+      return a.take === 'wish' ? `${WISH} Take 1 Wish` : 'Spawn a Gnome';
     case 'mushroomClones':
       return `Clone ${a.count} gnome${a.count === 1 ? '' : 's'}`;
     case 'slide':
@@ -391,11 +395,11 @@ export function describeAction(state: GameState, a: Action): string {
     case 'upgrade': {
       const g = state.gardens[`${a.pos.x},${a.pos.y}`];
       return g
-        ? `Upgrade to ${GARDEN_META[g.type].upgradeLabel} at ${posStr(a.pos)} (2 ✨)`
-        : `Upgrade the garden at ${posStr(a.pos)} (2 ✨)`;
+        ? `Upgrade to ${GARDEN_META[g.type].upgradeLabel} at ${posStr(a.pos)} (2 ${WISH})`
+        : `Upgrade the garden at ${posStr(a.pos)} (2 ${WISH})`;
     }
     case 'drawCard':
-      return 'Draw a card (1 ✨)';
+      return `Draw a card (1 ${WISH})`;
     case 'playCard':
       return `Play ${cardName(a.cardId)}`;
     case 'endTurn':

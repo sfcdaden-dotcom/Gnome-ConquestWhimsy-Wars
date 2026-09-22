@@ -1,54 +1,161 @@
 /* Whimsy Wars — garden-party UI theme. System fonts, hand-drawn art for
-   gardens and units (src/assets/art), emoji for incidental flourishes. */
+   gardens, units and resources (src/assets/art), emoji for incidental
+   flourishes.
+
+   Visual direction: warm, clean, botanical, slightly playful. The artwork
+   carries the whimsy; ordinary controls stay plain. Everything below reads
+   from the semantic tokens in :root — a component names what a colour is FOR
+   (surface, muted text, primary action), never which green it happens to be,
+   so dark mode is a remapping of the tokens and not a second stylesheet. */
 
 :root {
   --sans: system-ui, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
   --mono: ui-monospace, Consolas, monospace;
 
-  --bg: #eef4e4;
-  --bg-accent: #dceac8;
-  --panel: #ffffff;
-  --panel-2: #f6f9ef;
-  --text: #2c3524;
-  --muted: #6d7a5f;
-  --border: #cbd8b6;
-  --accent: #3f8f3f;
-  --accent-text: #ffffff;
-  --warn: #b05430;
-  --error: #c23636;
-  --cell: #d8e7bf;
-  --cell-alt: #cfe0b3;
-  /* The pale ring at the middle of a forget-me-not. Only the chat bloom uses
-     it, but it is a colour and colours live here. */
-  --bloom-eye: #eccd6b;
-  --shadow: 0 4px 14px rgba(44, 66, 24, 0.12);
+  /* --- Colour ------------------------------------------------------------ */
+
+  /* Page and surfaces, back to front. `raised` is for things that float over
+     other content (modals, popovers, toasts); in the light theme it matches
+     `surface` and the shadow does the lifting. `tint` is the pale garden green
+     used as a fill for inset content (room code, code spans, table heads). */
+  --color-bg: #eef4e4;
+  --color-surface: #ffffff;
+  --color-surface-raised: #ffffff;
+  --color-surface-subtle: #f6f9ef;
+  --color-surface-tint: #dceac8;
+
+  /* The brand/action green and its interaction states. */
+  --color-primary: #3f8f3f;
+  --color-primary-hover: #367d36;
+  --color-primary-pressed: #2e6b2e;
+  --color-on-primary: #ffffff;
+
+  --color-text: #2c3524;
+  --color-text-muted: #6d7a5f;
+
+  /* `border` is the subtle grouping line; `border-strong` is reserved for
+     boundaries that mean something (selection, gameplay state). */
+  --color-border: #cbd8b6;
+  --color-border-strong: #93a67a;
+
+  /* Magic: Wishes and anything that spends them. */
+  --color-wish: #b8860b;
+  --color-warning: #b05430;
+  --color-danger: #c23636;
+
+  /* Seat identity. The game reads these from PLAYER_COLORS in src/ui/meta.ts
+     (the gnome compositor needs them as hex in JS); these mirror them for CSS,
+     and a unit test keeps the two in step. Identical in both themes — a seat's
+     colour is its name. */
+  --color-player-red: #d8504d;
+  --color-player-blue: #3f7ad8;
+  --color-player-yellow: #c9930a;
+  --color-player-purple: #9256cf;
+
+  /* The board. Not part of the chrome palette; named here so both themes
+     define them in one place. */
+  --color-cell: #d8e7bf;
+  --color-cell-alt: #cfe0b3;
+  /* The pale ring at the middle of a forget-me-not (the chat bloom). */
+  --color-bloom-eye: #eccd6b;
+
+  --shadow-raised: 0 4px 14px rgba(44, 66, 24, 0.12);
+  --focus-ring: 0 0 0 2px var(--color-surface), 0 0 0 4px var(--color-primary);
+
+  /* --- Typography ---------------------------------------------------------
+
+     Deliberately small. Every font-size in the interface is one of these
+     (board and board-view sizes excepted: they scale with the board and the
+     room, not with the text around them). */
+  --text-display: 30px; /* game title — 700 */
+  --text-title: 22px; /* page / modal title — 700 */
+  --text-decision: 18px; /* what the game is waiting for — 700 */
+  --text-section: 16px; /* panel / section title — 700 */
+  --text-body: 14px; /* 400 */
+  --text-label: 13px; /* labels and buttons — 600 */
+  --text-meta: 12px; /* supporting information — 400–500 */
+  --text-tiny: 11px; /* tiny status — 500 */
+
+  --leading-tight: 1.2;
+  --leading-body: 1.45;
+
+  /* --- Spacing & radius -------------------------------------------------- */
+
+  --space-2xs: 2px;
+  --space-xs: 4px;
+  --space-sm: 6px;
+  --space-md: 8px;
+  --space-lg: 12px;
+  --space-xl: 16px;
+  --space-2xl: 24px;
+  --space-3xl: 32px;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-pill: 999px;
+
   /* One puff of smoke, start to gone. Mirrored by POOF_MS in fxAssets.ts —
      the timer that takes the element off screen has to outlast the frames. */
   --poof-ms: 620ms;
 
   color-scheme: light dark;
-  font: 15px/1.45 var(--sans);
-  color: var(--text);
+  font: var(--text-body) / var(--leading-body) var(--sans);
+  color: var(--color-text);
 }
 
+/* Dark mode maps the same tokens to dark values. It follows the OS unless a
+   page pins a theme with `data-theme` on <html> (the UI laboratory's toggle
+   does); the two blocks must stay identical. */
 @media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #1b2216;
-    --bg-accent: #202b18;
-    --panel: #26301e;
-    --panel-2: #1f2818;
-    --text: #dbe6cc;
-    --muted: #93a380;
-    --border: #3c4a2d;
-    --accent: #63b35c;
-    --accent-text: #10160b;
-    --warn: #d98a5e;
-    --error: #e56c6c;
-    --cell: #2c3a20;
-    --cell-alt: #27341c;
-    --bloom-eye: #b99436;
-    --shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+  :root:not([data-theme='light']) {
+    --color-bg: #1b2216;
+    --color-surface: #26301e;
+    --color-surface-raised: #2c3723;
+    --color-surface-subtle: #1f2818;
+    --color-surface-tint: #202b18;
+    --color-primary: #63b35c;
+    --color-primary-hover: #73c16c;
+    --color-primary-pressed: #82cc7b;
+    --color-on-primary: #10160b;
+    --color-text: #dbe6cc;
+    --color-text-muted: #93a380;
+    --color-border: #3c4a2d;
+    --color-border-strong: #5f7249;
+    --color-wish: #e0b447;
+    --color-warning: #d98a5e;
+    --color-danger: #e56c6c;
+    --color-cell: #2c3a20;
+    --color-cell-alt: #27341c;
+    --color-bloom-eye: #b99436;
+    --shadow-raised: 0 4px 14px rgba(0, 0, 0, 0.4);
   }
+}
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --color-bg: #1b2216;
+  --color-surface: #26301e;
+  --color-surface-raised: #2c3723;
+  --color-surface-subtle: #1f2818;
+  --color-surface-tint: #202b18;
+  --color-primary: #63b35c;
+  --color-primary-hover: #73c16c;
+  --color-primary-pressed: #82cc7b;
+  --color-on-primary: #10160b;
+  --color-text: #dbe6cc;
+  --color-text-muted: #93a380;
+  --color-border: #3c4a2d;
+  --color-border-strong: #5f7249;
+  --color-wish: #e0b447;
+  --color-warning: #d98a5e;
+  --color-danger: #e56c6c;
+  --color-cell: #2c3a20;
+  --color-cell-alt: #27341c;
+  --color-bloom-eye: #b99436;
+  --shadow-raised: 0 4px 14px rgba(0, 0, 0, 0.4);
+}
+:root[data-theme='light'] {
+  color-scheme: light;
 }
 
 * {
@@ -64,91 +171,171 @@ body,
 
 body {
   background:
-    radial-gradient(1200px 600px at 20% -10%, var(--bg-accent), transparent),
-    var(--bg);
-  color: var(--text);
+    radial-gradient(1200px 600px at 20% -10%, var(--color-surface-tint), transparent),
+    var(--color-bg);
+  color: var(--color-text);
 }
 
+/* ------------------------------------------------------------------ */
+/* Type scale                                                          */
+/* ------------------------------------------------------------------ */
+
+/* The roles, as classes, for markup that has no better name to hang a size
+   on. Components with their own class use the same tokens directly. */
+h1,
+.t-display {
+  font-size: var(--text-display);
+  font-weight: 700;
+  line-height: var(--leading-tight);
+}
+h2,
+.t-title {
+  font-size: var(--text-title);
+  font-weight: 700;
+  line-height: var(--leading-tight);
+}
+.t-decision {
+  font-size: var(--text-decision);
+  font-weight: 700;
+  line-height: var(--leading-tight);
+}
+h3,
+.t-section {
+  font-size: var(--text-section);
+  font-weight: 700;
+  line-height: var(--leading-tight);
+}
 h1,
 h2 {
   margin: 0.2em 0;
-  line-height: 1.2;
 }
 
 .muted {
-  color: var(--muted);
+  color: var(--color-text-muted);
 }
+/* Explanatory copy: the label size at body weight. Supporting text in a
+   decision stays readable — it is the title above it that has to win. */
 .small {
-  font-size: 0.85rem;
+  font-size: var(--text-label);
+}
+.meta {
+  font-size: var(--text-meta);
 }
 
 /* ------------------------------------------------------------------ */
 /* Buttons                                                             */
 /* ------------------------------------------------------------------ */
 
+/* Four treatments, one job each:
+
+     .btn            secondary — a quiet surface and a subtle border; the
+                     default for every ordinary choice.
+     .btn.primary    solid brand green — the ONE dominant, progressing action
+                     in a decision area. Two primaries side by side is a bug.
+     .btn.danger     restrained red — destroys or abandons something.
+     .btn.ghost      text only — Back, Cancel, Close-without-saving.
+
+   Orthogonal to those: `.small` / `.big` set size, and `.on` (always with
+   aria-pressed) marks the selected member of a toggle group. Selected is
+   a STATE, never a primary: a picked option is not a call to action. */
 .btn {
   font: inherit;
-  padding: 6px 12px;
-  border-radius: 10px;
-  border: 1px solid var(--border);
-  background: var(--panel);
-  color: var(--text);
+  font-size: var(--text-label);
+  font-weight: 600;
+  line-height: var(--leading-tight);
+  padding: var(--space-sm) var(--space-lg);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
   cursor: pointer;
-  transition: transform 0.06s ease, background 0.15s ease;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease;
 }
 .btn:hover:not(:disabled) {
-  background: var(--panel-2);
-  transform: translateY(-1px);
+  background: var(--color-surface-subtle);
+  border-color: var(--color-border-strong);
+}
+.btn:active:not(:disabled) {
+  background: var(--color-surface-tint);
+}
+.btn:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
 }
 .btn:disabled {
   opacity: 0.45;
   cursor: default;
 }
-.btn.accent {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--accent-text);
-  font-weight: 600;
+
+.btn.primary {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: var(--color-on-primary);
 }
-/* Accent buttons keep their accent fill on hover — the generic .btn hover
-   swaps in the near-white panel colour, which leaves the light accent text
-   unreadable. Shade the accent instead so the label contrast holds. */
-.btn.accent:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--accent) 82%, var(--text));
-  border-color: color-mix(in srgb, var(--accent) 82%, var(--text));
-  color: var(--accent-text);
+.btn.primary:hover:not(:disabled) {
+  background: var(--color-primary-hover);
+  border-color: var(--color-primary-hover);
 }
-.btn.warn {
-  border-color: var(--warn);
-  color: var(--warn);
+.btn.primary:active:not(:disabled) {
+  background: var(--color-primary-pressed);
+  border-color: var(--color-primary-pressed);
 }
-.btn.small {
-  padding: 3px 8px;
-  font-size: 0.82rem;
-  border-radius: 8px;
+
+.btn.danger {
+  color: var(--color-danger);
+  border-color: color-mix(in srgb, var(--color-danger) 45%, var(--color-border));
 }
-.btn.big {
-  padding: 10px 20px;
-  font-size: 1.05rem;
+.btn.danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--color-danger) 8%, var(--color-surface));
+  border-color: var(--color-danger);
 }
+.btn.danger:active:not(:disabled) {
+  background: color-mix(in srgb, var(--color-danger) 16%, var(--color-surface));
+}
+
 .btn.ghost {
   background: transparent;
   border-color: transparent;
-  color: var(--muted);
-  padding: 4px 10px;
+  color: var(--color-text-muted);
 }
 .btn.ghost:hover:not(:disabled) {
-  /* A garden green rather than the near-white panel tint: the petals have to
-     be a shape you can see against the panel now that nothing outlines them. */
-  background: var(--cell);
-  color: var(--text);
+  background: var(--color-cell);
+  border-color: transparent;
+  color: var(--color-text);
+}
+.btn.ghost:active:not(:disabled) {
+  background: color-mix(in srgb, var(--color-primary) 22%, var(--color-cell));
+}
+
+/* Selected member of a toggle group (tabs, seat controller, board size…). */
+.btn.on {
+  border-color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 16%, var(--color-surface));
+  color: var(--color-text);
+}
+.btn.on:hover:not(:disabled) {
+  border-color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 24%, var(--color-surface));
+}
+
+.btn.small {
+  padding: var(--space-xs) var(--space-md);
+  font-size: var(--text-meta);
+  border-radius: var(--radius-sm);
+}
+.btn.big {
+  padding: var(--space-md) var(--space-xl);
+  font-size: var(--text-section);
 }
 
 .btn-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 6px;
+  gap: var(--space-sm);
+  margin-top: var(--space-md);
 }
 .btn-row.center {
   justify-content: center;
@@ -156,9 +343,10 @@ h2 {
 .btn-col {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  margin-top: 6px;
+  gap: var(--space-sm);
+  margin-top: var(--space-md);
 }
+
 
 /* ------------------------------------------------------------------ */
 /* Setup screen                                                        */
@@ -173,10 +361,10 @@ h2 {
 }
 
 .setup-card {
-  background: var(--panel);
-  border: 1px solid var(--border);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
   border-radius: 20px;
-  box-shadow: var(--shadow);
+  box-shadow: var(--shadow-raised);
   padding: 28px 32px;
   width: min(560px, 100%);
   display: flex;
@@ -186,11 +374,11 @@ h2 {
 
 .game-title {
   text-align: center;
-  font-size: 2rem;
+  font-size: var(--text-display);
 }
 .tagline {
   text-align: center;
-  color: var(--muted);
+  color: var(--color-text-muted);
   margin: 0 0 6px;
 }
 
@@ -208,7 +396,7 @@ h2 {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 0.9rem;
+  font-size: var(--text-body);
 }
 
 .seat-list {
@@ -220,8 +408,8 @@ h2 {
   display: flex;
   align-items: center;
   gap: 10px;
-  background: var(--panel-2);
-  border: 1px solid var(--border);
+  background: var(--color-surface-subtle);
+  border: 1px solid var(--color-border);
   border-radius: 12px;
   padding: 6px 10px;
 }
@@ -231,26 +419,26 @@ h2 {
   min-width: 0;
   padding: 4px 8px;
   border-radius: 8px;
-  border: 1px solid var(--border);
-  background: var(--panel);
-  color: var(--text);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
 }
 .seed-input {
   font: inherit;
   padding: 4px 8px;
   border-radius: 8px;
-  border: 1px solid var(--border);
-  background: var(--panel);
-  color: var(--text);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
   width: 160px;
 }
 .preset-select {
   font: inherit;
   padding: 4px 8px;
   border-radius: 8px;
-  border: 1px solid var(--border);
-  background: var(--panel);
-  color: var(--text);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
   flex: 1;
 }
 .preset-description {
@@ -291,15 +479,15 @@ h2 {
   filter: none;
 }
 .preset-preview .cell.editor-home {
-  background: color-mix(in srgb, var(--accent) 26%, var(--cell));
-  border-color: var(--accent);
+  background: color-mix(in srgb, var(--color-primary) 26%, var(--color-cell));
+  border-color: var(--color-primary);
 }
 .preset-preview .cell.unseated {
   opacity: 0.3;
 }
 .setup-error {
-  color: var(--error);
-  font-size: 0.9rem;
+  color: var(--color-danger);
+  font-size: var(--text-body);
 }
 
 /* ------------------------------------------------------------------ */
@@ -314,7 +502,7 @@ h2 {
   overflow: hidden;
 }
 .advanced-title {
-  font-size: 1.2rem;
+  font-size: var(--text-title);
   margin: 0;
   text-align: center;
 }
@@ -340,8 +528,8 @@ h2 {
   text-align: center;
   padding: 4px 6px;
   border-radius: 8px;
-  border: 1px solid var(--border);
-  background: var(--cell);
+  border: 1px solid var(--color-border);
+  background: var(--color-cell);
   color: inherit;
 }
 
@@ -361,8 +549,8 @@ h2 {
   border: 1px solid transparent;
 }
 .deck-row.changed {
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border-color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 12%, transparent);
 }
 .deck-name {
   flex: 1;
@@ -370,18 +558,18 @@ h2 {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 0.9rem;
+  font-size: var(--text-body);
 }
 .deck-tag {
   flex: none;
   width: 5.2rem;
-  font-size: 0.72rem;
+  font-size: var(--text-tiny);
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: var(--muted);
+  color: var(--color-text-muted);
 }
 .deck-tag.tag-curse {
-  color: var(--error);
+  color: var(--color-danger);
 }
 .editor-input {
   font: inherit;
@@ -389,9 +577,9 @@ h2 {
   min-width: 0;
   padding: 4px 8px;
   border-radius: 8px;
-  border: 1px solid var(--border);
-  background: var(--panel);
-  color: var(--text);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
 }
 .visually-hidden {
   position: absolute;
@@ -440,10 +628,10 @@ h2 {
 }
 .editor-panel {
   pointer-events: auto;
-  background: color-mix(in srgb, var(--panel) 92%, transparent);
-  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--color-surface) 92%, transparent);
+  border: 1px solid var(--color-border);
   border-radius: 16px;
-  box-shadow: var(--shadow);
+  box-shadow: var(--shadow-raised);
   padding: 12px 16px;
   display: flex;
   flex-direction: column;
@@ -466,7 +654,7 @@ h2 {
 }
 .editor-title {
   margin: 0;
-  font-size: 1.15rem;
+  font-size: var(--text-title);
 }
 .editor-panel .setup-label {
   width: 60px;
@@ -522,16 +710,16 @@ h2 {
   gap: 4px;
   padding: 4px 6px;
   border-radius: 999px;
-  border: 1px solid var(--border);
-  background: color-mix(in srgb, var(--panel) 92%, transparent);
-  box-shadow: var(--shadow);
+  border: 1px solid var(--color-border);
+  background: color-mix(in srgb, var(--color-surface) 92%, transparent);
+  box-shadow: var(--shadow-raised);
   -webkit-backdrop-filter: blur(6px);
   backdrop-filter: blur(6px);
 }
 .panzoom-level {
   font-family: var(--mono);
-  font-size: 0.75rem;
-  color: var(--muted);
+  font-size: var(--text-tiny);
+  color: var(--color-text-muted);
   min-width: 4ch;
   text-align: center;
   font-variant-numeric: tabular-nums;
@@ -551,11 +739,11 @@ h2 {
   cursor: pointer;
 }
 .editor-board .cell.editor-home {
-  background: color-mix(in srgb, var(--accent) 26%, var(--cell));
-  border-color: var(--accent);
+  background: color-mix(in srgb, var(--color-primary) 26%, var(--color-cell));
+  border-color: var(--color-primary);
 }
 .editor-board .cell.editor-home.picked {
-  box-shadow: inset 0 0 0 3px var(--accent);
+  box-shadow: inset 0 0 0 3px var(--color-primary);
   animation: pulse 1.1s ease-in-out infinite;
 }
 .home-index {
@@ -564,7 +752,7 @@ h2 {
   right: 4px;
   font-size: clamp(9px, calc(24cqi / var(--n, 7)), 13px);
   font-weight: 700;
-  color: var(--accent);
+  color: var(--color-primary);
   pointer-events: none;
 }
 
@@ -576,13 +764,13 @@ h2 {
 .crash-details {
   width: 100%;
   text-align: left;
-  font-size: 0.8rem;
-  color: var(--muted);
+  font-size: var(--text-meta);
+  color: var(--color-text-muted);
 }
 .crash-details pre {
   overflow-x: auto;
-  background: var(--panel-2);
-  border: 1px solid var(--border);
+  background: var(--color-surface-subtle);
+  border: 1px solid var(--color-border);
   border-radius: 8px;
   padding: 8px;
   max-height: 180px;
@@ -614,8 +802,8 @@ h2 {
   align-items: center;
   gap: 14px;
   padding: 8px 14px;
-  background: var(--panel);
-  border-bottom: 1px solid var(--border);
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
   flex: none;
 }
 .brand {
@@ -623,8 +811,8 @@ h2 {
 }
 .banner {
   flex: 1;
-  font-size: 0.95rem;
-  font-weight: 600;
+  font-size: var(--text-section);
+  font-weight: 700;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -633,14 +821,14 @@ h2 {
   display: flex;
   align-items: center;
   gap: 5px;
-  font-size: 0.85rem;
-  color: var(--muted);
+  font-size: var(--text-meta);
+  color: var(--color-text-muted);
   white-space: nowrap;
 }
 .seed-tag {
   font-family: var(--mono);
-  font-size: 0.75rem;
-  color: var(--muted);
+  font-size: var(--text-tiny);
+  color: var(--color-text-muted);
 }
 
 .shot-clock {
@@ -648,26 +836,26 @@ h2 {
   align-items: baseline;
   gap: 6px;
   padding: 2px 9px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--color-border);
   border-radius: 999px;
   font-family: var(--mono);
-  font-size: 0.85rem;
+  font-size: var(--text-meta);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
-  color: var(--muted);
+  color: var(--color-text-muted);
 }
 .shot-clock[data-yours='true'] {
-  color: var(--text);
+  color: var(--color-text);
   border-color: currentColor;
 }
 .shot-clock[data-urgent='true'] {
-  color: var(--error);
+  color: var(--color-danger);
   border-color: currentColor;
   animation: shot-clock-pulse 1s ease-in-out infinite;
 }
 .shot-clock-who {
   font-family: inherit;
-  font-size: 0.7rem;
+  font-size: var(--text-tiny);
   opacity: 0.75;
   max-width: 9ch;
   overflow: hidden;
@@ -790,19 +978,19 @@ h2 {
   grid-template-columns: repeat(var(--n, 7), 1fr);
   gap: 3px;
   padding: 8px;
-  background: var(--panel);
-  border: 1px solid var(--border);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
   border-radius: 14px;
-  box-shadow: var(--shadow);
+  box-shadow: var(--shadow-raised);
   aspect-ratio: 1;
   container-type: inline-size;
 }
 
 .cell {
   position: relative;
-  border: 1px solid color-mix(in srgb, var(--border) 45%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-border) 45%, transparent);
   border-radius: 8px;
-  background: var(--cell);
+  background: var(--color-cell);
   cursor: pointer;
   padding: 0;
   font: inherit;
@@ -810,33 +998,33 @@ h2 {
   transition: box-shadow 0.12s ease, filter 0.12s ease, transform 0.16s ease;
 }
 .cell:nth-child(even) {
-  background: var(--cell-alt);
+  background: var(--color-cell-alt);
 }
 .cell:hover {
   filter: brightness(1.06);
 }
 
 .cell.g-home {
-  background: color-mix(in srgb, var(--pc, #888) 30%, var(--cell));
-  border-color: var(--pc, var(--border));
+  background: color-mix(in srgb, var(--pc, #888) 30%, var(--color-cell));
+  border-color: var(--pc, var(--color-border));
 }
 .cell.g-dandelion {
-  background: color-mix(in srgb, #e8c93e 26%, var(--cell));
+  background: color-mix(in srgb, #e8c93e 26%, var(--color-cell));
 }
 .cell.g-mushroom {
-  background: color-mix(in srgb, #d86a5a 24%, var(--cell));
+  background: color-mix(in srgb, #d86a5a 24%, var(--color-cell));
 }
 .cell.g-flytrap {
-  background: color-mix(in srgb, #2c7a2c 30%, var(--cell));
+  background: color-mix(in srgb, #2c7a2c 30%, var(--color-cell));
 }
 .cell.g-maize {
-  background: color-mix(in srgb, #d8a93e 28%, var(--cell));
+  background: color-mix(in srgb, #d8a93e 28%, var(--color-cell));
 }
 .cell.g-slippery {
-  background: color-mix(in srgb, #5ab8d8 28%, var(--cell));
+  background: color-mix(in srgb, #5ab8d8 28%, var(--color-cell));
 }
 .cell.g-tunnel {
-  background: color-mix(in srgb, #6b5a8c 30%, var(--cell));
+  background: color-mix(in srgb, #6b5a8c 30%, var(--color-cell));
 }
 
 /* Hand-drawn art (src/assets/art). The base
@@ -848,6 +1036,40 @@ h2 {
   -webkit-user-select: none;
   user-select: none;
   flex: none;
+}
+
+/* Interface icons (UiIcon: Wishes, reserve gnomes, cards, planting).
+
+   ONE size, set here and nowhere else: a touch taller than the text's cap
+   height, so the drawing reads as a word in the line rather than a picture
+   beside it, and nudged down to sit on the baseline. It is in `em`, so a
+   13px button, a 12px stat and a 16px heading each get a proportionate icon
+   without a single per-site width. `.lg` is for an icon standing on its own. */
+.ui-icon {
+  --ui-icon-size: 1.3em;
+  display: inline-block;
+  width: var(--ui-icon-size);
+  height: var(--ui-icon-size);
+  object-fit: contain;
+  vertical-align: -0.24em;
+  flex: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.ui-icon.lg {
+  --ui-icon-size: 2em;
+  vertical-align: middle;
+}
+/* The reserve gnome is a dark silhouette and the card a dark-green face in a
+   black outline. On the dark theme's dark surfaces both need a faint light
+   edge to stay a shape at all. The drawings themselves are untouched. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .ui-icon:is([data-icon='reinforcement'], [data-icon='card']) {
+    filter: drop-shadow(0 0 1px rgba(255, 255, 255, 0.55));
+  }
+}
+:root[data-theme='dark'] .ui-icon:is([data-icon='reinforcement'], [data-icon='card']) {
+  filter: drop-shadow(0 0 1px rgba(255, 255, 255, 0.55));
 }
 
 /* Art standing in for a word: sized in `em` so it tracks the text it sits in,
@@ -1005,8 +1227,8 @@ h2 {
   min-width: 15px;
   height: 15px;
   border-radius: 8px;
-  background: var(--text);
-  color: var(--bg);
+  background: var(--color-text);
+  color: var(--color-bg);
   font-size: 10px;
   font-weight: 700;
   display: flex;
@@ -1032,7 +1254,7 @@ h2 {
   box-shadow: inset 0 0 0 3px #7a3bd8;
 }
 .cell.sel {
-  box-shadow: inset 0 0 0 3px var(--text);
+  box-shadow: inset 0 0 0 3px var(--color-text);
 }
 
 @keyframes pulse {
@@ -1049,31 +1271,40 @@ h2 {
 /* Panels                                                              */
 /* ------------------------------------------------------------------ */
 
+/* A sidebar panel's heading (Hand, Active Curses, the chat window): the
+   section-title role. */
 .panel-title {
   font-weight: 700;
-  font-size: 0.82rem;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--muted);
-  margin-bottom: 6px;
+  font-size: var(--text-section);
+  line-height: var(--leading-tight);
+  color: var(--color-text);
+  margin-bottom: var(--space-md);
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  gap: 8px;
+  flex-wrap: wrap;
+  gap: 0 var(--space-md);
 }
 
-/* Decision/fight titles carry the acting player's context — keep them loud. */
+/* Decision and fight titles say what the game is waiting for, and from whom.
+   They are the loudest text in the sidebar — a full step above every other
+   panel title and well clear of the explanatory copy under them. */
 .decision-panel .panel-title,
 .fight-panel .panel-title {
-  text-transform: none;
-  letter-spacing: normal;
-  font-size: 0.95rem;
-  color: var(--text);
+  font-size: var(--text-decision);
+  align-items: center;
+  justify-content: flex-start;
+}
+/* "…is deciding" is status, not a decision for this screen's player. */
+.decision-panel.waiting .panel-title {
+  font-size: var(--text-section);
+  color: var(--color-text-muted);
+  margin-bottom: 0;
 }
 
 /* Response window: the rules text and targets of the card being answered. */
 .card-effect {
-  color: var(--muted);
+  color: var(--color-text-muted);
   font-style: italic;
   margin-top: 4px;
 }
@@ -1085,8 +1316,8 @@ h2 {
   align-items: baseline;
 }
 .respond-target {
-  background: var(--panel-2);
-  border: 1px solid var(--border);
+  background: var(--color-surface-subtle);
+  border: 1px solid var(--color-border);
   border-radius: 8px;
   padding: 1px 6px;
   font-weight: 600;
@@ -1099,9 +1330,9 @@ h2 {
 }
 
 .player-panel {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-left: 5px solid var(--pc, var(--border));
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-left: 5px solid var(--pc, var(--color-border));
   border-radius: 12px;
   padding: 8px 10px;
 }
@@ -1124,11 +1355,11 @@ h2 {
   white-space: nowrap;
 }
 .pp-act {
-  font-size: 0.7rem;
+  font-size: var(--text-tiny);
   font-weight: 700;
   text-transform: uppercase;
-  background: var(--accent);
-  color: var(--accent-text);
+  background: var(--color-primary);
+  color: var(--color-on-primary);
   border-radius: 6px;
   padding: 1px 6px;
   animation: pulse 1.2s ease-in-out infinite;
@@ -1138,22 +1369,22 @@ h2 {
   gap: 10px;
   flex-wrap: wrap;
   margin-top: 4px;
-  font-size: 0.85rem;
+  font-size: var(--text-label);
 }
 
 .curse-panel,
 .decision-panel,
 .fight-panel,
 .hand-panel {
-  background: var(--panel);
-  border: 1px solid var(--border);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
   border-radius: 12px;
-  padding: 10px 12px;
+  padding: var(--space-lg);
   flex: none;
 }
 
 .curse-panel {
-  border-color: var(--error);
+  border-color: var(--color-danger);
 }
 
 /* Curse rows: hover or keyboard focus reveals the curse's rules text. */
@@ -1174,24 +1405,24 @@ h2 {
   flex-direction: column;
   gap: 2px;
   padding: 7px 9px;
-  border: 1px solid var(--error);
+  border: 1px solid var(--color-danger);
   border-radius: 8px;
-  background: var(--panel-2);
-  color: var(--text);
-  box-shadow: var(--shadow);
-  font-size: 0.78rem;
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+  box-shadow: var(--shadow-raised);
+  font-size: var(--text-meta);
   font-weight: 400;
   line-height: 1.35;
   pointer-events: none;
 }
 .curse-item:focus-visible {
   border-radius: 6px;
-  box-shadow: 0 0 0 2px var(--accent);
+  box-shadow: 0 0 0 2px var(--color-primary);
 }
 
 .decision-panel {
-  border: 2px solid var(--accent);
-  box-shadow: var(--shadow);
+  border: 2px solid var(--color-primary);
+  box-shadow: var(--shadow-raised);
 }
 .decision-panel.waiting {
   border-style: dashed;
@@ -1200,12 +1431,12 @@ h2 {
 
 /* Fight */
 .fight-panel {
-  border: 2px solid var(--error);
-  box-shadow: var(--shadow);
+  border: 2px solid var(--color-danger);
+  box-shadow: var(--shadow-raised);
 }
 .side-role {
-  font-size: 0.7rem;
-  color: var(--muted);
+  font-size: var(--text-tiny);
+  color: var(--color-text-muted);
   font-weight: 400;
 }
 /* The rolls BEFORE the one on screen — the clash shows the current one, this
@@ -1214,11 +1445,11 @@ h2 {
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
-  font-size: 0.9rem;
+  font-size: var(--text-body);
 }
 .fight-respond {
   margin-top: 6px;
-  border-top: 1px dashed var(--border);
+  border-top: 1px dashed var(--color-border);
   padding-top: 6px;
 }
 
@@ -1231,10 +1462,10 @@ h2 {
   overflow-y: auto;
 }
 .card {
-  border: 1px solid var(--border);
+  border: 1px solid var(--color-border);
   border-radius: 10px;
   padding: 6px 8px;
-  background: var(--panel-2);
+  background: var(--color-surface-subtle);
 }
 .card.sudden {
   border-left: 4px solid #d8a93e;
@@ -1250,30 +1481,31 @@ h2 {
 }
 .card-name {
   font-weight: 700;
-  font-size: 0.9rem;
+  font-size: var(--text-body);
 }
 .card-timing {
-  font-size: 0.72rem;
-  color: var(--muted);
+  font-size: var(--text-tiny);
+  color: var(--color-text-muted);
   white-space: nowrap;
 }
 .card-text {
-  font-size: 0.8rem;
-  color: var(--muted);
+  font-size: var(--text-meta);
+  color: var(--color-text-muted);
   margin: 3px 0 5px;
 }
 /* Why a card's Play button is greyed out — shown, not left to be guessed. */
 .card-why {
   display: block;
   margin-top: 4px;
-  font-size: 0.72rem;
-  color: var(--muted);
+  font-size: var(--text-tiny);
+  color: var(--color-text-muted);
   font-style: italic;
 }
 .deck-info {
-  font-size: 0.72rem;
-  color: var(--muted);
+  font-size: var(--text-meta);
+  color: var(--color-text-muted);
   font-weight: 400;
+  white-space: nowrap;
 }
 
 /* Log (the "Game log" tab of the chat window; the panel chrome lives there) */
@@ -1281,11 +1513,11 @@ h2 {
   flex: 1;
   min-height: 120px;
   overflow-y: auto;
-  background: var(--panel-2);
-  border: 1px solid var(--border);
+  background: var(--color-surface-subtle);
+  border: 1px solid var(--color-border);
   border-radius: 12px;
   padding: 8px 10px;
-  font-size: 0.8rem;
+  font-size: var(--text-meta);
 }
 .log-line {
   padding: 1px 0;
@@ -1303,7 +1535,7 @@ h2 {
   padding: 2px 0;
   background: none;
   border: none;
-  color: var(--accent);
+  color: var(--color-primary);
   font: inherit;
   font-weight: 700;
   text-align: left;
@@ -1315,16 +1547,16 @@ h2 {
 .log-caret {
   width: 0.8em;
   flex: none;
-  color: var(--muted);
+  color: var(--color-text-muted);
 }
 .log-turn-title {
   flex: 1;
 }
 .log-turn-count {
   flex: none;
-  color: var(--muted);
+  color: var(--color-text-muted);
   font-weight: 400;
-  font-size: 0.72rem;
+  font-size: var(--text-tiny);
 }
 .log-turn[data-open='true'] .log-line {
   padding-left: calc(0.8em + 6px);
@@ -1336,7 +1568,7 @@ h2 {
 .log-playerEliminated,
 .log-curseRevealed {
   font-weight: 600;
-  color: var(--error);
+  color: var(--color-danger);
 }
 .log-gameFinished {
   font-weight: 800;
@@ -1350,15 +1582,15 @@ h2 {
   gap: 8px;
   flex-wrap: wrap;
   justify-content: center;
-  background: var(--panel);
-  border: 1px solid var(--border);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
   border-radius: 12px;
   padding: 6px 10px;
   max-width: 100%;
 }
 .targeting-banner {
   border: 2px solid #c23636;
-  font-size: 0.9rem;
+  font-size: var(--text-body);
 }
 
 /* The action list itself (flat, or one submenu expanded in place). It lays out
@@ -1368,7 +1600,7 @@ h2 {
   display: contents;
 }
 .submenu-heading {
-  font-size: 0.85rem;
+  font-size: var(--text-label);
   font-weight: 700;
   white-space: nowrap;
 }
@@ -1376,7 +1608,7 @@ h2 {
 .menu-badge {
   margin-left: 6px;
   font-variant-numeric: tabular-nums;
-  color: var(--muted);
+  color: var(--color-text-muted);
 }
 .btn:disabled .menu-badge {
   color: inherit;
@@ -1392,7 +1624,7 @@ h2 {
    reading the name is the entire point. Chips keep a bound (26ch clears the
    longest possible full name) purely so nothing can hog a row. */
 .selected-unit {
-  font-size: 0.85rem;
+  font-size: var(--text-label);
   font-weight: 600;
   white-space: nowrap;
 }
@@ -1409,8 +1641,8 @@ h2 {
   white-space: nowrap;
 }
 .btn.chip.on {
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 22%, var(--panel));
+  border-color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 22%, var(--color-surface));
   font-weight: 600;
 }
 
@@ -1429,15 +1661,15 @@ h2 {
   z-index: 40;
 }
 .overlay.opaque {
-  background: color-mix(in srgb, var(--bg) 92%, black);
+  background: color-mix(in srgb, var(--color-bg) 92%, black);
   backdrop-filter: none;
 }
 
 .overlay-card {
-  background: var(--panel);
-  border: 1px solid var(--border);
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border);
   border-radius: 18px;
-  box-shadow: var(--shadow);
+  box-shadow: var(--shadow-raised);
   padding: 24px 30px;
   max-width: min(520px, 92vw);
   text-align: center;
@@ -1464,17 +1696,17 @@ h2 {
   flex-direction: column;
   align-items: center;
   gap: 6px;
-  background: var(--panel);
-  border: 1px solid var(--border);
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border);
   border-radius: 14px;
-  box-shadow: var(--shadow);
+  box-shadow: var(--shadow-raised);
   padding: 10px 12px;
   text-align: center;
   animation: toast-in 0.2s ease;
 }
 .fight-header {
   font-weight: 700;
-  font-size: 0.86rem;
+  font-size: var(--text-label);
   line-height: 1.25;
 }
 /* The clash: the two combatants facing off, lunging at each other once per
@@ -1527,28 +1759,28 @@ h2 {
   opacity: 0;
 }
 .clash-name {
-  font-size: 0.7rem;
+  font-size: var(--text-tiny);
   line-height: 1.15;
   max-width: 12ch;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--muted);
+  color: var(--color-text-muted);
 }
 .clash-roll {
   min-width: 1.6em;
   padding: 0 5px;
   border-radius: 7px;
-  border: 1px solid var(--pc, var(--border));
-  background: color-mix(in srgb, var(--pc, #888) 22%, var(--panel-2));
+  border: 1px solid var(--pc, var(--color-border));
+  background: color-mix(in srgb, var(--pc, #888) 22%, var(--color-surface-subtle));
   font-weight: 700;
-  font-size: 1.15rem;
+  font-size: var(--text-decision);
   line-height: 1.3;
   animation: roll-pop 0.3s ease-out 0.34s backwards;
 }
 /* The round's winner is the one whose number is worth reading. */
 .clash-side[data-won='true'] .clash-roll {
-  border-color: var(--text);
+  border-color: var(--color-text);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--pc, #888) 45%, transparent);
 }
 .clash-side[data-won='false'] .clash-roll {
@@ -1559,9 +1791,9 @@ h2 {
   left: 50%;
   top: 30%;
   transform: translate(-50%, -50%);
-  font-size: 0.72rem;
+  font-size: var(--text-tiny);
   font-weight: 700;
-  color: var(--muted);
+  color: var(--color-text-muted);
   pointer-events: none;
 }
 
@@ -1656,8 +1888,8 @@ h2 {
   overflow-y: auto;
   text-align: left;
   width: 100%;
-  font-size: 0.82rem;
-  background: var(--panel-2);
+  font-size: var(--text-meta);
+  background: var(--color-surface-subtle);
   border-radius: 10px;
   padding: 6px 10px;
 }
@@ -1688,18 +1920,18 @@ h2 {
   text-align: left;
   color: inherit;
   font: inherit;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-left: 5px solid var(--accent);
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border);
+  border-left: 5px solid var(--color-primary);
   border-radius: 10px;
-  box-shadow: var(--shadow);
+  box-shadow: var(--shadow-raised);
   padding: 8px 14px;
-  font-size: 0.88rem;
+  font-size: var(--text-body);
   max-width: 70vw;
   animation: toast-in 0.2s ease;
 }
 .toast.error {
-  border-left-color: var(--error);
+  border-left-color: var(--color-danger);
 }
 @keyframes toast-in {
   from {
@@ -1743,9 +1975,9 @@ h2 {
   min-width: 16px;
   padding: 0 4px;
   border-radius: 999px;
-  background: var(--accent);
-  color: #fff;
-  font-size: 0.66rem;
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  font-size: var(--text-tiny);
   font-weight: 700;
   line-height: 16px;
   text-align: center;
@@ -1754,11 +1986,11 @@ h2 {
   flex: 1;
   min-height: 120px;
   overflow-y: auto;
-  background: var(--panel-2);
-  border: 1px solid var(--border);
+  background: var(--color-surface-subtle);
+  border: 1px solid var(--color-border);
   border-radius: 12px;
   padding: 8px 10px;
-  font-size: 0.82rem;
+  font-size: var(--text-meta);
 }
 .chat-line {
   padding: 2px 0;
@@ -1778,8 +2010,8 @@ h2 {
   gap: 8px;
 }
 .qc-left {
-  font-size: 0.72rem;
-  color: var(--muted);
+  font-size: var(--text-tiny);
+  color: var(--color-text-muted);
   font-weight: 400;
 }
 .qc-wheel,
@@ -1789,10 +2021,10 @@ h2 {
   left: 50%;
   transform: translateX(-50%);
   z-index: 70; /* above the chrome the column scrolls under */
-  background: var(--panel);
-  border: 1px solid var(--border);
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border);
   border-radius: 16px;
-  box-shadow: var(--shadow);
+  box-shadow: var(--shadow-raised);
   padding: 10px;
 }
 /* The wheel is as wide as its ring — which is itself viewport-relative — so it
@@ -1829,11 +2061,11 @@ h2 {
 
 .qc-wheel-head {
   text-align: center;
-  font-size: 0.72rem;
+  font-size: var(--text-tiny);
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--muted);
+  color: var(--color-text-muted);
   padding-bottom: 8px;
 }
 
@@ -1843,8 +2075,8 @@ h2 {
   margin: 0;
   padding: 0;
   border: 0;
-  background: var(--panel-2);
-  color: var(--text);
+  background: var(--color-surface-subtle);
+  color: var(--color-text);
   font: inherit;
   cursor: pointer;
   transition: background-color 0.12s ease, transform 0.12s ease;
@@ -1858,11 +2090,11 @@ h2 {
    wedge, so a "1px ring" showed up as a line down one edge and nothing on the
    others. Colour is the one property that fills the clipped shape exactly. */
 /* A tint MIXED from the accent rather than a fixed colour: on the dark theme
-   `--bg-accent` and `--panel-2` are one hex apart, so a hover painted with it
+   `--color-surface-tint` and `--color-surface-subtle` are one hex apart, so a hover painted with it
    was invisible there. Mixing against the wedge's own base lands a visible step
    above it whichever theme is in play. */
 .qc-petal:hover {
-  background: color-mix(in srgb, var(--accent) 30%, var(--cell));
+  background: color-mix(in srgb, var(--color-primary) 30%, var(--color-cell));
 }
 
 /* Focus lifts the petal away from the middle, the way one opens, and deepens
@@ -1871,12 +2103,12 @@ h2 {
    on light, so nothing has to recolour text that lives in another layer. */
 .qc-petal:focus-visible {
   outline: none;
-  background: color-mix(in srgb, var(--accent) 48%, var(--cell));
+  background: color-mix(in srgb, var(--color-primary) 48%, var(--color-cell));
   transform: scale(1.07);
 }
 
 .qc-petal:active {
-  background: color-mix(in srgb, var(--accent) 55%, var(--cell));
+  background: color-mix(in srgb, var(--color-primary) 55%, var(--color-cell));
 }
 
 /* The label layer: above every petal, clipped by none, and inert. */
@@ -1891,7 +2123,7 @@ h2 {
   transform: translate(-50%, -50%);
   /* Horizontal, never rotated to follow the arc: a label on its side is a
      label nobody reads at a glance, and glancing is the whole use case. */
-  font-size: 0.68rem;
+  font-size: var(--text-tiny);
   font-weight: 600;
   line-height: 1.1;
   letter-spacing: 0.01em;
@@ -1912,11 +2144,11 @@ h2 {
   aspect-ratio: 1;
   border-radius: 50%;
   border: 0;
-  background: var(--panel);
-  box-shadow: inset 0 0 0 5px color-mix(in srgb, var(--bloom-eye) 70%, var(--panel));
-  color: var(--muted);
+  background: var(--color-surface);
+  box-shadow: inset 0 0 0 5px color-mix(in srgb, var(--color-bloom-eye) 70%, var(--color-surface));
+  color: var(--color-text-muted);
   font: inherit;
-  font-size: 0.74rem;
+  font-size: var(--text-meta);
   font-weight: 600;
   cursor: pointer;
   transition: background-color 0.12s ease, color 0.12s ease, box-shadow 0.12s ease;
@@ -1925,8 +2157,8 @@ h2 {
 .qc-hub:hover,
 .qc-hub:focus-visible {
   outline: none;
-  color: var(--warn);
-  box-shadow: inset 0 0 0 5px var(--warn);
+  color: var(--color-warning);
+  box-shadow: inset 0 0 0 5px var(--color-warning);
 }
 
 /* Motion here is decoration on a menu that must stay usable without it. */
@@ -1955,11 +2187,10 @@ h2 {
 }
 .qc-list-title {
   font-weight: 700;
-  font-size: 0.82rem;
+  font-size: var(--text-label);
 }
 .qc-phrase {
   justify-content: flex-start;
-  font-size: 0.82rem;
   text-align: left;
 }
 .qc-note {
@@ -1980,17 +2211,17 @@ h2 {
   max-width: min(60%, 320px);
 }
 .qc-bubble {
-  background: var(--panel);
-  border: 1px solid var(--border);
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border);
   border-left-width: 5px;
   border-radius: 12px;
-  box-shadow: var(--shadow);
+  box-shadow: var(--shadow-raised);
   padding: 5px 10px;
-  font-size: 0.82rem;
+  font-size: var(--text-meta);
   animation: toast-in 0.18s ease;
 }
 .log-quickChatSaid {
-  color: var(--accent);
+  color: var(--color-primary);
 }
 
 /* Narrow screens: stack columns (game is designed for >=1280 but stays usable) */
@@ -2077,10 +2308,10 @@ h2 {
 }
 
 .home-card {
-  background: var(--panel);
-  border: 1px solid var(--border);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
   border-radius: 20px;
-  box-shadow: var(--shadow);
+  box-shadow: var(--shadow-raised);
   padding: 32px;
   width: min(560px, 100%);
   display: flex;
@@ -2090,13 +2321,13 @@ h2 {
 
 .home-title {
   text-align: center;
-  font-size: 2rem;
+  font-size: var(--text-display);
   margin: 0;
 }
 
 .home-tagline {
   text-align: center;
-  color: var(--muted);
+  color: var(--color-text-muted);
   margin: 0;
 }
 
@@ -2131,11 +2362,11 @@ h2 {
 
 .home-choice-label {
   font-weight: 700;
-  font-size: 1.05rem;
+  font-size: var(--text-section);
 }
 
 .home-choice-sub {
-  font-size: 0.85rem;
+  font-size: var(--text-label);
   opacity: 0.8;
   font-weight: 400;
 }
@@ -2145,7 +2376,7 @@ h2 {
 .home-credits-link {
   align-self: center;
   margin-top: -4px;
-  font-size: 0.8rem;
+  font-size: var(--text-meta);
   text-decoration: underline;
   text-underline-offset: 3px;
 }
@@ -2157,7 +2388,7 @@ h2 {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 1.2rem;
+  font-size: var(--text-title);
   margin: 0;
 }
 .credits-title .title-art {
@@ -2178,15 +2409,15 @@ h2 {
   align-items: baseline;
   justify-content: space-between;
   gap: 16px;
-  border-bottom: 1px dashed var(--border);
+  border-bottom: 1px dashed var(--color-border);
   padding-bottom: 5px;
 }
 .credits-row:last-child {
   border-bottom: none;
 }
 .credits-row dt {
-  color: var(--muted);
-  font-size: 0.88rem;
+  color: var(--color-text-muted);
+  font-size: var(--text-body);
 }
 .credits-row dd {
   margin: 0;
@@ -2197,7 +2428,7 @@ h2 {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  font-size: 0.9rem;
+  font-size: var(--text-body);
   font-weight: 600;
 }
 .field input,
@@ -2205,10 +2436,10 @@ h2 {
   font: inherit;
   font-weight: 400;
   padding: 8px 10px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--color-border);
   border-radius: 10px;
-  background: var(--panel-2);
-  color: var(--text);
+  background: var(--color-surface-subtle);
+  color: var(--color-text);
 }
 
 .join-row {
@@ -2221,13 +2452,13 @@ h2 {
 }
 
 .form-error {
-  color: var(--error);
-  background: color-mix(in srgb, var(--error) 10%, transparent);
-  border: 1px solid color-mix(in srgb, var(--error) 35%, transparent);
+  color: var(--color-danger);
+  background: color-mix(in srgb, var(--color-danger) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-danger) 35%, transparent);
   border-radius: 10px;
   padding: 10px 12px;
   margin: 0;
-  font-size: 0.9rem;
+  font-size: var(--text-body);
 }
 
 /* ------------------------------------------------------------------ */
@@ -2245,11 +2476,11 @@ h2 {
 }
 
 .room-code {
-  font: 700 1.5rem/1 var(--mono);
+  font: 700 var(--text-title) / 1 var(--mono);
   letter-spacing: 0.22em;
   padding: 10px 14px;
-  background: var(--bg-accent);
-  border: 1px solid var(--border);
+  background: var(--color-surface-tint);
+  border: 1px solid var(--color-border);
   border-radius: 10px;
   flex: 1;
   text-align: center;
@@ -2267,8 +2498,8 @@ h2 {
   gap: 10px;
   flex-wrap: wrap;
   padding: 10px 12px;
-  background: var(--panel-2);
-  border: 1px solid var(--border);
+  background: var(--color-surface-subtle);
+  border: 1px solid var(--color-border);
   border-radius: 12px;
 }
 
@@ -2296,7 +2527,7 @@ h2 {
   flex-direction: column;
   gap: 10px;
   padding-top: 4px;
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--color-border);
 }
 
 /* What the room is waiting for. The same block on every screen in the room —
@@ -2321,10 +2552,10 @@ h2 {
 .lobby-grace {
   padding: 10px 12px;
   border-radius: 8px;
-  border: 1px solid var(--warn);
-  background: color-mix(in srgb, var(--warn) 12%, transparent);
+  border: 1px solid var(--color-warning);
+  background: color-mix(in srgb, var(--color-warning) 12%, transparent);
   text-align: center;
-  font-size: 0.95em;
+  font-size: var(--text-body);
 }
 
 /* ------------------------------------------------------------------ */
@@ -2342,8 +2573,8 @@ h2 {
   align-items: center;
   gap: 14px;
   padding: 12px 20px;
-  background: var(--panel);
-  border-bottom: 1px solid var(--border);
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
   position: sticky;
   top: 0;
   z-index: 5;
@@ -2358,7 +2589,7 @@ h2 {
 .rules-body h2 {
   margin: 28px 0 8px;
   padding-bottom: 6px;
-  border-bottom: 2px solid var(--border);
+  border-bottom: 2px solid var(--color-border);
 }
 .rules-body h3 {
   margin: 22px 0 6px;
@@ -2380,7 +2611,7 @@ h2 {
 }
 .rules-body code {
   font: 0.9em var(--mono);
-  background: var(--bg-accent);
+  background: var(--color-surface-tint);
   padding: 1px 5px;
   border-radius: 5px;
 }
@@ -2394,13 +2625,13 @@ h2 {
 }
 .rules-body th,
 .rules-body td {
-  border: 1px solid var(--border);
+  border: 1px solid var(--color-border);
   padding: 6px 10px;
   text-align: left;
   vertical-align: top;
 }
 .rules-body th {
-  background: var(--bg-accent);
+  background: var(--color-surface-tint);
 }
 
 /* ------------------------------------------------------------------ */
@@ -2452,9 +2683,9 @@ h2 {
    button, because the character is the label. */
 .gnome-chip {
   padding: 2px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--color-border);
   border-radius: 10px;
-  background: color-mix(in srgb, var(--pc, #888) 12%, var(--cell));
+  background: color-mix(in srgb, var(--pc, #888) 12%, var(--color-cell));
   cursor: pointer;
   line-height: 0;
   flex: none;
@@ -2533,16 +2764,16 @@ h2 {
   height: 24px;
   border-radius: 50%;
   background: var(--sw, #888);
-  border: 2px solid var(--border);
+  border: 2px solid var(--color-border);
   cursor: pointer;
   padding: 0;
 }
 .swatch.picked {
-  border-color: var(--fg);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--fg) 35%, transparent);
+  border-color: var(--color-text);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-text) 35%, transparent);
 }
 .swatch:focus-visible {
-  outline: 2px solid var(--fg);
+  outline: 2px solid var(--color-text);
   outline-offset: 2px;
 }
 
@@ -2604,8 +2835,8 @@ h2 {
   gap: 1.5vmin;
   padding: 3vmin;
   background:
-    radial-gradient(1200px 600px at 20% -10%, var(--bg-accent), transparent),
-    var(--bg);
+    radial-gradient(1200px 600px at 20% -10%, var(--color-surface-tint), transparent),
+    var(--color-bg);
   overflow: hidden;
   text-align: center;
 }
@@ -2619,7 +2850,7 @@ h2 {
 
 .bv-kicker {
   margin: 0;
-  color: var(--muted);
+  color: var(--color-text-muted);
   font-size: 2.4vmin;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -2629,7 +2860,7 @@ h2 {
   margin: 0;
   font-family: var(--mono);
   font-size: 4vmin;
-  color: var(--text);
+  color: var(--color-text);
 }
 
 /* The one thing a person across the room has to be able to read. */
@@ -2640,12 +2871,12 @@ h2 {
   font-weight: 700;
   line-height: 1;
   letter-spacing: 0.08em;
-  color: var(--accent);
+  color: var(--color-primary);
 }
 
 .bv-line {
   margin: 0;
-  color: var(--muted);
+  color: var(--color-text-muted);
   font-size: 2.6vmin;
 }
 
@@ -2664,9 +2895,9 @@ h2 {
   align-items: center;
   gap: 1vmin;
   padding: 1vmin 2.2vmin;
-  border: 0.3vmin solid var(--border);
+  border: 0.3vmin solid var(--color-border);
   border-radius: 999px;
-  background: var(--panel);
+  background: var(--color-surface);
   font-size: 2.6vmin;
   opacity: 0.45;
 }
@@ -2680,7 +2911,7 @@ h2 {
   width: 2vmin;
   height: 2vmin;
   border-radius: 50%;
-  background: var(--pc, var(--muted));
+  background: var(--pc, var(--color-text-muted));
   flex: none;
 }
 
@@ -2703,7 +2934,7 @@ h2 {
 
 .bv-tag {
   font-family: var(--mono);
-  color: var(--muted);
+  color: var(--color-text-muted);
 }
 
 .bv-turn {
@@ -2711,7 +2942,7 @@ h2 {
   align-items: center;
   gap: 1.2vmin;
   font-weight: 700;
-  color: var(--text);
+  color: var(--color-text);
 }
 
 .bv-main {
@@ -2796,9 +3027,9 @@ h2 {
 .bv-chat-line {
   padding: 0.9vmin 1.8vmin;
   border-radius: 1.4vmin;
-  background: var(--panel);
-  border: 0.25vmin solid var(--border);
-  box-shadow: var(--shadow);
+  background: var(--color-surface);
+  border: 0.25vmin solid var(--color-border);
+  box-shadow: var(--shadow-raised);
   font-size: 2.2vmin;
   line-height: 1.25;
   /* A long phrase wraps rather than pushing the panel across the board. */

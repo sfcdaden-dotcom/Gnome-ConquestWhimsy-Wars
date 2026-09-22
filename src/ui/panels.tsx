@@ -25,7 +25,7 @@ import {
   posStr,
   sideName,
 } from './meta';
-import { GardenIcon, Poof, UnitIcon } from './art';
+import { GardenIcon, Poof, UiIcon, UnitIcon } from './art';
 import type { LogTurn } from './gameLog';
 import { groupByTurn, isPinnedToBottom, logLines } from './gameLog';
 
@@ -67,12 +67,18 @@ export function PlayerPanels({ state, takenOverSeats = [] }: { state: GameState;
             </div>
             {p.status === 'playing' ? (
               <div className="pp-stats">
-                <span title={`Wishes (cap ${cap})`}>✨ {p.wishes}/{cap}</span>
+                <span title={`Wishes (cap ${cap})`} data-testid="pp-wishes">
+                  <UiIcon kind="wish" label="Wishes" /> {p.wishes}/{cap}
+                </span>
                 <span title="Gnomes on board / limit">
                   <UnitIcon owner={p.id} className="inline-art" /> {gnomesOnBoard(state, p.id)}/{gnomeBoardCap(state, p.id)}
                 </span>
-                <span title="Reserve gnomes remaining">📦 {reserveGnomes(state, p.id)}</span>
-                <span title="Cards in hand">🃏 {p.hand.length}</span>
+                <span title="Reserve gnomes remaining">
+                  <UiIcon kind="reinforcement" label="Reserve gnomes" /> {reserveGnomes(state, p.id)}
+                </span>
+                <span title="Cards in hand">
+                  <UiIcon kind="card" label="Cards in hand" /> {p.hand.length}
+                </span>
               </div>
             ) : (
               <div className="pp-stats">
@@ -220,7 +226,9 @@ export function HandPanel({ state, seat, playable, onPlay, blocked }: HandPanelP
         </span>
       </div>
       {p.hand.length === 0 ? (
-        <div className="muted small">No cards. Draw one for 1 ✨ during your Action Phase.</div>
+        <div className="muted small">
+          No cards. Draw one for 1 <UiIcon kind="wish" label="Wish" /> during your Action Phase.
+        </div>
       ) : (
         <div className="hand-cards" data-testid="hand-cards">
           {p.hand.map((cardId, i) => {
@@ -405,7 +413,7 @@ export function FightPanel({ state, interactive, poofs, onPass, onPlayCard }: Fi
                 <button
                   key={cardId}
                   type="button"
-                  className="btn accent"
+                  className="btn"
                   data-testid={`fight-respond-card-${cardId}`}
                   onClick={() => onPlayCard(cardId)}
                 >

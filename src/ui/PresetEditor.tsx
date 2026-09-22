@@ -310,7 +310,8 @@ export function PresetEditor({ initial, boardSize, onCancel, onApply }: PresetEd
               <button
                 key={type}
                 type="button"
-                className={`btn small${tool === type ? ' accent' : ''}`}
+                className={`btn small${tool === type ? ' on' : ''}`}
+                aria-pressed={tool === type}
                 onClick={() => setTool(type)}
                 disabled={counts[type] >= maxThisType && tool !== type}
                 title={GARDEN_META[type].blurb}
@@ -321,7 +322,8 @@ export function PresetEditor({ initial, boardSize, onCancel, onApply }: PresetEd
             ))}
             <button
               type="button"
-              className={`btn small${tool === 'erase' ? ' accent' : ''}`}
+              className={`btn small${tool === 'erase' ? ' on' : ''}`}
+              aria-pressed={tool === 'erase'}
               onClick={() => setTool('erase')}
               title="Clear a space"
             >
@@ -367,7 +369,7 @@ export function PresetEditor({ initial, boardSize, onCancel, onApply }: PresetEd
               <button type="button" className="btn" data-testid="preset-save" onClick={saveAndExport}>
                 💾 Save &amp; Export
               </button>
-              <button type="button" className="btn accent" data-testid="preset-play" onClick={playWithoutSaving}>
+              <button type="button" className="btn primary" data-testid="preset-play" onClick={playWithoutSaving}>
                 ▶️ Play Without Saving
               </button>
             </div>

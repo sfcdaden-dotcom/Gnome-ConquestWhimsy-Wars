@@ -43,7 +43,7 @@ export class ErrorBoundary extends Component<Props, State> {
             <summary>Technical details (for a bug report)</summary>
             <pre>{`${this.state.error.name}: ${this.state.error.message}\n${this.state.error.stack ?? ''}`}</pre>
           </details>
-          <button type="button" className="btn accent big" onClick={() => window.location.reload()}>
+          <button type="button" className="btn primary big" onClick={() => window.location.reload()}>
             🔄 Reload the game
           </button>
         </div>

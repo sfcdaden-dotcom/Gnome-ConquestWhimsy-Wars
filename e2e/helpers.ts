@@ -154,8 +154,10 @@ export class Game {
 
   /** Wishes shown for a seat in the player panel. */
   async wishes(player: number): Promise<number> {
-    const text = await this.page.locator('.pp-row, .player-panel').nth(player).innerText();
-    return Number(text.match(/(\d+)\s*✨/)?.[1] ?? NaN);
+    // The Wish count is "<icon> 3/5"; the icon is a picture, so read the
+    // number off its own element rather than hunting for a glyph beside it.
+    const text = await this.page.locator('.player-panel').nth(player).getByTestId('pp-wishes').innerText();
+    return Number(text.match(/(\d+)\s*\//)?.[1] ?? NaN);
   }
 
   // --- flow ----------------------------------------------------------------

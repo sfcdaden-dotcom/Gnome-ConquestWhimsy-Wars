@@ -84,6 +84,10 @@ src/assets/art/
     garden-slippery.png
     garden-tunnel.png
   Gnome Assets/               one folder per layer — see below
+  ui-wish.png                 interface icons, drawn by <UiIcon> (see below)
+  ui-reinforcement.png
+  ui-card.png
+  ui-sapling.png
   FX/                         death poofs — one animation per file
     poof-burst.png            (see "Fight animations" below)
     poof-ball.png
@@ -102,6 +106,15 @@ WebP, JPEG).
 different scales: tucked into a cell's top-left corner during play, and filling
 the whole cell in the setup preview and the preset editor. Non-square is allowed
 but letterboxes, since the CSS uses `object-fit: contain`.
+
+**Interface icons** (`ui-*.png`) stand for the game's resources and its
+commonest action: Wishes, reserve gnomes, cards, and planting. They are mapped
+in `UI_ICON_ART` (`src/ui/artAssets.ts`); what each one means, its accessible
+label and the emoji it falls back to in plain text (log lines) live in
+`src/ui/uiIcons.ts`. `<UiIcon>` owns their size — one `em`-relative size that
+sits in a line of text, set once in the `.ui-icon` rule — so no call site sets
+a width. Use one only where it means exactly its kind: a sparkle that is just
+decoration is not a Wish.
 
 ### Fight animations
 

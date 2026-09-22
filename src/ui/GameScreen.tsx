@@ -18,7 +18,7 @@ import { DecisionPanel } from './DecisionPanel';
 import { FightPanel, FightPlaybackCard, HandPanel, PlayerPanels } from './panels';
 import { ChatPanel, QuickChatFeed } from './QuickChat';
 import { GARDEN_META, cardName, cardText, decisionLabel, playerColor, pname } from './meta';
-import { GardenIcon, UnitIcon } from './art';
+import { GardenIcon, UiIcon, UnitIcon } from './art';
 import { unitNameLive } from './gnomeNames';
 import { actionableUnitsAt, unitChipLabels } from './selection';
 import type { InteractionContext, Sel } from './interaction';
@@ -298,7 +298,11 @@ export function GameScreen({ game: g, onPlayAgain, onQuit }: GameScreenProps) {
   const menuItems: ActionMenuItem[] = [];
   menuItems.push({
     key: 'draw',
-    label: '🃏 Draw card (1 ✨)',
+    label: (
+      <>
+        <UiIcon kind="card" /> Draw card (1 <UiIcon kind="wish" label="Wish" />)
+      </>
+    ),
     testId: 'draw-card',
     disabled: !canDraw,
     onSelect: () => act({ type: 'drawCard', player: playerToAct! }),
@@ -306,7 +310,11 @@ export function GameScreen({ game: g, onPlayAgain, onQuit }: GameScreenProps) {
   if (plantActions.length > 0) {
     menuItems.push({
       key: 'plant',
-      label: '🌱 Plant Garden',
+      label: (
+        <>
+          <UiIcon kind="plant" /> Plant Garden
+        </>
+      ),
       testId: 'open-plant-menu',
       heading: 'Plant a Garden',
       items: plantChoices.map((o) => ({
@@ -332,7 +340,12 @@ export function GameScreen({ game: g, onPlayAgain, onQuit }: GameScreenProps) {
       key: 'upgrade',
       // The price is per-space: a Center Star set to 'freeUpgrade' makes the
       // garden on the center space free, so the label reads the real cost.
-      label: `⭐ Upgrade to ${GARDEN_META[upgradeGardenType].upgradeLabel} (${upgradeWishCost(state, upgradeAction.pos)} ✨)`,
+      label: (
+        <>
+          ⭐ Upgrade to {GARDEN_META[upgradeGardenType].upgradeLabel} ({upgradeWishCost(state, upgradeAction.pos)}{' '}
+          <UiIcon kind="wish" label="Wishes" />)
+        </>
+      ),
       testId: 'upgrade-garden',
       title: GARDEN_META[upgradeGardenType].upgradeBlurb,
       onSelect: () => act(upgradeAction),
@@ -351,7 +364,6 @@ export function GameScreen({ game: g, onPlayAgain, onQuit }: GameScreenProps) {
     key: 'end-turn',
     label: 'End turn ⏹',
     testId: 'end-turn',
-    className: 'warn',
     onSelect: () => act({ type: 'endTurn', player: playerToAct! }),
   });
 
@@ -403,7 +415,7 @@ export function GameScreen({ game: g, onPlayAgain, onQuit }: GameScreenProps) {
         {state.status === 'finished' && reviewing && (
           <button
             type="button"
-            className="btn small accent"
+            className="btn small primary"
             data-testid="show-results"
             onClick={() => setReviewing(false)}
           >
@@ -416,7 +428,7 @@ export function GameScreen({ game: g, onPlayAgain, onQuit }: GameScreenProps) {
           <span className="quit-confirm">
             <button
               type="button"
-              className="btn small warn"
+              className="btn small danger"
               data-testid="quit-confirm"
               onClick={onQuit}
             >
@@ -424,7 +436,7 @@ export function GameScreen({ game: g, onPlayAgain, onQuit }: GameScreenProps) {
             </button>
             <button
               type="button"
-              className="btn small"
+              className="btn small ghost"
               data-testid="quit-cancel"
               onClick={() => setQuitArmed(false)}
             >
@@ -795,7 +807,7 @@ function TargetingBanner({
       {options.map((o) => (
         <TargetChip key={targetChipKey(o)} state={state} target={o} onSelect={onSelect} />
       ))}
-      <button type="button" className="btn small warn" data-testid="targeting-cancel" onClick={onCancel}>
+      <button type="button" className="btn small ghost" data-testid="targeting-cancel" onClick={onCancel}>
         Cancel
       </button>
     </div>
@@ -857,7 +869,7 @@ function PassOverlay({
           Pass the device to <span style={{ color: playerColor(seat) }}>{pname(state, seat)}</span>
         </h2>
         <p className="muted">Hands stay hidden until they take over.</p>
-        <button type="button" className="btn accent big" data-testid="pass-confirm" onClick={onConfirm}>
+        <button type="button" className="btn primary big" data-testid="pass-confirm" onClick={onConfirm}>
           I'm {pname(state, seat)} — continue
         </button>
       </div>
@@ -892,7 +904,7 @@ function EndOverlay({
         </h2>
         <div className="btn-row center">
           {onPlayAgain && (
-            <button type="button" className="btn accent big" onClick={onPlayAgain}>
+            <button type="button" className="btn primary big" onClick={onPlayAgain}>
               🔁 Play again (new seed)
             </button>
           )}

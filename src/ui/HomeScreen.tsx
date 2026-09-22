@@ -40,7 +40,7 @@ export function HomeScreen({ onChoose }: { onChoose: (choice: HomeChoice) => voi
         <div className="home-choices">
           <button
             type="button"
-            className="btn big accent home-choice"
+            className="btn big primary home-choice"
             data-testid="home-local"
             onClick={() => onChoose('local')}
           >
@@ -128,7 +128,7 @@ function CreditsCard({ onClose }: { onClose: () => void }) {
         </dl>
         <button
           type="button"
-          className="btn accent"
+          className="btn primary"
           data-testid="credits-close"
           onClick={onClose}
           autoFocus

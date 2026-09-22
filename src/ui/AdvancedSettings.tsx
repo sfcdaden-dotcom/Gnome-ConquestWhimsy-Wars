@@ -19,7 +19,7 @@ import {
   PLANTABLE_GARDEN_TYPES,
 } from '../engine';
 import { GARDEN_META } from './meta';
-import { GardenIcon } from './art';
+import { GardenIcon, UiIcon } from './art';
 import {
   BOARD_SIZES,
   DEFAULT_ADVANCED_SETTINGS,
@@ -157,7 +157,7 @@ function DeckEditor({
         >
           ↩️ Stock deck
         </button>
-        <button type="button" className="btn small" data-testid="deck-back" onClick={onBack}>
+        <button type="button" className="btn small ghost" data-testid="deck-back" onClick={onBack}>
           ← Back to settings
         </button>
       </div>
@@ -235,7 +235,7 @@ function GardenEditor({
         >
           ↩️ Stock supply
         </button>
-        <button type="button" className="btn small" data-testid="garden-back" onClick={onBack}>
+        <button type="button" className="btn small ghost" data-testid="garden-back" onClick={onBack}>
           ← Back to settings
         </button>
       </div>
@@ -284,7 +284,8 @@ export function AdvancedSettings({
                   <button
                     key={n}
                     type="button"
-                    className={`btn small${draft.boardSize === n ? ' accent' : ''}`}
+                    className={`btn small${draft.boardSize === n ? ' on' : ''}`}
+                    aria-pressed={draft.boardSize === n}
                     data-testid={`board-size-${n}`}
                     disabled={boardSizeLockedReason !== undefined}
                     onClick={() => setDraft({ ...draft, boardSize: n })}
@@ -321,7 +322,7 @@ export function AdvancedSettings({
                   data-testid="open-deck-editor"
                   onClick={() => setView('deck')}
                 >
-                  🃏 Edit the deck ({deckTotal(draft)} cards)
+                  <UiIcon kind="card" /> Edit the deck ({deckTotal(draft)} cards)
                 </button>
               </div>
             </div>
@@ -340,7 +341,7 @@ export function AdvancedSettings({
                   data-testid="open-garden-editor"
                   onClick={() => setView('gardens')}
                 >
-                  🌱 Edit the garden budget ({tileTotal(draft)} tiles)
+                  <UiIcon kind="plant" /> Edit the garden budget ({tileTotal(draft)} tiles)
                 </button>
               </div>
             </div>
@@ -409,7 +410,7 @@ export function AdvancedSettings({
           </button>
           <button
             type="button"
-            className="btn accent"
+            className="btn primary"
             data-testid="advanced-done"
             disabled={problem !== null}
             onClick={() => onApply(draft)}

@@ -36,6 +36,7 @@ test('harvests the Home Garden for a Wish and for a Gnome', async ({ page }) => 
   // so the harvest is clamped — the count holds at the cap rather than rising.
   expect(await g.decision()).toBe('homeHarvest');
   const before = await g.wishes(await g.playerToAct());
+  expect(before).toBe(3);
   await page.getByTestId('home-harvest-wish').click();
   await g.ready();
   const active = await g.activePlayer();

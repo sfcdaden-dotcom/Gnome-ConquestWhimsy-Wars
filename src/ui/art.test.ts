@@ -7,7 +7,8 @@
 import { describe, expect, it } from 'vitest';
 import { PLANTABLE_GARDEN_TYPES } from '../engine';
 import type { GardenType, UnitKind } from '../engine';
-import { GARDEN_ART, UNIT_ART } from './artAssets';
+import { GARDEN_ART, UI_ICON_ART, UNIT_ART } from './artAssets';
+import { UI_ICON_GLYPH, UI_ICON_KINDS, UI_ICON_LABEL } from './uiIcons';
 
 const GARDEN_TYPES: GardenType[] = ['home', ...PLANTABLE_GARDEN_TYPES];
 const UNIT_KINDS: UnitKind[] = ['gnome', 'snail'];
@@ -27,8 +28,17 @@ describe('art assets', () => {
     expect(Object.keys(UNIT_ART).sort()).toEqual([...UNIT_KINDS].sort());
   });
 
+  it('has a picture, a label and a text fallback for every interface icon', () => {
+    for (const kind of UI_ICON_KINDS) {
+      expect(UI_ICON_ART[kind], kind).toBeTruthy();
+      expect(UI_ICON_LABEL[kind], kind).toBeTruthy();
+      expect(UI_ICON_GLYPH[kind], kind).toBeTruthy();
+    }
+    expect(Object.keys(UI_ICON_ART).sort()).toEqual([...UI_ICON_KINDS].sort());
+  });
+
   it('never shows two things the same picture', () => {
-    const all = [...Object.values(GARDEN_ART), ...Object.values(UNIT_ART)];
+    const all = [...Object.values(GARDEN_ART), ...Object.values(UNIT_ART), ...Object.values(UI_ICON_ART)];
     expect(new Set(all).size).toBe(all.length);
   });
 });

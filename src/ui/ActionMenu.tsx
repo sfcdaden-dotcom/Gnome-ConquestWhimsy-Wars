@@ -88,7 +88,7 @@ export function ActionMenu({ items, openKey, onOpenKeyChange }: ActionMenuProps)
         <>
           <button
             type="button"
-            className="btn small"
+            className="btn small ghost"
             data-testid="submenu-back"
             onClick={() => onOpenKeyChange(null)}
           >

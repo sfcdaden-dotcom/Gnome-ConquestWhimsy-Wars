@@ -472,7 +472,8 @@ export function SetupScreen({
               <button
                 key={n}
                 type="button"
-                className={`btn${count === n ? ' accent' : ''}`}
+                className={`btn${count === n ? ' on' : ''}`}
+                aria-pressed={count === n}
                 data-testid={`player-count-${n}`}
                 onClick={() => setCount(n)}
               >
@@ -506,7 +507,8 @@ export function SetupScreen({
               <div className="btn-row">
                 <button
                   type="button"
-                  className={`btn small${seat.controller === 'human' ? ' accent' : ''}`}
+                  className={`btn small${seat.controller === 'human' ? ' on' : ''}`}
+                  aria-pressed={seat.controller === 'human'}
                   data-testid={`seat-${i}-human`}
                   onClick={() => updateSeat(i, { controller: 'human' })}
                 >
@@ -514,7 +516,8 @@ export function SetupScreen({
                 </button>
                 <button
                   type="button"
-                  className={`btn small${seat.controller === 'cpu' ? ' accent' : ''}`}
+                  className={`btn small${seat.controller === 'cpu' ? ' on' : ''}`}
+                  aria-pressed={seat.controller === 'cpu'}
                   data-testid={`seat-${i}-cpu`}
                   onClick={() => updateSeat(i, { controller: 'cpu' })}
                 >
@@ -601,7 +604,8 @@ export function SetupScreen({
                   would then show a blank selection. */}
               <button
                 type="button"
-                className={`btn small${classicVisible ? ' accent' : ''}`}
+                className={`btn small${classicVisible ? ' on' : ''}`}
+                aria-pressed={classicVisible}
                 data-testid="toggle-classic-presets"
                 disabled={classicSelected}
                 title={
@@ -633,7 +637,7 @@ export function SetupScreen({
                 💾 Export
               </button>
               {selectedCustom && (
-                <button type="button" className="btn small warn" onClick={() => removeCustomPreset(selectedCustom.id)}>
+                <button type="button" className="btn small danger" onClick={() => removeCustomPreset(selectedCustom.id)}>
                   🗑️ Remove
                 </button>
               )}
@@ -707,7 +711,7 @@ export function SetupScreen({
           />
         )}
 
-        <button type="button" className="btn accent big" data-testid="start-game" onClick={start}>
+        <button type="button" className="btn primary big" data-testid="start-game" onClick={start}>
           🌱 Start the war
         </button>
 
