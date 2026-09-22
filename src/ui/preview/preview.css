@@ -323,3 +323,16 @@
   width: 320px;
   height: 720px;
 }
+
+/* A setup screen at a real device size, scaled down to fit the page. The red
+   rule on its bottom edge is the fold. */
+.uip-frame {
+  position: relative;
+  overflow: hidden;
+  border-bottom: 2px solid #d33;
+}
+.uip-frame iframe {
+  border: 0;
+  transform-origin: 0 0;
+  background: var(--color-bg);
+}

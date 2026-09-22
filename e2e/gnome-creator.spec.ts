@@ -9,7 +9,7 @@
 
 import type { Locator, Page } from '@playwright/test';
 import { expect, test } from '@playwright/test';
-import { Game } from './helpers';
+import { Game, setController } from './helpers';
 
 async function openSetup(page: Page): Promise<void> {
   await page.goto('/');
@@ -65,7 +65,7 @@ test('a cap chosen in the creator reaches the seat and the board', async ({ page
   // And it is that same picture on the board, not merely a different one.
   // Players start with no gnomes out, so one has to be harvested first — and
   // the roll-off decides who moves first, so seat 0 may need to wait a turn.
-  await page.getByTestId('seat-1-human').click();
+  await setController(page, 1, 'human');
   await page.getByTestId('start-game').click();
 
   const g = new Game(page);

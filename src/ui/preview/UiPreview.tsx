@@ -27,7 +27,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import type { CardId, CardTiming, GardenType } from '../../engine';
-import { CARD_DEFINITIONS, CURSE_DEFINITIONS, PLANTABLE_GARDEN_TYPES } from '../../engine';
+import { CARD_DEFINITIONS, CLASSIC_PRESETS, CURSE_DEFINITIONS, MODE_PRESETS, PLANTABLE_GARDEN_TYPES } from '../../engine';
 import { Board } from '../Board';
 import { boardPixelSize } from '../boardGeometry';
 import { CursePanel } from '../GameScreen';
@@ -36,6 +36,7 @@ import { DecisionPanel } from '../DecisionPanel';
 import { FightPanel, GameLogView, HandPanel, PlayerPanels } from '../panels';
 import { ChatPanel } from '../QuickChat';
 import { AdvancedSettings } from '../AdvancedSettings';
+import { SetupScreen } from '../SetupScreen';
 import { DEFAULT_ADVANCED_SETTINGS } from '../advancedSettings';
 import { GardenIcon, UiIcon, UnitIcon } from '../art';
 import { UI_ICON_GLYPH, UI_ICON_KINDS, UI_ICON_LABEL } from '../uiIcons';
@@ -76,6 +77,7 @@ const SECTIONS = [
   ['buttons', 'Buttons'],
   ['surfaces', 'Surfaces: before / after'],
   ['sidebar', 'Sidebar'],
+  ['setup', 'Setup screen'],
   ['controls', 'Form controls'],
   ['icons', 'Icons & resources'],
   ['gardens', 'Garden art'],
@@ -147,7 +149,32 @@ function TypeSpec({ label, children }: { label: string; children: ReactNode }) {
 // The page
 // ---------------------------------------------------------------------------
 
+/**
+ * `?ui=preview&frame=setup` renders the real setup screen and nothing else,
+ * for the Setup section's iframes: a phone layout is a VIEWPORT width, which
+ * only a frame of that width can give it. `&theme=light|dark` pins the theme.
+ */
 export function UiPreview() {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('frame') === 'setup') return <SetupFrame theme={params.get('theme')} />;
+  return <UiLab />;
+}
+
+function SetupFrame({ theme }: { theme: string | null }) {
+  useEffect(() => {
+    if (theme === 'light' || theme === 'dark') document.documentElement.dataset.theme = theme;
+  }, [theme]);
+  return <SetupScreen onStart={() => {}} onBack={() => {}} />;
+}
+
+/** Real device sizes for the setup screen frames. */
+const SETUP_FRAMES: Array<{ label: string; w: number; h: number; scale: number }> = [
+  { label: 'Desktop 1440×900', w: 1440, h: 900, scale: 0.5 },
+  { label: 'Phone 390×844', w: 390, h: 844, scale: 0.75 },
+  { label: 'Small phone 360×640', w: 360, h: 640, scale: 0.75 },
+];
+
+function UiLab() {
   const looks = previewLooks();
   const state = previewState();
   const fight = fightFixture();
@@ -160,6 +187,7 @@ export function UiPreview() {
   const stackChips = unitChipLabels(state, stack);
 
   const [modalOpen, setModalOpen] = useState(false);
+  const [labLayout, setLabLayout] = useState('random');
   const [theme, setTheme] = useState<Theme>('auto');
   useEffect(() => {
     const root = document.documentElement;
@@ -405,12 +433,15 @@ export function UiPreview() {
                   4 players
                 </button>
               </div>
-              <div className="btn-row" role="group" aria-label="Seat">
+              <div className="btn-row" role="group" aria-label="Board size">
+                <button type="button" className="btn small" aria-pressed="false">
+                  5×5
+                </button>
                 <button type="button" className="btn small on" aria-pressed="true">
-                  🧑 Human
+                  7×7
                 </button>
                 <button type="button" className="btn small" aria-pressed="false">
-                  🤖 CPU
+                  9×9
                 </button>
               </div>
               <div className="btn-row">
@@ -594,14 +625,9 @@ export function UiPreview() {
                       <UnitIcon owner={i} className="lobby-gnome" />
                     </button>
                     <input type="text" defaultValue={i === 0 ? 'Bramblewick' : 'Thistlebrook'} aria-label="Name" />
-                    <div className="btn-row">
-                      <button type="button" className={`btn small${i === 0 ? ' on' : ''}`} aria-pressed={i === 0}>
-                        🧑 Human
-                      </button>
-                      <button type="button" className={`btn small${i === 1 ? ' on' : ''}`} aria-pressed={i === 1}>
-                        🤖 CPU
-                      </button>
-                    </div>
+                    <button type="button" className="btn small seat-controller">
+                      {i === 0 ? 'Human' : 'CPU'}
+                    </button>
                   </div>
                 ))}
               </div>
@@ -783,6 +809,27 @@ export function UiPreview() {
                 </button>
               </div>
             </Item>
+          </div>
+        </Section>
+
+        {/* --------------------------------------------------------------- */}
+        <Section
+          id="setup"
+          title="Setup screen"
+          note="The real local-game setup screen in frames at real device sizes (scaled to fit), so its phone layout — which responds to the viewport, not to a box — is the one a phone gets. The red line is the bottom of the screen: Start the war should sit above it. Layout management is behind Customize game → Layouts (the Modal section below opens it)."
+        >
+          <div className="uip-cols">
+            {SETUP_FRAMES.map((f) => (
+              <Item key={f.label} label={f.label}>
+                <div className="uip-frame" style={{ width: f.w * f.scale, height: f.h * f.scale }}>
+                  <iframe
+                    title={`Setup screen, ${f.label}`}
+                    src={`?ui=preview&frame=setup${theme === 'auto' ? '' : `&theme=${theme}`}`}
+                    style={{ width: f.w, height: f.h, transform: `scale(${f.scale})` }}
+                  />
+                </div>
+              </Item>
+            ))}
           </div>
         </Section>
 
@@ -1139,11 +1186,11 @@ export function UiPreview() {
         <Section
           id="modal"
           title="Modal"
-          note="The game's one modal pattern (.overlay + .overlay-card), shown by the real Advanced settings screen — which also holds the deck and garden-budget editors."
+          note="The game's one modal pattern (.overlay + .overlay-card), shown by the real Customize game dialog — which also holds the Layouts page and the deck and garden-budget editors. Choosing a layout here only moves the selection inside the specimen."
         >
           <div className="uip-panel uip-row">
-            <button type="button" className="btn accent" onClick={() => setModalOpen(true)}>
-              Open the advanced-settings modal
+            <button type="button" className="btn primary" onClick={() => setModalOpen(true)}>
+              Open the Customize game dialog
             </button>
           </div>
         </Section>
@@ -1153,6 +1200,21 @@ export function UiPreview() {
             value={DEFAULT_ADVANCED_SETTINGS}
             onApply={() => setModalOpen(false)}
             onCancel={() => setModalOpen(false)}
+            layouts={{
+              selected: [...MODE_PRESETS, ...CLASSIC_PRESETS].find((p) => p.id === labLayout) ?? MODE_PRESETS[0],
+              boardSize: 7,
+              mapNumber: MODE_PRESETS.some((p) => p.id === labLayout) ? 1975371893 : null,
+              classics: CLASSIC_PRESETS,
+              session: [],
+              fits: (def, size) => def.minBoardSize <= size,
+              error: null,
+              onSelect: setLabLayout,
+              onImport: noop,
+              onExport: noop,
+              onRemove: noop,
+            }}
+            onDrawLayout={noop}
+            onEditLayout={noop}
           />
         )}
 

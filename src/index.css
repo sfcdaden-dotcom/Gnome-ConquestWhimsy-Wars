@@ -387,6 +387,7 @@ h2 {
   gap: 14px;
 }
 
+
 .game-title {
   text-align: center;
   font-size: var(--text-display);
@@ -437,6 +438,16 @@ h2 {
   background: var(--color-surface);
   color: var(--color-text);
 }
+/* Human ⇄ CPU. A fixed width, so switching never shifts the row. */
+.seat-controller {
+  flex: none;
+  min-width: 5.5em;
+}
+/* A CPU's difficulty sits beside its switch, only as wide as its words. */
+.seat-row select {
+  flex: none;
+  padding-inline: var(--space-xs);
+}
 .seed-input {
   font: inherit;
   padding: 4px 8px;
@@ -478,6 +489,48 @@ h2 {
 }
 .preset-controls .preset-select {
   flex: 0 1 220px;
+  min-width: 0;
+}
+/* The board size beside the layout menu: information, not a control (the
+   size is set in Customize game). */
+.board-dims {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+/* One line about the layout, never more; the full description is its
+   tooltip here and is written out on the Layouts page. */
+.layout-summary {
+  margin: 0;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Under Start: Back on the left, Customize game on the right. Both ghosts —
+   Start is the only thing on this screen that asks to be pressed. */
+.setup-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  margin-top: calc(-1 * var(--space-xs));
+}
+.setup-customize {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+/* The game differs from the defaults: said once, quietly, beside the door
+   to what was changed. The details are its tooltip. */
+.customised-tag {
+  font-size: var(--text-tiny);
+  font-weight: 600;
+  color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 12%, transparent);
+  border-radius: var(--radius-pill);
+  padding: 1px var(--space-sm);
+  cursor: help;
 }
 .preset-preview {
   width: min(100%, 208px);
@@ -504,11 +557,63 @@ h2 {
   font-size: var(--text-body);
 }
 
+/* Phones. The page is one column already; what a phone cannot afford is the
+   desktop's generous frame around it, a 120px label column, or a seat row
+   that squeezes the name field to one letter. */
+@media (max-width: 560px) {
+  .setup-screen {
+    padding: var(--space-md);
+    align-items: flex-start;
+  }
+  .setup-card {
+    padding: var(--space-xl) var(--space-lg);
+    gap: var(--space-lg);
+    border-radius: var(--radius-lg);
+  }
+  .setup-card .game-title {
+    font-size: var(--text-title);
+    margin: 0;
+  }
+  .setup-card .tagline {
+    margin: 0;
+  }
+  .setup-card > .setup-row .setup-label {
+    width: auto;
+  }
+  .setup-card > .setup-row .btn-row {
+    margin-top: 0;
+  }
+  /* Name beside the gnome; Human/CPU (and a CPU's difficulty) wrap under it
+     when they do not fit. */
+  .seat-row {
+    flex-wrap: wrap;
+    gap: var(--space-sm) var(--space-md);
+  }
+  .seat-row input[type='text'] {
+    flex: 1 1 4.5rem;
+  }
+  .preset-preview {
+    width: min(100%, 176px);
+  }
+  /* Menu, size and re-roll stay one line: the menu gives up width first. */
+  .preset-controls {
+    flex-wrap: nowrap;
+  }
+  .preset-controls .preset-select {
+    flex: 1 1 auto;
+  }
+  .preset-controls .btn {
+    flex: none;
+  }
+}
+
 /* ------------------------------------------------------------------ */
 /* Advanced settings (modal over the setup screen)                     */
 /* ------------------------------------------------------------------ */
 
-.advanced-card {
+/* Doubled class: .overlay-card (later in this file, same specificity) centres
+   its text, and a settings form reads down its left edge. */
+.overlay-card.advanced-card {
   max-width: min(600px, 94vw);
   text-align: left;
   align-items: stretch;
@@ -529,6 +634,71 @@ h2 {
 }
 .advanced-card .setup-label {
   width: 160px;
+}
+
+/* The Layouts page (LayoutsPage.tsx). */
+.layouts-current {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2xs);
+}
+.layouts-current p {
+  margin: 0;
+}
+.layouts-current-name {
+  font-weight: 700;
+}
+.layouts-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+.layouts-group-title {
+  margin: var(--space-sm) 0 0;
+}
+.layouts-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+/* A layout to choose: an object in a single-choice list, so it keeps an edge
+   (category A), and the chosen one wears the same selected state as a toggle
+   button. */
+.layout-option {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2xs);
+  text-align: left;
+  font: inherit;
+  color: var(--color-text);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-sm) var(--space-md);
+  cursor: pointer;
+}
+.layout-option:hover:not(:disabled) {
+  border-color: var(--color-border-strong);
+  background: var(--color-surface-subtle);
+}
+.layout-option:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -1px;
+}
+.layout-option.on {
+  border-color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 12%, var(--color-surface));
+}
+.layout-option:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.layout-option-name {
+  font-weight: 600;
+}
+.layout-option-text {
+  font-size: var(--text-meta);
+  color: var(--color-text-muted);
 }
 
 .stepper {

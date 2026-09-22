@@ -1,5 +1,6 @@
 /**
- * The advanced settings panel on the setup screen.
+ * The Customize game dialog on the setup screen (its settings; the Layouts
+ * page is covered in presets.spec.ts).
  *
  * The panel edits a working copy, so what these tests pin is the boundary
  * between it and the game it starts: Cancel changes nothing, Done carries the
@@ -10,19 +11,16 @@
 
 import type { Page } from '@playwright/test';
 import { expect, test } from '@playwright/test';
-import { setSeed, showClassicPresets } from './helpers';
+import { selectLayout, setController, setSeed } from './helpers';
 
 async function openSetup(page: Page): Promise<void> {
   await page.goto('/');
   await page.getByTestId('home-local').click();
-  // These tests pin exact preview coordinates, so they play on the fixed
-  // classic layouts rather than on a mode that rolls a new map per load.
-  await showClassicPresets(page);
 }
 
 async function openAdvanced(page: Page): Promise<void> {
   await page.getByTestId('open-advanced').click();
-  await expect(page.getByRole('dialog', { name: 'Advanced settings' })).toBeVisible();
+  await expect(page.getByRole('dialog', { name: 'Customize game' })).toBeVisible();
 }
 
 /** Cells in the setup screen's layout preview (n × n). */
@@ -30,7 +28,7 @@ const previewCells = (page: Page) => page.locator('.preset-preview .cell');
 
 test('cancelling leaves the pending game exactly as it was', async ({ page }) => {
   await openSetup(page);
-  await page.getByTestId('preset-select').selectOption('few');
+  await selectLayout(page, 'few');
   await expect(previewCells(page)).toHaveCount(49);
 
   await openAdvanced(page);
@@ -39,21 +37,25 @@ test('cancelling leaves the pending game exactly as it was', async ({ page }) =>
   await page.getByTestId('advanced-cancel').click();
 
   await expect(previewCells(page)).toHaveCount(49);
-  await expect(page.getByTestId('open-advanced')).toHaveText(/Advanced settings$/);
+  // Nothing was applied, so the screen does not claim a customised game.
+  await expect(page.getByTestId('customised-tag')).toHaveCount(0);
 });
 
 test('a new board size reaches the preview and the game', async ({ page }) => {
   await openSetup(page);
-  await page.getByTestId('preset-select').selectOption('few');
+  await selectLayout(page, 'few');
 
   await openAdvanced(page);
   await page.getByTestId('board-size-9').click();
   await page.getByTestId('advanced-done').click();
 
   await expect(previewCells(page)).toHaveCount(81);
+  // Applied settings are owned up to, quietly, beside the door that set them.
+  await expect(page.getByTestId('customised-tag')).toBeVisible();
+  await expect(page.getByTestId('board-dims')).toHaveText('9×9');
 
   await page.getByTestId('player-count-2').click();
-  await page.getByTestId('seat-1-human').click();
+  await setController(page, 1, 'human');
   await setSeed(page, 4242);
   await page.getByTestId('start-game').click();
   await expect(page.getByTestId('game-screen')).toBeVisible();
@@ -62,7 +64,7 @@ test('a new board size reaches the preview and the game', async ({ page }) => {
 
 test('a layout that no longer fits gives way to one that does', async ({ page }) => {
   await openSetup(page);
-  await page.getByTestId('preset-select').selectOption('gauntlet');
+  await selectLayout(page, 'gauntlet');
 
   await openAdvanced(page);
   await page.getByTestId('board-size-5').click();
@@ -77,7 +79,7 @@ test('a layout that no longer fits gives way to one that does', async ({ page })
 test('a player-drawn layout pins the board size, and says so', async ({ page }) => {
   await openSetup(page);
   // Every file-backed built-in is drawn on a fixed board, like an edited one.
-  await page.getByTestId('preset-select').selectOption('midfield');
+  await selectLayout(page, 'midfield');
 
   await openAdvanced(page);
   await expect(page.getByTestId('board-size-9')).toBeDisabled();
@@ -121,12 +123,13 @@ test('the seed lives in the panel, and a bad one is refused', async ({ page }) =
   await expect(page.getByTestId('advanced-done')).toBeEnabled();
   await page.getByTestId('advanced-done').click();
 
-  // A pinned seed is worth seeing without reopening the panel.
+  // A pinned seed is owned up to without reopening the panel: the screen says
+  // the game is customised, and the tag's tooltip says how.
   await expect(page.getByTestId('preset-section')).toBeVisible();
-  await expect(page.getByText('seed 4242')).toBeVisible();
+  await expect(page.getByTestId('customised-tag')).toHaveAttribute('title', /Seed 4242/);
 
-  await page.getByTestId('preset-select').selectOption('few');
-  await page.getByTestId('seat-1-human').click();
+  await selectLayout(page, 'few');
+  await setController(page, 1, 'human');
   await page.getByTestId('start-game').click();
   await expect(page.getByTestId('game-screen')).toBeVisible();
 });
@@ -138,9 +141,9 @@ test('a raised wish economy is what the game starts with', async ({ page }) => {
   await page.getByTestId('setting-startingWishes').fill('8');
   await page.getByTestId('advanced-done').click();
 
-  await page.getByTestId('preset-select').selectOption('few');
+  await selectLayout(page, 'few');
   await page.getByTestId('player-count-2').click();
-  await page.getByTestId('seat-1-human').click();
+  await setController(page, 1, 'human');
   await setSeed(page, 4242);
   await page.getByTestId('start-game').click();
 
@@ -150,13 +153,13 @@ test('a raised wish economy is what the game starts with', async ({ page }) => {
 
 test('a big game board zooms and pans under the panels, which keep their size', async ({ page }) => {
   await openSetup(page);
-  await page.getByTestId('preset-select').selectOption('few');
+  await selectLayout(page, 'few');
   await openAdvanced(page);
   await page.getByTestId('board-size-13').click();
   await page.getByTestId('advanced-done').click();
 
   await page.getByTestId('player-count-2').click();
-  await page.getByTestId('seat-1-human').click();
+  await setController(page, 1, 'human');
   await setSeed(page, 4242);
   await page.getByTestId('start-game').click();
   await expect(page.getByTestId('game-screen')).toBeVisible();
@@ -234,9 +237,9 @@ test('a garden budget survives the panel and starts a game', async ({ page }) =>
   await expect(page.getByTestId('open-garden-editor')).toContainText('23 tiles');
   await page.getByTestId('advanced-done').click();
 
-  await page.getByTestId('preset-select').selectOption('few');
+  await selectLayout(page, 'few');
   await page.getByTestId('player-count-2').click();
-  await page.getByTestId('seat-1-human').click();
+  await setController(page, 1, 'human');
   await setSeed(page, 4242);
   await page.getByTestId('start-game').click();
   await expect(page.getByTestId('game-screen')).toBeVisible();
@@ -256,12 +259,12 @@ test('the Center Star is a boon menu in the panel, not a toggle on the screen', 
   await expect(page.getByRole('dialog')).toContainText('upgraded for free');
   await page.getByTestId('advanced-done').click();
 
-  // The choice is worth seeing without reopening the panel.
-  await expect(page.getByText('Free upgrade on the star')).toBeVisible();
+  // The choice is visible without reopening the panel (the Customised tag's tooltip).
+  await expect(page.getByTestId('customised-tag')).toHaveAttribute('title', /Free upgrade on the star/);
 
-  await page.getByTestId('preset-select').selectOption('few');
+  await selectLayout(page, 'few');
   await page.getByTestId('player-count-2').click();
-  await page.getByTestId('seat-1-human').click();
+  await setController(page, 1, 'human');
   await setSeed(page, 4242);
   await page.getByTestId('start-game').click();
   await expect(page.getByTestId('game-screen')).toBeVisible();
@@ -269,7 +272,7 @@ test('the Center Star is a boon menu in the panel, not a toggle on the screen', 
 
 test('switching the Center Star off clears it from the layout preview', async ({ page }) => {
   await openSetup(page);
-  await page.getByTestId('preset-select').selectOption('few');
+  await selectLayout(page, 'few');
   const preview = page.locator('.preset-preview');
   await expect(preview.locator('[title="Center Star"]')).toHaveCount(1);
 
@@ -278,5 +281,5 @@ test('switching the Center Star off clears it from the layout preview', async ({
   await page.getByTestId('advanced-done').click();
 
   await expect(preview.locator('[title="Center Star"]')).toHaveCount(0);
-  await expect(page.getByText('no Center Star')).toBeVisible();
+  await expect(page.getByTestId('customised-tag')).toHaveAttribute('title', /No Center Star/);
 });

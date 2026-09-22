@@ -121,3 +121,41 @@ each gated on a concrete result — never all-or-nothing.
   `chooseNeuralAction(state, model)` mirroring `chooseAiAction`, exposed as a new
   "Learned" / "Expert" difficulty (heuristic stays as fallback and for
   Easy/Normal). Check bundle size + per-move latency.
+
+## Planned — touch inspection of board spaces (designed, not built)
+
+Touch devices have no hover, so a garden's details (its rules text, owner,
+upgraded/inactive/stunned state, the units on it) are unreadable on a phone:
+today they exist only as each cell's `title` tooltip (`cellTitle` in
+`src/ui/Board.tsx`). The design keeps **inspection** (temporary informational
+UI) separate from **selection** (gameplay interaction state, `Sel` in
+`src/ui/interaction.ts`), which it never touches.
+
+1. **Space info as data.** A pure `describeSpace(state, pos)` (e.g.
+   `src/ui/spaceInfo.ts`); `cellTitle` becomes a formatter over it, so the
+   tooltip and the inspector cannot drift. Unit-tested.
+2. **A separate gesture.** An optional `onCellInspect(pos, rect)` prop on
+   `Board`, passed only by `GameScreen` (not the TV board view or the UI lab):
+   a ~450ms touch/pen long-press, cancelled by >4px travel (the pan
+   threshold), a second pointer (pinch) or an early lift; plus `contextmenu`
+   (right-click; Android's long-press). After a long-press fires, the click
+   its release produces MUST be swallowed — PanZoom already does this after a
+   drag — or holding a legal-move space would also move the gnome. Cells get
+   `-webkit-touch-callout: none`.
+3. **Inspection state apart from selection.** `inspected: { pos, rect } | null`
+   in `GameScreen`, beside `sel`. It never calls `onCellClick`, never
+   dispatches, never changes `sel`; card targeting, gnome selection and
+   movement keep their click semantics because inspection is a different
+   gesture.
+4. **An inspector with no actions.** A popover anchored to the cell (the
+   curse tooltip's fixed-position pattern), a bottom sheet on narrow screens,
+   reading live state; only a Close button. Closes on outside tap, Escape
+   (first in the Escape chain, consumed like the quick-chat picker's) or Close.
+5. **Tests.** Unit tests for `describeSpace`; e2e: a synthetic touch
+   long-press opens the inspector with the garden, the turn and selection are
+   unchanged and the release does nothing on the board; right-click opens it;
+   Escape closes it; an ordinary tap still selects.
+
+No engine changes and no change to the selection model. Open question: a
+keyboard route (e.g. `i` on a focused cell), since the tooltip is not
+reachable by keyboard today either.
