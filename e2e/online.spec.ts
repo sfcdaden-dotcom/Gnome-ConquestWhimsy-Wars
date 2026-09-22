@@ -9,6 +9,7 @@
  */
 
 import { expect, test } from '@playwright/test';
+import { setLobbyController } from './helpers';
 
 /** Two real browser contexts against the real Worker: host, join, play. */
 test('two browsers meet in a room and play a networked turn', async ({ browser }) => {
@@ -93,7 +94,7 @@ test('a spectator is seated when the host frees up a seat', async ({ browser }) 
 
   // Host fills the other seat with a bot first, so the guest arrives to a
   // table with nowhere to sit.
-  await host.getByTestId('lobby-seat-1-cpu').click();
+  await setLobbyController(host, 1, 'cpu');
   await guest.goto('/');
   await guest.getByTestId('home-online').click();
   await guest.getByTestId('online-name').fill('Bo');
@@ -103,7 +104,7 @@ test('a spectator is seated when the host frees up a seat', async ({ browser }) 
   await expect(guest.getByTestId('lobby-spectator')).toBeVisible();
 
   // The host makes room. Nobody re-joins, nobody refreshes.
-  await host.getByTestId('lobby-seat-1-human').click();
+  await setLobbyController(host, 1, 'human');
 
   await expect(guest.getByTestId('lobby-seat-1')).toContainText('(you)');
   await expect(guest.getByTestId('lobby-spectator')).toHaveCount(0);
@@ -124,7 +125,7 @@ test('a refresh keeps your seat and your hand', async ({ page }) => {
   const code = (await page.getByTestId('lobby-code').textContent())!.trim();
 
   // Playing alone: the other seat is a person's until the host says otherwise.
-  await page.getByTestId('lobby-seat-1-cpu').click();
+  await setLobbyController(page, 1, 'cpu');
   await expect(page.getByTestId('lobby-start')).toBeEnabled();
   await page.getByTestId('lobby-start').click();
   await expect(page.getByTestId('game-screen')).toBeVisible();

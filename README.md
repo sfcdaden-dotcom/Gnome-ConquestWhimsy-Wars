@@ -6,10 +6,11 @@ human hot-seat and CPU, with Easy/Normal/Hard difficulty per seat) on an N×N
 garden board — start from one of three rolled-fresh symmetrical modes
 (**Fresh**: homes only; **Bare Essentials**: a Mushroom and a Dandelion beside
 every home; **True Random**: a full map), draw your own layout in the editor,
-or pick one of the fixed classic layouts. An **advanced panel** on the setup
+or pick one of the fixed classic layouts. **Customize game** on the setup
 screen opens the rest of the game's shape: board size, the economies (starting
 wishes, wish cap, gnome board limit, reinforcements), the per-card deck
-counts, and a fixed seed. Play **local** (hot-seat and CPU on one device) or
+counts, the Center Star and a fixed seed — and its **Layouts** page manages
+layouts (the classic ones, drawing, editing, import/export). Play **local** (hot-seat and CPU on one device) or
 **online** in a private room: host, share the six-character code, and fill any
 empty seats with CPU. Online tables run a **shot clock** (a minute per action)
 so one closed laptop cannot freeze the game. Table talk runs on **quick
@@ -236,7 +237,7 @@ src/engine/   types, RNG, setup, garden presets (presets/*.json ship as
 src/net/      multiplayer: wire protocol, the room's rules, commit–reveal
 src/worker/   Cloudflare Worker entry + the room Durable Object
 src/ui/       App shell + screen router, home screen, rules viewer, setup
-              screen (difficulty + preset picker + advanced settings), online
+              screen (difficulty + layout menu + Customize game), online
               menu/lobby, game screen, board, panels, decision panel, quick
               chat, preset editor, error boundary, meta text, art (icon
               components), the gnome character creator (gnomeLook model +

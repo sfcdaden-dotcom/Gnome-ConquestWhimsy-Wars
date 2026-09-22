@@ -25,7 +25,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
-import type { CSSProperties, ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import type { CardId, CardTiming, GardenType } from '../../engine';
 import { CARD_DEFINITIONS, CLASSIC_PRESETS, CURSE_DEFINITIONS, MODE_PRESETS, PLANTABLE_GARDEN_TYPES } from '../../engine';
 import { Board } from '../Board';
@@ -40,7 +40,7 @@ import { SetupScreen } from '../SetupScreen';
 import { DEFAULT_ADVANCED_SETTINGS } from '../advancedSettings';
 import { GardenIcon, UiIcon, UnitIcon } from '../art';
 import { UI_ICON_GLYPH, UI_ICON_KINDS, UI_ICON_LABEL } from '../uiIcons';
-import { GARDEN_META, PLAYER_COLORS, PLAYER_COLOR_NAMES } from '../meta';
+import { GARDEN_META, PLAYER_COLOR_NAMES } from '../meta';
 import { unitNameLive } from '../gnomeNames';
 import { unitChipLabels } from '../selection';
 import { GnomeLooksContext } from '../gnomeLooks';
@@ -62,9 +62,6 @@ import {
 // dead `uip-` rules in the bundle). As `?raw` it is just a string in a module
 // nothing reachable imports, so it goes when the module goes.
 import previewCss from './preview.css?raw';
-// Phase 1's container and button rules, frozen and scoped to `.uip-before`,
-// for the before/after in the Surfaces section. Same `?raw` reasoning.
-import phase1Css from './phase1-surfaces.css?raw';
 
 // ---------------------------------------------------------------------------
 // Page chrome
@@ -75,7 +72,7 @@ const SECTIONS = [
   ['space', 'Spacing & radius'],
   ['type', 'Typography'],
   ['buttons', 'Buttons'],
-  ['surfaces', 'Surfaces: before / after'],
+  ['surfaces', 'Surfaces'],
   ['sidebar', 'Sidebar'],
   ['setup', 'Setup screen'],
   ['controls', 'Form controls'],
@@ -205,7 +202,6 @@ function UiLab() {
   return (
     <GnomeLooksContext value={looks}>
       <style>{previewCss}</style>
-      <style>{phase1Css}</style>
       <div className="uip">
         <header className="uip-head">
           <div>
@@ -490,8 +486,8 @@ function UiLab() {
         {/* --------------------------------------------------------------- */}
         <Section
           id="surfaces"
-          title="Surfaces: before / after"
-          note="Phase 2's container pass. Left of each pair is Phase 1 (its rules frozen in phase1-surfaces.css); right is the game now. Specimens sit on the page background, as the sidebar does, because a region's fill against the page is what now does the grouping."
+          title="Surfaces"
+          note="The three kinds of container, as index.css defines them (see the head of its Panels section). The sections below show each kind in its real component; this one pairs a region with a state side by side."
         >
           <div className="uip-panel uip-legend">
             <p>
@@ -509,173 +505,35 @@ function UiLab() {
             </p>
           </div>
 
-          <BeforeAfter label="Decision panel — your decision, and someone else's">
-            <div className="uip-rightcol uip-stack">
-              <DecisionPanel
-                state={decisions[0].state}
-                decision={decisions[0].decision}
-                legal={[]}
-                interactive
-                act={noop}
-                onRespondCard={noop}
-              />
-              <DecisionPanel
-                state={decisions[0].state}
-                decision={decisions[0].decision}
-                legal={[]}
-                interactive={false}
-                act={noop}
-                onRespondCard={noop}
-              />
-            </div>
-          </BeforeAfter>
-
-          <BeforeAfter label="Hand → cards (the cards keep their edge; the region loses its frame)">
-            <div className="uip-rightcol">
-              <HandPanel
-                state={state}
-                seat={0}
-                playable={new Set<CardId>(['nope-gnome', 'wild-growth'])}
-                onPlay={noop}
-                blocked={null}
-              />
-            </div>
-          </BeforeAfter>
-
-          <BeforeAfter label="Chat window → transcript (one region, a well for the scroll, ghost tabs)">
-            <div className="uip-rightcol tall">
-              <ChatPanel
-                state={state}
-                seat={0}
-                disabled={false}
-                muted={false}
-                onToggleMute={noop}
-                onSay={noop}
-                initialView="chat"
-              />
-            </div>
-          </BeforeAfter>
-
-          <BeforeAfter label="Fight and curses — states, so they keep a (lighter) red edge">
-            <div className="uip-rightcol uip-stack">
-              <FightPanel state={fight} interactive poofs={[]} onPass={noop} onPlayCard={noop} />
-              <CursePanel state={cursed} />
-            </div>
-          </BeforeAfter>
-
-          <BeforeAfter label="Player panels — the reference; unchanged">
-            <div className="uip-leftcol">
-              <PlayerPanels state={state} takenOverSeats={[2]} />
-            </div>
-          </BeforeAfter>
-
-          <BeforeAfter label="Action bar and targeting banner">
-            <div className="uip-stack">
-              <div className="action-bar">
-                <button type="button" className="btn">
-                  <UiIcon kind="card" /> Draw card (1 <UiIcon kind="wish" label="Wish" />)
-                </button>
-                <button type="button" className="btn" aria-haspopup="true">
-                  <UiIcon kind="plant" /> Plant Garden<span className="submenu-caret" aria-hidden="true">▸</span>
-                </button>
-                <button type="button" className="btn">
-                  End turn ⏹
-                </button>
-              </div>
-              <div className="targeting-banner">
-                <span>
-                  🎯 <b>Rocket Propelled Gnome</b>: pick a gnome.
-                </span>
-                <button type="button" className="btn small ghost">
-                  Cancel
-                </button>
-              </div>
-            </div>
-          </BeforeAfter>
-
-          <BeforeAfter label="Modal (A) — the end-of-game card, in its production markup">
-            <div className="overlay-card end-card">
-              <div className="pass-emoji">🏆</div>
-              <h2>Red wins Whimsy Wars!</h2>
-              <div className="btn-row center">
-                <button type="button" className="btn primary big">
-                  🔁 Play again (new seed)
-                </button>
-                <button type="button" className="btn big">
-                  Change setup
-                </button>
-              </div>
-              <button type="button" className="btn ghost">
-                Review the match
-              </button>
-            </div>
-          </BeforeAfter>
-
-          <BeforeAfter label="Setup — seat rows (B) holding inputs and a player's gnome (A)">
-            <div className="setup-card uip-setup">
-              <div className="seat-list">
-                {[0, 1].map((i) => (
-                  <div
-                    key={i}
-                    className="seat-row"
-                    style={{ '--pc': PLAYER_COLORS[i] } as CSSProperties}
-                  >
-                    <span className="pp-dot" title={PLAYER_COLOR_NAMES[i]} />
-                    <button type="button" className="gnome-chip" aria-label={`Customize seat ${i + 1}'s gnome`}>
-                      <UnitIcon owner={i} className="lobby-gnome" />
-                    </button>
-                    <input type="text" defaultValue={i === 0 ? 'Bramblewick' : 'Thistlebrook'} aria-label="Name" />
-                    <button type="button" className="btn small seat-controller">
-                      {i === 0 ? 'Human' : 'CPU'}
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </BeforeAfter>
-
-          <BeforeAfter label="Lobby — room code and seats">
-            <div className="setup-card uip-setup">
-              <div className="lobby-share">
-                <div className="room-code">ABC234</div>
-              </div>
-              <div className="lobby-seats">
-                <div className="lobby-seat">
-                  <span className="seat-dot" style={{ background: PLAYER_COLORS[0] }} />
-                  <span className="seat-name">Bramblewick</span>
-                  <span className="seat-status muted small">host</span>
-                </div>
-                <div className="lobby-seat">
-                  <span className="seat-dot" style={{ background: PLAYER_COLORS[1] }} />
-                  <span className="seat-name">Open seat</span>
-                  <span className="seat-status muted small">waiting…</span>
+          <div className="uip-cols">
+            <Item label="B · the action bar (a region: fill only)">
+              <div className="uip-stage">
+                <div className="action-bar">
+                  <button type="button" className="btn">
+                    <UiIcon kind="card" /> Draw card (1 <UiIcon kind="wish" label="Wish" />)
+                  </button>
+                  <button type="button" className="btn" aria-haspopup="true">
+                    <UiIcon kind="plant" /> Plant Garden<span className="submenu-caret" aria-hidden="true">▸</span>
+                  </button>
+                  <button type="button" className="btn">
+                    End turn ⏹
+                  </button>
                 </div>
               </div>
-            </div>
-          </BeforeAfter>
-
-          <BeforeAfter label="Interaction states — secondary pressed, ghost hover, selected, focus, .big">
-            <div className="uip-row">
-              <button type="button" className="btn" data-uip-state="pressed">
-                Pressed
-              </button>
-              <button type="button" className="btn ghost" data-uip-state="hover">
-                Ghost hover
-              </button>
-              <button type="button" className="btn on" aria-pressed="true">
-                Selected
-              </button>
-              <button type="button" className="btn" data-uip-state="focus">
-                Focus
-              </button>
-              <button type="button" className="btn primary" data-uip-state="focus">
-                Focus
-              </button>
-              <button type="button" className="btn primary big">
-                .big
-              </button>
-            </div>
-          </BeforeAfter>
+            </Item>
+            <Item label="A · the targeting banner (a mode: it keeps its edge)">
+              <div className="uip-stage">
+                <div className="targeting-banner">
+                  <span>
+                    🎯 <b>Rocket Propelled Gnome</b>: pick a gnome.
+                  </span>
+                  <button type="button" className="btn small ghost">
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </Item>
+          </div>
         </Section>
 
         {/* --------------------------------------------------------------- */}
@@ -1230,28 +1088,6 @@ function UiLab() {
 }
 
 /**
- * The same specimen twice: Phase 1's rules on the left (scoped by
- * `.uip-before`), the game's current rules on the right.
- */
-function BeforeAfter({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="uip-pair">
-      <div className="uip-label">{label}</div>
-      <div className="uip-pair-row">
-        <div className="uip-pair-side">
-          <div className="uip-pair-tag">Before · Phase 1</div>
-          <div className="uip-stage uip-before">{children}</div>
-        </div>
-        <div className="uip-pair-side">
-          <div className="uip-pair-tag">After · Phase 2</div>
-          <div className="uip-stage">{children}</div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/**
  * One card, in exactly the markup `HandPanel` gives it — the timing class on
  * the root, the head row with its name and timing tag, the rules text and the
  * Play button — so the gallery and a real hand cannot drift apart.
@@ -1289,11 +1125,11 @@ const RESOURCE_ICONS: Array<{ glyph: string; meaning: string; kind: string; wher
   { glyph: '☠️', meaning: 'Curse revealed / Magic Drain', kind: 'status', where: 'GameScreen, meta, DecisionPanel' },
   { glyph: '🏆', meaning: 'Winner', kind: 'status', where: 'GameScreen, meta' },
   { glyph: '🍂', meaning: 'Draw — no winner', kind: 'status', where: 'GameScreen' },
-  { glyph: '🧑', meaning: 'Human seat', kind: 'interface', where: 'panels, SetupScreen' },
-  { glyph: '🤖', meaning: 'CPU seat', kind: 'interface', where: 'panels, SetupScreen, useNetGame' },
-  { glyph: '🎲', meaning: 'Roll / re-roll', kind: 'interface', where: 'DecisionPanel, SetupScreen, GnomeCreator' },
+  { glyph: '🧑', meaning: 'Human seat (setup and lobby now say “Human” in words)', kind: 'interface', where: 'panels' },
+  { glyph: '🤖', meaning: 'CPU seat (setup and lobby now say “CPU” in words)', kind: 'interface', where: 'panels, useNetGame' },
+  { glyph: '🎲', meaning: 'Roll / re-roll, and online “Start the game”', kind: 'interface', where: 'DecisionPanel, SetupScreen, GnomeCreator, OnlineScreen, meta, interaction' },
   { glyph: '⏩', meaning: 'Fast-forward the CPU', kind: 'interface', where: 'GameScreen' },
-  { glyph: '⚙️', meaning: 'Advanced settings', kind: 'interface', where: 'SetupScreen, AdvancedSettings' },
+  { glyph: '⚙️', meaning: 'Customize game', kind: 'interface', where: 'SetupScreen' },
 ];
 
 /**

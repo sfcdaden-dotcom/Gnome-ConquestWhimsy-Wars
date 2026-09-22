@@ -408,12 +408,6 @@ h2 {
   font-weight: 600;
   flex: none;
 }
-.check-label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: var(--text-body);
-}
 
 .seat-list {
   display: flex;
@@ -444,7 +438,8 @@ h2 {
   min-width: 5.5em;
 }
 /* A CPU's difficulty sits beside its switch, only as wide as its words. */
-.seat-row select {
+.seat-row select,
+.lobby-seat select {
   flex: none;
   padding-inline: var(--space-xs);
 }
@@ -1577,8 +1572,6 @@ h2 {
 .hand-panel {
   background: var(--color-surface);
   border-radius: var(--radius-md);
-  padding: var(--space-lg);
-  flex: none;
 }
 
 /* A: a curse in force and a fight under way are STATES, and the red edge is
@@ -1630,6 +1623,7 @@ h2 {
    with a heavy frame. */
 .decision-panel {
   padding: var(--space-xl) var(--space-lg);
+  flex: none;
 }
 .decision-panel .btn-row,
 .decision-panel .btn-col {
@@ -1674,6 +1668,7 @@ h2 {
   flex-direction: column;
   flex: 0 1 auto;
   min-height: 0;
+  padding: var(--space-lg);
 }
 .hand-cards {
   display: flex;
@@ -2260,7 +2255,6 @@ h2 {
   border: 1px solid var(--color-border);
   border-radius: 16px;
   box-shadow: var(--shadow-raised);
-  padding: 10px;
 }
 /* The wheel is as wide as its ring — which is itself viewport-relative — so it
    never has to be told a width twice. */
@@ -2406,6 +2400,7 @@ h2 {
 
 /* Level 2: the chosen category's phrases (a list — they are sentences). */
 .qc-list {
+  padding: 10px;
   width: 260px;
   max-width: min(88vw, 320px);
   max-height: 60dvh;
@@ -2755,12 +2750,44 @@ h2 {
   white-space: nowrap;
 }
 
-.lobby-config {
+/* The board the room will play: the layout (a menu for the host, its name
+   for everyone else), the board size, and a line about each. Laid out like
+   local setup's preset section, minus the preview the room cannot show. */
+.lobby-board {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding-top: 4px;
-  border-top: 1px solid var(--color-border);
+  align-items: center;
+  gap: var(--space-sm);
+  text-align: center;
+  min-width: 0;
+}
+.lobby-layout-name {
+  font-weight: 600;
+}
+.lobby-card > .setup-row .setup-label {
+  width: auto;
+}
+.lobby-card > .setup-row .btn-row {
+  margin-top: 0;
+}
+
+/* Phones: the same tightening the setup screen gets. */
+@media (max-width: 560px) {
+  .lobby-screen {
+    padding: var(--space-md);
+    align-items: flex-start;
+  }
+  .lobby-card {
+    padding: var(--space-xl) var(--space-lg);
+    gap: var(--space-lg);
+    border-radius: var(--radius-lg);
+  }
+  .lobby-card .home-title {
+    font-size: var(--text-title);
+  }
+  .lobby-seat {
+    gap: var(--space-sm) var(--space-md);
+  }
 }
 
 /* What the room is waiting for. The same block on every screen in the room —

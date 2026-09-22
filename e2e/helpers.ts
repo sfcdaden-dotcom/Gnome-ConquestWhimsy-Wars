@@ -33,6 +33,13 @@ export async function setController(page: Page, seat: number, controller: 'human
   await expect(button).toHaveAttribute('data-controller', controller);
 }
 
+/** The online lobby's version of `setController`: the host's per-seat switch. */
+export async function setLobbyController(page: Page, seat: number, controller: 'human' | 'cpu'): Promise<void> {
+  const button = page.getByTestId(`lobby-seat-${seat}-controller`);
+  if ((await button.getAttribute('data-controller')) !== controller) await button.click();
+  await expect(button).toHaveAttribute('data-controller', controller);
+}
+
 /**
  * Open Customize game → Layouts, where layout management lives: the classic
  * layouts, drawing, editing, import/export and the map number.

@@ -35,6 +35,21 @@ const WISH = UI_ICON_GLYPH.wish;
 export const PLAYER_COLORS = ['#d8504d', '#3f7ad8', '#c9930a', '#9256cf'];
 export const PLAYER_COLOR_NAMES = ['Red', 'Blue', 'Yellow', 'Purple'];
 
+/**
+ * One line about a layout, for the setup screen and the online lobby — the
+ * full description is on the Layouts page. The generated modes have lines
+ * written for the purpose; other layouts use their own description, which the
+ * screen cuts to one line.
+ */
+const LAYOUT_SUMMARIES: Readonly<Record<string, string>> = {
+  fresh: 'Only Home Gardens — every other garden is one you plant.',
+  essentials: 'A Mushroom and a Dandelion beside every home, nothing else.',
+  random: 'A new symmetrical board, with fairly placed gardens.',
+};
+export function layoutSummary(def: { id: string; description: string }): string {
+  return LAYOUT_SUMMARIES[def.id] ?? def.description;
+}
+
 /** Why a seat left the game, in log-line words. */
 export const ELIMINATION_REASON_TEXT: Record<EliminationReason, string> = {
   'home-captured': 'home garden captured',

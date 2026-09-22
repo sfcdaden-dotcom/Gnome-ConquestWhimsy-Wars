@@ -33,7 +33,7 @@ import {
   posKey,
   seatHomes,
 } from '../engine';
-import { GARDEN_META, playerColor, randomSeed, PLAYER_COLOR_NAMES } from './meta';
+import { GARDEN_META, layoutSummary, playerColor, randomSeed, PLAYER_COLOR_NAMES } from './meta';
 import { GardenIcon, UnitIcon } from './art';
 import { AdvancedSettings } from './AdvancedSettings';
 import { DEFAULT_ADVANCED_SETTINGS, isDefaultSettings, parseSeedText, settingsOptions } from './advancedSettings';
@@ -91,17 +91,6 @@ const DIFFICULTY_LABELS: Record<AiDifficulty, string> = { easy: 'Easy', normal: 
 function isCustomPresetId(id: string): boolean {
   return id.startsWith('custom:');
 }
-
-/**
- * One line for the setup screen about each generated mode — the full
- * description is on the Layouts page. Other layouts show the start of their
- * own description, cut to one line.
- */
-const LAYOUT_SUMMARIES: Readonly<Record<string, string>> = {
-  fresh: 'Only Home Gardens — every other garden is one you plant.',
-  essentials: 'A Mushroom and a Dandelion beside every home, nothing else.',
-  random: 'A new symmetrical board, with fairly placed gardens.',
-};
 
 /**
  * What the editor is open on: a blank board, or a layout to start from. A
@@ -467,7 +456,7 @@ export function SetupScreen({
     centerStarSummary,
     ...(settings.seedText.trim() !== '' ? [`Seed ${settings.seedText.trim()}`] : []),
   ].join(' · ');
-  const layoutSummary = LAYOUT_SUMMARIES[presetDef.id] ?? presetDef.description;
+  const layoutLine = layoutSummary(presetDef);
 
   if (editorTarget) {
     return (
@@ -628,7 +617,7 @@ export function SetupScreen({
             )}
           </div>
           <p className="layout-summary muted small" title={presetDef.description} data-testid="layout-summary">
-            {layoutSummary}
+            {layoutLine}
           </p>
           {presetNotice && <p className="preset-description muted small">{presetNotice}</p>}
         </div>

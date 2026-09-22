@@ -276,45 +276,10 @@
   padding: 8px 12px 8px 0;
 }
 
-/* Before / after pairs (the Surfaces section). */
+/* The Surfaces section's legend. */
 .uip-legend p {
   margin: 0 0 6px;
   max-width: 90ch;
-}
-.uip-pair {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-top: 20px;
-}
-.uip-pair-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 20px;
-  align-items: flex-start;
-}
-.uip-pair-side {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.uip-pair-tag {
-  font-size: var(--text-tiny);
-  font-weight: 600;
-  color: var(--color-text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-/* Panels stacked the way the sidebar stacks them. */
-.uip-stack {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-/* A setup card narrowed to the width that matters for its rows. */
-.uip-setup {
-  width: 560px;
-  max-width: 100%;
 }
 
 /* A sidebar column at a real desktop height: `.right-col` itself supplies
