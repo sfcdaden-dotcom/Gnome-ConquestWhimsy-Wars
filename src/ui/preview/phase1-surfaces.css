@@ -314,3 +314,8 @@
   border-color: var(--color-border);
   color: var(--color-text);
 }
+/* Phase 3 gave the chat bodies a bounded height; Phase 1 let them fill. */
+.uip-before .chat-transcript,
+.uip-before .game-log {
+  height: auto;
+}

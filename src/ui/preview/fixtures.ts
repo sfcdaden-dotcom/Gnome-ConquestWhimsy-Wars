@@ -325,3 +325,10 @@ export function decisionFixtures(): DecisionFixture[] {
     },
   ];
 }
+
+/** The preview game with the first seat's hand emptied. */
+export function emptyHandFixture(): GameState {
+  return edit(previewState(), (d) => {
+    d.players[0].hand = [];
+  });
+}

@@ -94,6 +94,10 @@
   --radius-lg: 16px;
   --radius-pill: 999px;
 
+  /* The open chat window's body (transcript or log): roomy on a tall screen,
+     never the whole sidebar. */
+  --chat-body-height: clamp(160px, 28dvh, 280px);
+
   /* One puff of smoke, start to gone. Mirrored by POOF_MS in fxAssets.ts —
      the timer that takes the element off screen has to outlast the frames. */
   --poof-ms: 620ms;
@@ -1300,6 +1304,9 @@ h2 {
   font-size: var(--text-decision);
   align-items: center;
   justify-content: flex-start;
+  /* The icon and the words are one title: a long one wraps its words beside
+     the icon rather than dropping below it. */
+  flex-wrap: nowrap;
 }
 /* "…is deciding" is status, not a decision for this screen's player. */
 .decision-panel.waiting .panel-title {
@@ -1485,12 +1492,25 @@ h2 {
   padding-top: var(--space-md);
 }
 
-/* Hand */
+/* Hand.
+
+   The sidebar is ranked: the decision first, then the hand, then the chat
+   window. The hand takes the height its cards need and only gives way when
+   the column runs out, at which point the cards scroll inside it — the chat
+   window below is folded or fixed-height, so it is never what the hand loses
+   its room to. An empty hand is one line, not a reserved box. */
+.hand-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 0 1 auto;
+  min-height: 0;
+}
 .hand-cards {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  max-height: clamp(150px, 30dvh, 300px);
+  /* Most of a card stays in view, however hard the column is squeezed. */
+  min-height: 72px;
   overflow-y: auto;
 }
 .card {
@@ -1544,8 +1564,7 @@ h2 {
 /* C-leaning: the scrolling part of the chat window. A faint well marks where
    the scroll is; it is not framed again inside the window that holds it. */
 .game-log {
-  flex: 1;
-  min-height: 120px;
+  height: var(--chat-body-height);
   overflow-y: auto;
   background: var(--color-surface-subtle);
   border-radius: var(--radius-sm);
@@ -1976,24 +1995,33 @@ h2 {
 /* Chat window: tabs (chat / game log) + the radial phrase picker.      */
 /* Fixed phrases only — there is no text input to style.                */
 /* B: a region like the hand, which it sits under. */
+/* Last in the sidebar's ranking. Folded (the default) it is a row of tabs and
+   the phrase button; open, its body is a fixed, bounded height — never "the
+   rest of the column", which on a tall screen was most of it, and empty.
+
+   It sits at the FOOT of the column (margin-top: auto), with whatever the
+   hand does not use left as open page between them. That is also load-bearing:
+   the phrase picker opens upward from the button, and the column scrolls, so
+   a window riding high under a short hand would have its picker clipped off
+   the top. */
 .chat-panel {
   display: flex;
   flex-direction: column;
   gap: var(--space-sm);
-  flex: 1;
-  min-height: 0;
+  flex: none;
+  margin-top: auto;
   background: var(--color-surface);
   border-radius: var(--radius-md);
-  padding: var(--space-lg);
-}
-.chat-panel.collapsed {
-  flex: 0 0 auto;
+  padding: var(--space-md) var(--space-lg);
 }
 .chat-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 6px;
+  /* One line at every real column width; if a translation or a huge badge
+     ever outgrows it, the right-hand pair drops below rather than spilling. */
+  flex-wrap: wrap;
+  gap: 4px 6px;
   margin-bottom: 0;
 }
 .chat-tabs,
@@ -2001,6 +2029,12 @@ h2 {
   display: flex;
   align-items: center;
   gap: 4px;
+}
+/* Four controls on one line in a 280px column, badge included: a touch less
+   side padding than a small button elsewhere, and no wrapping inside one. */
+.chat-head .btn {
+  white-space: nowrap;
+  padding-inline: var(--space-sm);
 }
 .chat-unread {
   display: inline-block;
@@ -2016,8 +2050,7 @@ h2 {
   text-align: center;
 }
 .chat-transcript {
-  flex: 1;
-  min-height: 120px;
+  height: var(--chat-body-height);
   overflow-y: auto;
   background: var(--color-surface-subtle);
   border-radius: var(--radius-sm);

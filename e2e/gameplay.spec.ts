@@ -547,6 +547,7 @@ test('quick chat sends fixed phrases only, and runs out for the turn', async ({ 
 
   // It shows up as a bubble over the board and as a line in the transcript.
   await expect(page.getByTestId('quickchat-bubble-sorry')).toBeVisible();
+  await page.getByTestId('chat-tab-chat').click();
   await expect(page.getByTestId('chat-transcript')).toContainText('Sorry!');
   await expect(page.getByTestId('quickchat-left')).toHaveText('3/4');
   // The picker closes after a pick, so chat never blocks the board.
@@ -621,9 +622,17 @@ test('chat and game log share one window, and unread chat is badged', async ({ p
   await g.completeRollOff();
   await g.resolveHarvest('wish');
 
-  // Chat tab first: the transcript is shown, the event log is not.
+  // Folded by default: neither body is on screen, but saying something is.
+  await expect(page.getByTestId('chat-transcript')).toBeHidden();
+  await expect(page.getByTestId('game-log')).toBeHidden();
+  await expect(page.getByTestId('quickchat-open')).toBeVisible();
+
+  // A tab opens its body; the open tab folds it again.
+  await page.getByTestId('chat-tab-chat').click();
   await expect(page.getByTestId('chat-transcript')).toBeVisible();
   await expect(page.getByTestId('game-log')).toBeHidden();
+  await page.getByTestId('chat-tab-chat').click();
+  await expect(page.getByTestId('chat-transcript')).toBeHidden();
 
   // Switch to the log tab, then say something: the chat tab badges it.
   await page.getByTestId('chat-tab-log').click();
@@ -641,10 +650,16 @@ test('chat and game log share one window, and unread chat is badged', async ({ p
   await expect(page.getByTestId('chat-transcript')).toContainText('Good Luck!');
   await expect(page.getByTestId('chat-unread')).toBeHidden();
 
-  // Collapsing hides both bodies but keeps the composer reachable.
+  // Collapsing hides both bodies but keeps the composer reachable…
   await page.getByTestId('chat-collapse').click();
   await expect(page.getByTestId('chat-transcript')).toBeHidden();
   await expect(page.getByTestId('quickchat-open')).toBeVisible();
+
+  // …and chat said while folded is badged, so folding never hides it.
+  await page.getByTestId('quickchat-open').click();
+  await page.getByTestId('quickchat-group-greetings').click();
+  await page.getByTestId('quickchat-say-hi').click();
+  await expect(page.getByTestId('chat-unread')).toHaveText('1');
 });
 
 test('muting hides chat bubbles but keeps the transcript honest', async ({ page }) => {
@@ -659,6 +674,7 @@ test('muting hides chat bubbles but keeps the transcript honest', async ({ page 
   await page.getByTestId('quickchat-say-hi').click();
 
   await expect(page.getByTestId('quickchat-feed')).toBeHidden();
+  await page.getByTestId('chat-tab-chat').click();
   await expect(page.getByTestId('chat-transcript')).toContainText('Hi!');
 });
 
@@ -766,6 +782,8 @@ test('a chat line that names a rival is completed before it is sent', async ({ p
     await page.waitForTimeout(100);
   }
 
+  // Open the transcript (the window starts folded) to watch what is sent.
+  await page.getByTestId('chat-tab-chat').click();
   await page.getByTestId('quickchat-open').click();
   await page.getByTestId('quickchat-group-tactics').click();
 

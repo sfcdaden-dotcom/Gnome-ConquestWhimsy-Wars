@@ -40,11 +40,14 @@ import { DEFAULT_ADVANCED_SETTINGS } from '../advancedSettings';
 import { GardenIcon, UiIcon, UnitIcon } from '../art';
 import { UI_ICON_GLYPH, UI_ICON_KINDS, UI_ICON_LABEL } from '../uiIcons';
 import { GARDEN_META, PLAYER_COLORS, PLAYER_COLOR_NAMES } from '../meta';
+import { unitNameLive } from '../gnomeNames';
+import { unitChipLabels } from '../selection';
 import { GnomeLooksContext } from '../gnomeLooks';
 import {
   PREVIEW_SELECTED_KEY,
   cursedFixture,
   decisionFixtures,
+  emptyHandFixture,
   fightFixture,
   previewHighlights,
   previewLooks,
@@ -72,6 +75,7 @@ const SECTIONS = [
   ['type', 'Typography'],
   ['buttons', 'Buttons'],
   ['surfaces', 'Surfaces: before / after'],
+  ['sidebar', 'Sidebar'],
   ['controls', 'Form controls'],
   ['icons', 'Icons & resources'],
   ['gardens', 'Garden art'],
@@ -150,6 +154,10 @@ export function UiPreview() {
   const cursed = cursedFixture();
   const decisions = decisionFixtures();
   const boardPx = boardPixelSize(state.config.boardSize);
+  const emptyHand = emptyHandFixture();
+  // The seat-0 stack on (3,5): what the action bar shows for a selected gnome.
+  const stack = Object.values(state.units).filter((u) => u.pos.x === 3 && u.pos.y === 5);
+  const stackChips = unitChipLabels(state, stack);
 
   const [modalOpen, setModalOpen] = useState(false);
   const [theme, setTheme] = useState<Theme>('auto');
@@ -505,7 +513,15 @@ export function UiPreview() {
 
           <BeforeAfter label="Chat window → transcript (one region, a well for the scroll, ghost tabs)">
             <div className="uip-rightcol tall">
-              <ChatPanel state={state} seat={0} disabled={false} muted={false} onToggleMute={noop} onSay={noop} />
+              <ChatPanel
+                state={state}
+                seat={0}
+                disabled={false}
+                muted={false}
+                onToggleMute={noop}
+                onSay={noop}
+                initialView="chat"
+              />
             </div>
           </BeforeAfter>
 
@@ -634,6 +650,140 @@ export function UiPreview() {
               </button>
             </div>
           </BeforeAfter>
+        </Section>
+
+        {/* --------------------------------------------------------------- */}
+        <Section
+          id="sidebar"
+          title="Sidebar"
+          note="The right-hand column in the states that matter, each in the production .right-col at a real desktop height (720px). The ranking: what the game needs from you now, then your hand, then chat and the log — which start folded and, open, take a bounded height rather than the rest of the column."
+        >
+          <div className="uip-cols">
+            <Item label="Decision + hand + folded chat">
+              <div className="right-col uip-sidebar">
+                <DecisionPanel
+                  state={decisions[1].state}
+                  decision={decisions[1].decision}
+                  legal={[]}
+                  interactive
+                  act={noop}
+                  onRespondCard={noop}
+                />
+                <HandPanel
+                  state={state}
+                  seat={0}
+                  playable={new Set<CardId>(['nope-gnome', 'wild-growth'])}
+                  onPlay={noop}
+                  blocked={null}
+                />
+                <ChatPanel state={state} seat={0} disabled={false} muted={false} onToggleMute={noop} onSay={noop} />
+              </div>
+            </Item>
+            <Item label="No decision + hand">
+              <div className="right-col uip-sidebar">
+                <HandPanel
+                  state={state}
+                  seat={0}
+                  playable={new Set<CardId>(['nope-gnome', 'wild-growth'])}
+                  onPlay={noop}
+                  blocked={null}
+                />
+                <ChatPanel state={state} seat={0} disabled={false} muted={false} onToggleMute={noop} onSay={noop} />
+              </div>
+            </Item>
+            <Item label="Empty hand — one line, not a box">
+              <div className="right-col uip-sidebar">
+                <DecisionPanel
+                  state={decisions[0].state}
+                  decision={decisions[0].decision}
+                  legal={[]}
+                  interactive={false}
+                  act={noop}
+                  onRespondCard={noop}
+                />
+                <HandPanel state={emptyHand} seat={0} playable={new Set<CardId>()} onPlay={noop} blocked={null} />
+                <ChatPanel state={emptyHand} seat={0} disabled={false} muted={false} onToggleMute={noop} onSay={noop} />
+              </div>
+            </Item>
+            <Item label="Chat open">
+              <div className="right-col uip-sidebar">
+                <HandPanel
+                  state={state}
+                  seat={0}
+                  playable={new Set<CardId>(['nope-gnome', 'wild-growth'])}
+                  onPlay={noop}
+                  blocked={null}
+                />
+                <ChatPanel
+                  state={state}
+                  seat={0}
+                  disabled={false}
+                  muted={false}
+                  onToggleMute={noop}
+                  onSay={noop}
+                  initialView="chat"
+                />
+              </div>
+            </Item>
+            <Item label="Game log open">
+              <div className="right-col uip-sidebar">
+                <HandPanel
+                  state={state}
+                  seat={0}
+                  playable={new Set<CardId>(['nope-gnome', 'wild-growth'])}
+                  onPlay={noop}
+                  blocked={null}
+                />
+                <ChatPanel
+                  state={state}
+                  seat={0}
+                  disabled={false}
+                  muted={false}
+                  onToggleMute={noop}
+                  onSay={noop}
+                  initialView="log"
+                />
+              </div>
+            </Item>
+          </div>
+
+          <div className="uip-cols">
+            <Item
+              label="Selected-object context today: a selected gnome is shown in the ACTION BAR under the board (name, stack chips, the actions for its space). Gardens and tiles cannot be selected; their details live only in the cell's hover tooltip."
+              wide
+            >
+              <div className="action-bar">
+                <span className="selected-unit">
+                  <UnitIcon owner={0} className="inline-art" /> {unitNameLive(state, stack[0].id)}
+                </span>
+                <span className="stack-chips">
+                  {stackChips.map((c, i) => (
+                    <button
+                      key={c.unitId}
+                      type="button"
+                      className={`btn small chip${i === 0 ? ' on' : ''}`}
+                      aria-pressed={i === 0}
+                      title={c.full}
+                    >
+                      {c.short}
+                    </button>
+                  ))}
+                </span>
+                <button type="button" className="btn">
+                  <UiIcon kind="card" /> Draw card (1 <UiIcon kind="wish" label="Wish" />)
+                </button>
+                <button type="button" className="btn" aria-haspopup="true">
+                  <UiIcon kind="plant" /> Plant Garden<span className="submenu-caret" aria-hidden="true">▸</span>
+                </button>
+                <button type="button" className="btn small">
+                  Deselect
+                </button>
+                <button type="button" className="btn">
+                  End turn ⏹
+                </button>
+              </div>
+            </Item>
+          </div>
         </Section>
 
         {/* --------------------------------------------------------------- */}
@@ -964,17 +1114,17 @@ export function UiPreview() {
         <Section
           id="chat"
           title="Chat & game log"
-          note="One window with two tabs. It defaults to expanded and takes the rest of the sidebar's height — click Hide ▾ to see the collapsed form, and the Game Log tab for the transcript beside it."
+          note="One window with two tabs. It starts folded (tabs and the phrase button only); a tab opens its body at a bounded height, and the open tab or Hide folds it again. Unread chat is badged on the Chat tab whenever the chat is not on screen."
         >
           <div className="uip-cols">
-            <Item label="<ChatPanel> — click Hide ▾ / the Game Log tab">
-              <div className="uip-rightcol tall">
+            <Item label="<ChatPanel> — folded (the default); click a tab">
+              <div className="uip-rightcol">
                 <ChatPanel state={state} seat={0} disabled={false} muted={false} onToggleMute={noop} onSay={noop} />
               </div>
             </Item>
-            <Item label="<ChatPanel> — read-only (no seat), muted">
-              <div className="uip-rightcol tall">
-                <ChatPanel state={state} seat={null} disabled muted onToggleMute={noop} onSay={noop} />
+            <Item label="<ChatPanel> — read-only (no seat), muted, chat open">
+              <div className="uip-rightcol">
+                <ChatPanel state={state} seat={null} disabled muted onToggleMute={noop} onSay={noop} initialView="chat" />
               </div>
             </Item>
             <Item label="<GameLogView> on its own">

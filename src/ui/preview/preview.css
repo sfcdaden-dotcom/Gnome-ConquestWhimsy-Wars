@@ -316,3 +316,10 @@
   width: 560px;
   max-width: 100%;
 }
+
+/* A sidebar column at a real desktop height: `.right-col` itself supplies
+   the flex column, the gap and the scrolling. */
+.uip-sidebar {
+  width: 320px;
+  height: 720px;
+}
