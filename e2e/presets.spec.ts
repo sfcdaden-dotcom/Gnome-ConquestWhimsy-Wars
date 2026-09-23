@@ -440,7 +440,11 @@ test('the board zooms and pans under the HUD, which keeps its own size', async (
 
   // Zoom in far enough that the board outgrows the screen and has somewhere
   // to be panned to.
-  for (let i = 0; i < 8; i += 1) await page.getByRole('button', { name: 'Zoom in' }).click();
+  const viewportWidth = page.viewportSize()!.width;
+  for (let i = 0; i < 15 && (await content.boundingBox())!.width <= viewportWidth; i += 1) {
+    await page.getByRole('button', { name: 'Zoom in' }).click();
+  }
+  expect((await content.boundingBox())!.width).toBeGreaterThan(viewportWidth);
 
   // Dragging the board pans it rather than painting the cell it starts on.
   const before = await content.boundingBox();

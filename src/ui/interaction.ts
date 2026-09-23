@@ -356,20 +356,16 @@ export function bannerText(
   state: GameState,
   playerToAct: PlayerId | null,
   pname: (state: GameState, p: PlayerId) => string,
-  decisionLabel: (kind: PendingDecision['kind']) => string,
 ): string {
   if (state.status === 'finished') {
     return state.winner !== null ? `🏆 ${pname(state, state.winner)} wins!` : 'Game over — no winner.';
   }
   if (state.status === 'rolloff') {
-    return `🎲 Rolling for turn order — ${playerToAct !== null ? pname(state, playerToAct) : '…'} to roll`;
+    return `🎲 Turn order · ${playerToAct !== null ? `${pname(state, playerToAct)} to roll` : '…'}`;
   }
   const t = state.turn;
   if (!t) return '…';
-  let s = `Turn ${t.number} · ${pname(state, t.activePlayer)} · ${t.phase === 'harvest' ? '🌾 Harvest' : '⚡ Action'} Phase`;
-  const d = state.pendingDecision;
-  if (playerToAct !== null && (playerToAct !== t.activePlayer || d)) {
-    s += ` — ${pname(state, playerToAct)} must act${d ? ` (${decisionLabel(d.kind)})` : ''}`;
-  }
-  return s;
+  // Who owes an interrupt, and what it is, belong to the player rail's
+  // "acting" badge and the decision panel; the header only says whose turn.
+  return `Turn ${t.number} · ${pname(state, t.activePlayer)} · ${t.phase === 'harvest' ? '🌾 Harvest' : '⚡ Action'}`;
 }

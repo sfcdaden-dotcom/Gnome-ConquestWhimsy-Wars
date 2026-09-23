@@ -442,26 +442,27 @@ describe('targetChipKey', () => {
 
 describe('bannerText', () => {
   const pname = (s: GameState, p: number) => s.players[p].name;
-  const label = (k: PendingDecision['kind']) => k;
 
   it('announces the winner when the game is finished', () => {
     const s = mutate(withStack(['u1']), (d) => {
       d.status = 'finished';
       d.winner = 1;
     });
-    expect(bannerText(s, null, pname, label)).toBe('🏆 P1 wins!');
+    expect(bannerText(s, null, pname)).toBe('🏆 P1 wins!');
   });
 
   it('names the turn, seat and phase in play', () => {
     const s = withStack(['u1']);
-    expect(bannerText(s, s.turn!.activePlayer, pname, label)).toContain('⚡ Action Phase');
+    expect(bannerText(s, s.turn!.activePlayer, pname)).toContain('⚡ Action');
   });
 
-  it('calls out an interrupt by the seat that owes it', () => {
+  it('leaves an interrupt to the decision panel', () => {
     const s = mutate(withStack(['u1']), (d) => {
       d.pendingDecision = { kind: 'discard', player: 1, mustDiscard: 1 };
     });
-    expect(bannerText(s, 1, pname, label)).toContain('P1 must act (discard)');
+    const text = bannerText(s, 1, pname);
+    expect(text).toBe(`Turn ${s.turn!.number} · ${pname(s, s.turn!.activePlayer)} · ⚡ Action`);
+    expect(text).not.toContain('discard');
   });
 });
 

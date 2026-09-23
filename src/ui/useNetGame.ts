@@ -402,6 +402,7 @@ export function useNetGame(
       shotClock,
       takenOverSeats,
       tag: `room ${code}`,
+      seed: null,
     };
   }, [
     view,
