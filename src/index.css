@@ -883,26 +883,25 @@ h2 {
   transform-origin: 0 0;
   will-change: transform;
 }
-/* The zoom cluster rides above the content but below the HUD panels, pinned
-   to the viewport's corner rather than to the board. */
+/* The zoom cluster rides above the content but below the HUD panels, hung
+   under the board's bottom-right corner (PanZoom places it and keeps a strip
+   free for it, so it never sits on a cell): − 117% + Fit, in one row. */
 .panzoom-controls {
   position: absolute;
-  right: calc(var(--pz-inset-right, 0px) + 10px);
-  top: calc(
-    (var(--pz-inset-top, 0px) + 100% - var(--pz-inset-bottom, 0px)) / 2
-  );
-  transform: translateY(-50%);
+  transform: translateX(-100%);
   display: flex;
-  /* Down the right edge, in the gap the HUD leaves between its panels — a
-     corner would be under one of them on a narrow screen. */
-  flex-direction: column;
   align-items: center;
-  gap: 4px;
-  padding: 4px 6px;
-  border-radius: 999px;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--radius-sm);
   border: 1px solid var(--color-border);
   background: color-mix(in srgb, var(--color-surface) 92%, transparent);
   box-shadow: var(--shadow-raised);
+  white-space: nowrap;
+}
+.panzoom-controls .btn.small {
+  min-width: 28px;
+  padding: 2px var(--space-sm);
 }
 .panzoom-level {
   font-family: var(--mono);
@@ -1128,6 +1127,30 @@ h2 {
   min-height: 0;
   min-width: 0;
   overflow-y: auto;
+}
+
+/* The two side columns read as rails either side of the board — player rail |
+   board | gameplay rail — through a faint wash rather than another bordered
+   box. The panels inside keep their own cards. */
+.main > .left-col,
+.main > .right-col {
+  padding: 8px;
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--color-surface-tint) 30%, transparent);
+}
+.rail-heading {
+  margin: 0 2px;
+  font-size: var(--text-tiny);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+.end-seed {
+  margin: 10px 0 0;
+  font-family: var(--mono);
+  font-size: var(--text-tiny);
+  color: var(--color-text-muted);
 }
 
 .board-wrap {
@@ -2480,6 +2503,13 @@ h2 {
   .right-col {
     overflow-y: visible;
   }
+  /* Stacked, the rails are just rows between the board and the page: the
+     cards carry themselves and a wash would only double them up. */
+  .main > .left-col,
+  .main > .right-col {
+    padding: 0;
+    background: none;
+  }
   /* min-height: 0 exists for the desktop columns' internal scrolling; in
      stacked mode rows must size to their content (the page scrolls instead),
      otherwise the board overflows its collapsed grid row onto the panels. */
@@ -2517,6 +2547,9 @@ h2 {
   }
   .left-col > * {
     flex: 1 1 220px;
+  }
+  .left-col > .rail-heading {
+    flex: 0 0 100%;
   }
   /* Stacked, the board already fills the width — a corner card would sit on
      top of it, so the replay goes under the board instead of beside it. */

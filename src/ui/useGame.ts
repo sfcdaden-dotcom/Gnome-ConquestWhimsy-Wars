@@ -76,8 +76,17 @@ export interface GameSession {
    * carried here, alongside the state, rather than inside it.
    */
   takenOverSeats: PlayerId[];
-  /** Short label for the top bar: the seed locally, the room code online. */
-  tag: string;
+  /**
+   * Short label for the top bar — the room code online, which is the one thing
+   * a player may need to read out mid-game (a friend who dropped, a TV board
+   * view). Null locally: the seed means nothing during play.
+   */
+  tag: string | null;
+  /**
+   * The seed a local game was dealt from, shown on the end card so a board
+   * worth replaying can be typed back into Advanced. Null online.
+   */
+  seed: number | null;
 }
 
 const CPU_DELAY_MS = 400;
@@ -211,6 +220,7 @@ export function useGame(options: CreateGameOptions, seed: number): GameSession {
     confirmPass,
     shotClock: null,
     takenOverSeats: EMPTY_SEATS,
-    tag: `#${seed}`,
+    tag: null,
+    seed,
   };
 }

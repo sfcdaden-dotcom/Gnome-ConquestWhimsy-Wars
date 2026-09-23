@@ -17,7 +17,7 @@ import { Board } from './Board';
 import { DecisionPanel } from './DecisionPanel';
 import { FightPanel, FightPlaybackCard, HandPanel, PlayerPanels } from './panels';
 import { ChatPanel, QuickChatFeed } from './QuickChat';
-import { GARDEN_META, cardName, cardText, decisionLabel, playerColor, pname } from './meta';
+import { GARDEN_META, cardName, cardText, playerColor, pname } from './meta';
 import { GardenIcon, UiIcon, UnitIcon } from './art';
 import { unitNameLive } from './gnomeNames';
 import { actionableUnitsAt, unitChipLabels } from './selection';
@@ -392,18 +392,9 @@ export function GameScreen({ game: g, onPlayAgain, onQuit }: GameScreenProps) {
           <UnitIcon className="brand-art" /> Whimsy Wars
         </span>
         <span className="banner" data-testid="banner">
-          {bannerText(state, playerToAct, pname, decisionLabel)}
+          {bannerText(state, playerToAct, pname)}
         </span>
-        {g.canFastForward && (
-          <label className="ff-toggle" title="Skip CPU pacing and fight animations">
-            <input
-              type="checkbox"
-              checked={g.fastForward}
-              onChange={(e) => g.setFastForward(e.target.checked)}
-            />
-            ⏩ fast CPU
-          </label>
-        )}
+        {/* Utilities, grouped on the right: nothing here is game state. */}
         {g.shotClock && (
           <ShotClockPill
             clock={g.shotClock}
@@ -411,7 +402,21 @@ export function GameScreen({ game: g, onPlayAgain, onQuit }: GameScreenProps) {
             yours={g.humanSeats.includes(g.shotClock.seat)}
           />
         )}
-        <span className="seed-tag" title="Game id">{g.tag}</span>
+        {g.canFastForward && (
+          <label className="ff-toggle" title="Skip CPU pacing and fight animations">
+            <input
+              type="checkbox"
+              checked={g.fastForward}
+              onChange={(e) => g.setFastForward(e.target.checked)}
+            />
+            ⏩ Fast CPU
+          </label>
+        )}
+        {g.tag !== null && (
+          <span className="seed-tag" title="Room code">
+            {g.tag}
+          </span>
+        )}
         {state.status === 'finished' && reviewing && (
           <button
             type="button"
@@ -481,6 +486,7 @@ export function GameScreen({ game: g, onPlayAgain, onQuit }: GameScreenProps) {
         </PanZoom>
 
         <aside className="left-col" ref={leftCol}>
+          <h2 className="rail-heading">Players</h2>
           <PlayerPanels state={state} takenOverSeats={g.takenOverSeats} />
           {state.activeCurses.length > 0 && <CursePanel state={state} />}
         </aside>
@@ -542,6 +548,20 @@ export function GameScreen({ game: g, onPlayAgain, onQuit }: GameScreenProps) {
         <aside className="right-col" ref={rightCol}>
           {/* fightRespond → FightPanel; cardTargeting → the board-footer
               TargetingBanner. Everything else gets the DecisionPanel. */}
+          {/* Another seat picking card targets has no banner here, so it gets
+              the plain "…is deciding" panel rather than nothing at all. */}
+          {decision &&
+            decision.kind === 'cardTargeting' &&
+            !(interactive && decision.player === playerToAct) && (
+              <DecisionPanel
+                state={state}
+                decision={decision}
+                legal={legal}
+                interactive={false}
+                act={act}
+                onRespondCard={(cardId, player) => startCardPlay(cardId, true, player)}
+              />
+            )}
           {decision && decision.kind !== 'fightRespond' && decision.kind !== 'cardTargeting' && (
             <DecisionPanel
               state={state}
@@ -594,6 +614,7 @@ export function GameScreen({ game: g, onPlayAgain, onQuit }: GameScreenProps) {
       {state.status === 'finished' && !reviewing ? (
         <EndOverlay
           state={state}
+          seed={g.seed}
           onPlayAgain={onPlayAgain}
           onQuit={onQuit}
           onReview={() => setReviewing(true)}
@@ -879,11 +900,13 @@ function PassOverlay({
 
 function EndOverlay({
   state,
+  seed,
   onPlayAgain,
   onQuit,
   onReview,
 }: {
   state: GameState;
+  seed: number | null;
   onPlayAgain?: () => void;
   onQuit: () => void;
   onReview: () => void;
@@ -915,6 +938,13 @@ function EndOverlay({
         <button type="button" className="btn ghost" data-testid="review-match" onClick={onReview}>
           🔍 Review the match — board &amp; full log
         </button>
+        {/* The one place the seed shows: enough to deal this board again
+            from Advanced settings, without a number sitting in the header. */}
+        {seed !== null && (
+          <p className="end-seed" data-testid="end-seed">
+            Game #{seed}
+          </p>
+        )}
       </div>
     </div>
   );

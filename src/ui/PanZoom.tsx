@@ -23,6 +23,15 @@ import type { Insets, Point, Size, View } from './panZoom';
 /** Pointer travel (px) that turns a press into a pan rather than a click. */
 const DRAG_THRESHOLD = 4;
 
+/**
+ * The zoom cluster hangs just under the FITTED board's bottom-right corner, so
+ * the strip it sits in is taken out of the free space before fitting: the
+ * board lands above it instead of under it, and no fitted cell is hidden by a
+ * button. (Fit already leaves a margin, which the cluster shares.)
+ */
+const CONTROLS_GAP = 6;
+const CONTROLS_RESERVE = 24;
+
 export interface PanZoomProps {
   /** Natural pixel size of the content, before any zoom. */
   contentWidth: number;
@@ -57,11 +66,12 @@ export function PanZoom({
   contentHeight,
   className,
   label,
-  insets = NO_INSETS,
+  insets: givenInsets = NO_INSETS,
   maxFitScale = 1,
   controls = true,
   children,
 }: PanZoomProps) {
+  const insets: Insets = controls ? { ...givenInsets, bottom: givenInsets.bottom + CONTROLS_RESERVE } : givenInsets;
   const viewportRef = useRef<HTMLDivElement>(null);
   const [viewport, setViewport] = useState<Size>({ width: 0, height: 0 });
   const [view, setView] = useState<View>({ scale: 1, x: 0, y: 0 });
@@ -240,20 +250,19 @@ export function PanZoom({
 
   const percent = Math.round(view.scale * 100);
 
+  // Against the board: right-aligned to the fitted board's right edge, just
+  // below its bottom edge. The fitted board, not the live one — a cluster that
+  // followed the zoom would slide out from under the cursor between clicks.
+  const fitted = fitView(content, viewport, insets, undefined, maxFitScale);
+  const controlsAt = {
+    left: fitted.x + contentWidth * fitted.scale,
+    top: fitted.y + contentHeight * fitted.scale + CONTROLS_GAP,
+  };
+
   return (
     <div
       ref={viewportRef}
       className={`panzoom${className ? ` ${className}` : ''}`}
-      // The controls sit inside the free space too, so they are not parked
-      // under whatever covers the viewport's edge.
-      style={
-        {
-          '--pz-inset-top': `${insets.top}px`,
-          '--pz-inset-right': `${insets.right}px`,
-          '--pz-inset-bottom': `${insets.bottom}px`,
-          '--pz-inset-left': `${insets.left}px`,
-        } as CSSProperties
-      }
       data-panning={panning}
       role="region"
       aria-label={label}
@@ -281,7 +290,11 @@ export function PanZoom({
       </div>
 
       {controls && (
-      <div className="panzoom-controls" onPointerDown={(e) => e.stopPropagation()}>
+      <div
+        className="panzoom-controls"
+        style={{ left: `${controlsAt.left}px`, top: `${controlsAt.top}px` }}
+        onPointerDown={(e) => e.stopPropagation()}
+      >
         <button
           type="button"
           className="btn small"
@@ -312,7 +325,7 @@ export function PanZoom({
           aria-label="Fit board to screen"
           title="Fit to screen (0)"
         >
-          ⤢
+          Fit
         </button>
       </div>
       )}
