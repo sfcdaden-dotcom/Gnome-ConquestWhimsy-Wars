@@ -1,17 +1,19 @@
 /**
- * New-game setup: player count, per-seat name + human/CPU, board layout, and
- * an advanced panel (board size, the wish/gnome economies, the Center Star and
- * its boon, the deck, the garden budget and the seed) behind a button.
+ * New-game setup. The default screen holds only what an ordinary game needs:
+ * player count, the seats (name, gnome, Human/CPU and a CPU's difficulty),
+ * the board preview with its layout menu, size and re-roll, and Start. Every
+ * other knob is behind Customize Game — board size, the economies, the Center
+ * Star, the deck, the garden budget and the seed on its main page, and layout
+ * management (classic layouts, drawing, editing, import/export, the map
+ * number) on its Layouts page.
  *
- * The layout menu leads with the three starting-board MODES — Fresh, Bare
- * Essentials, True Random — which are generated, so they fit every board size
- * the advanced panel offers. The fixed classic layouts are mostly drawn for a
- * 7×7 and would otherwise be most of the menu, so they sit behind a "Classic
- * layouts" toggle; the toggle opens itself whenever a classic is the current
- * selection, so a preset arriving from anywhere else is never invisible.
+ * The layout menu names what will be PLAYED, never an action: the three
+ * generated modes (which fit every board size), this session's own layouts,
+ * and any classic chosen on the Layouts page this session. So whatever is
+ * selected, the main screen can say what it is.
  */
 
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { CSSProperties } from 'react';
 import type {
   AiDifficulty,
@@ -31,7 +33,7 @@ import {
   posKey,
   seatHomes,
 } from '../engine';
-import { GARDEN_META, playerColor, randomSeed, PLAYER_COLOR_NAMES } from './meta';
+import { GARDEN_META, layoutSummary, playerColor, randomSeed, PLAYER_COLOR_NAMES } from './meta';
 import { GardenIcon, UnitIcon } from './art';
 import { AdvancedSettings } from './AdvancedSettings';
 import { DEFAULT_ADVANCED_SETTINGS, isDefaultSettings, parseSeedText, settingsOptions } from './advancedSettings';
@@ -89,15 +91,6 @@ const DIFFICULTY_LABELS: Record<AiDifficulty, string> = { easy: 'Easy', normal: 
 function isCustomPresetId(id: string): boolean {
   return id.startsWith('custom:');
 }
-
-/**
- * Dropdown value for "Custom": an action, not a preset. Picking it opens the
- * editor on a blank board and leaves the selection alone until the editor
- * hands back a finished layout — so backing out keeps whatever was chosen
- * before. (Editing a layout already selected is the ✏️ Edit button beside it,
- * so "Custom" always means "draw a new one".)
- */
-const CUSTOM_PRESET_OPTION = '__custom__';
 
 /**
  * What the editor is open on: a blank board, or a layout to start from. A
@@ -210,21 +203,25 @@ export function SetupScreen({
   const [error, setError] = useState<string | null>(null);
   const [settings, setSettings] = useState<AdvancedSettingsValue>(DEFAULT_ADVANCED_SETTINGS);
   const [advancedOpen, setAdvancedOpen] = useState(false);
-  /** Whether the menu also lists the fixed classic layouts (see the note up top). */
-  const [showClassic, setShowClassic] = useState(false);
+  /** Classic layouts chosen on the Layouts page this session: they join the menu. */
+  const [usedClassics, setUsedClassics] = useState<ReadonlySet<string>>(() => new Set());
+  /**
+   * The editor, requested from the Customize dialog. It opens on the render
+   * AFTER the dialog's settings were applied, so it sees the board size just
+   * chosen rather than the one before it.
+   */
+  const [pendingEditor, setPendingEditor] = useState<'new' | 'edit' | null>(null);
   /** Explains a preset the board size forced us to change (cleared on the next choice). */
   const [presetNotice, setPresetNotice] = useState<string | null>(null);
   // The procedural preset's map seed, kept apart from the game seed so
   // re-rolling the board doesn't also re-roll the dice and the deck.
   const [layoutSeed, setLayoutSeed] = useState(randomSeed);
-  const importInputRef = useRef<HTMLInputElement>(null);
 
   const allPresets = [...GARDEN_PRESETS, ...customPresets];
-  const classicSelected = CLASSIC_PRESETS.some((p) => p.id === preset);
-  // A classic can be selected without the toggle — the board-size fallback
-  // below, or a session that started on one — and a selection the menu does
-  // not list would render as blank.
-  const classicVisible = showClassic || classicSelected;
+  // A classic can also become the selection without the Layouts page (the
+  // board-size fallback below), and a selection the menu does not list would
+  // render as blank — so the current one is always in.
+  const menuClassics = CLASSIC_PRESETS.filter((p) => usedClassics.has(p.id) || p.id === preset);
   const presetDef = allPresets.find((p) => p.id === preset) ?? allPresets.find((p) => p.id === DEFAULT_GARDEN_PRESET_ID)!;
   /** The selected preset, when it is one the player drew (remove applies only to those). */
   const selectedCustom = isCustomPresetId(preset) ? customPresets.find((p) => p.id === preset) : undefined;
@@ -338,20 +335,32 @@ export function SetupScreen({
     setEditorTarget(null);
   }
 
-  /** Dropdown handler: every option but "Custom" resolves to a preset id. */
-  function choosePreset(value: string) {
+  /** Every choice of layout, from the menu or the Layouts page, lands here. */
+  function choosePreset(id: string) {
     setPresetNotice(null);
-    if (value === CUSTOM_PRESET_OPTION) {
-      setEditorTarget({ mode: 'new' });
-      return;
-    }
-    setPreset(value);
+    setPreset(id);
+    if (CLASSIC_PRESETS.some((p) => p.id === id)) setUsedClassics((s) => new Set(s).add(id));
   }
 
-  /** Can this layout be played on the board the advanced panel is set to? */
-  function presetFits(def: GardenPresetDef): boolean {
-    return fixedBoardSize(def) !== null || def.minBoardSize <= settings.boardSize;
+  /** Can this layout be played on an `size`×`size` board? */
+  function layoutFits(def: GardenPresetDef, size: number): boolean {
+    return fixedBoardSize(def) !== null || def.minBoardSize <= size;
   }
+  const presetFits = (def: GardenPresetDef) => layoutFits(def, settings.boardSize);
+
+  /** Leave the Customize dialog for the editor, applying its settings on the way. */
+  function openEditorFromDialog(next: AdvancedSettingsValue, mode: 'new' | 'edit') {
+    applySettings(next);
+    setPendingEditor(mode);
+  }
+  useEffect(() => {
+    if (pendingEditor === null) return;
+    setEditorTarget(pendingEditor === 'new' ? { mode: 'new' } : { mode: 'edit', draft: selectionAsDraft() });
+    setPendingEditor(null);
+    // selectionAsDraft reads this render's layout, which is the point: the
+    // one after the dialog's settings landed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingEditor]);
 
   /**
    * Closing the advanced panel can strand the selected preset — Gauntlet needs
@@ -388,6 +397,7 @@ export function SetupScreen({
         const def = parseCustomPresetFile(String(reader.result));
         setCustomPresets((list) => [...list, def]);
         setPreset(def.id);
+        setPresetNotice(null);
         setError(null);
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Could not read that preset file.');
@@ -437,10 +447,16 @@ export function SetupScreen({
   }
 
   const creatorSeat = gnomeSeat !== null && gnomeSeat < count ? gnomeSeat : null;
-  /** The Center Star lives in the advanced panel now, so the summary line says where it stands. */
+  /** What "Customised" means, for its tooltip: the star and a pinned seed. */
   const centerStarSummary = settings.centerStar
-    ? `⭐ ${CENTER_STAR_BOONS.find((b) => b.id === settings.centerStarBoon)?.label ?? settings.centerStarBoon}`
-    : 'no Center Star';
+    ? `Center Star: ${CENTER_STAR_BOONS.find((b) => b.id === settings.centerStarBoon)?.label ?? settings.centerStarBoon}`
+    : 'No Center Star';
+  const customisedTitle = [
+    'Some settings differ from the defaults.',
+    centerStarSummary,
+    ...(settings.seedText.trim() !== '' ? [`Seed ${settings.seedText.trim()}`] : []),
+  ].join(' · ');
+  const layoutLine = layoutSummary(presetDef);
 
   if (editorTarget) {
     return (
@@ -472,7 +488,8 @@ export function SetupScreen({
               <button
                 key={n}
                 type="button"
-                className={`btn${count === n ? ' accent' : ''}`}
+                className={`btn${count === n ? ' on' : ''}`}
+                aria-pressed={count === n}
                 data-testid={`player-count-${n}`}
                 onClick={() => setCount(n)}
               >
@@ -503,24 +520,20 @@ export function SetupScreen({
                 aria-label={`Seat ${i + 1} name`}
                 onChange={(e) => updateSeat(i, { name: e.target.value })}
               />
-              <div className="btn-row">
-                <button
-                  type="button"
-                  className={`btn small${seat.controller === 'human' ? ' accent' : ''}`}
-                  data-testid={`seat-${i}-human`}
-                  onClick={() => updateSeat(i, { controller: 'human' })}
-                >
-                  🧑 Human
-                </button>
-                <button
-                  type="button"
-                  className={`btn small${seat.controller === 'cpu' ? ' accent' : ''}`}
-                  data-testid={`seat-${i}-cpu`}
-                  onClick={() => updateSeat(i, { controller: 'cpu' })}
-                >
-                  🤖 CPU
-                </button>
-              </div>
+              {/* One button that says who is playing the seat and switches it:
+                  Human ⇄ CPU. Two buttons for a two-way choice cost a phone a
+                  whole row. */}
+              <button
+                type="button"
+                className="btn small seat-controller"
+                data-testid={`seat-${i}-controller`}
+                data-controller={seat.controller}
+                aria-label={`Seat ${i + 1}: ${seat.controller === 'human' ? 'Human' : 'CPU'} — switch to ${seat.controller === 'human' ? 'CPU' : 'Human'}`}
+                title={`Switch to ${seat.controller === 'human' ? 'CPU' : 'Human'}`}
+                onClick={() => updateSeat(i, { controller: seat.controller === 'human' ? 'cpu' : 'human' })}
+              >
+                {seat.controller === 'human' ? 'Human' : 'CPU'}
+              </button>
               {seat.controller === 'cpu' && (
                 <select
                   className="preset-select small"
@@ -539,7 +552,9 @@ export function SetupScreen({
           ))}
         </div>
 
-        {/* Preview first, then every preset control together underneath it. */}
+        {/* The board: its picture, what it is, and a re-roll. Managing layouts
+            is on the Layouts page of Customize Game. No label in here — the
+            menu's own value says what the control is. */}
         <div className="preset-section" data-testid="preset-section">
           <LayoutPreview layout={previewLayout} playerCount={count} centerStar={settings.centerStar} />
           <div className="preset-controls">
@@ -567,9 +582,9 @@ export function SetupScreen({
                   ))}
                 </optgroup>
               )}
-              {classicVisible && (
+              {menuClassics.length > 0 && (
                 <optgroup label="Classic layouts">
-                  {CLASSIC_PRESETS.map((p) => (
+                  {menuClassics.map((p) => (
                     <option key={p.id} value={p.id} disabled={!presetFits(p)}>
                       {p.label}
                       {presetFits(p) ? '' : ` (needs ${p.minBoardSize}×${p.minBoardSize})`}
@@ -577,109 +592,66 @@ export function SetupScreen({
                   ))}
                 </optgroup>
               )}
-              <option value={CUSTOM_PRESET_OPTION}>Custom — draw your own…</option>
             </select>
-            <div className="btn-row">
-              {rolled && (
-                <>
-                  <button
-                    type="button"
-                    className="btn small"
-                    data-testid="reroll-layout"
-                    onClick={() => setLayoutSeed(randomSeed())}
-                  >
-                    🎲 Re-roll the map
-                  </button>
-                  <span className="muted small">Map #{layoutSeed}</span>
-                </>
-              )}
-              <button type="button" className="btn small" onClick={() => importInputRef.current?.click()}>
-                📂 Import…
-              </button>
-              {/* The classics stay one click away rather than in the menu.
-                  Hiding them is refused while one is selected, since the menu
-                  would then show a blank selection. */}
-              <button
-                type="button"
-                className={`btn small${classicVisible ? ' accent' : ''}`}
-                data-testid="toggle-classic-presets"
-                disabled={classicSelected}
-                title={
-                  classicSelected
-                    ? 'A classic layout is selected — pick a mode to fold these away again.'
-                    : 'The fixed hand-drawn layouts (Orchard, Fortress, Gauntlet, …)'
-                }
-                onClick={() => setShowClassic((v) => !v)}
-              >
-                🗂️ Classic layouts
-              </button>
-              {/* Edit/Export work on any preset — a built-in opens as a fork,
-                  and its exported .json is what `src/engine/presets/` takes. */}
+            <span
+              className="board-dims muted small"
+              data-testid="board-dims"
+              title={
+                fixedBoardSize(presetDef) !== null
+                  ? 'Fixed by this layout'
+                  : 'Board size — change it in Customize game'
+              }
+            >
+              {boardSize}×{boardSize}
+            </span>
+            {rolled && (
               <button
                 type="button"
                 className="btn small"
-                data-testid="edit-preset"
-                onClick={() => setEditorTarget({ mode: 'edit', draft: selectionAsDraft() })}
-                title={selectedCustom ? 'Edit this layout' : 'Open this layout in the editor as a new preset'}
+                data-testid="reroll-layout"
+                title="Roll a new map in this mode"
+                onClick={() => setLayoutSeed(randomSeed())}
               >
-                ✏️ Edit
+                🎲 Re-roll
               </button>
-              <button
-                type="button"
-                className="btn small"
-                data-testid="export-preset"
-                onClick={() => downloadCustomPreset(selectionAsPreset(), previewLayout.boardSize)}
-              >
-                💾 Export
-              </button>
-              {selectedCustom && (
-                <button type="button" className="btn small warn" onClick={() => removeCustomPreset(selectedCustom.id)}>
-                  🗑️ Remove
-                </button>
-              )}
-              <input
-                ref={importInputRef}
-                type="file"
-                accept="application/json,.json"
-                className="visually-hidden"
-                aria-label="Import a garden preset file"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) importPresetFile(file);
-                  e.target.value = '';
-                }}
-              />
-            </div>
+            )}
           </div>
-          <p className="preset-description muted small">{presetDef.description}</p>
-          <p className="preset-description muted small">
-            Board: {boardSize}×{boardSize}
-            {fixedBoardSize(presetDef) !== null && ' (fixed by this layout)'}
+          <p className="layout-summary muted small" title={presetDef.description} data-testid="layout-summary">
+            {layoutLine}
           </p>
           {presetNotice && <p className="preset-description muted small">{presetNotice}</p>}
         </div>
 
-        <div className="setup-row">
-          <span className="setup-label">Advanced</span>
-          <div className="btn-row">
+        {error && <div className="setup-error">{error}</div>}
+
+        <button type="button" className="btn primary big" data-testid="start-game" onClick={start}>
+          🌱 Start the war
+        </button>
+
+        <div className="setup-footer">
+          {onBack ? (
+            <button type="button" className="btn ghost" data-testid="setup-back" onClick={onBack}>
+              ← Back
+            </button>
+          ) : (
+            <span />
+          )}
+          <span className="setup-customize">
+            {!isDefaultSettings(settings) && (
+              <span className="customised-tag" data-testid="customised-tag" title={customisedTitle}>
+                Customised
+              </span>
+            )}
             <button
               type="button"
-              className="btn small"
+              className="btn ghost"
               data-testid="open-advanced"
               onClick={() => setAdvancedOpen(true)}
             >
-              ⚙️ Advanced settings{isDefaultSettings(settings) ? '' : ' •'}
+              ⚙️ Customize game
             </button>
-            {!isDefaultSettings(settings) && (
-              <span className="muted small">
-                Customised · {centerStarSummary}
-                {settings.seedText.trim() !== '' && ` · seed ${settings.seedText.trim()}`}
-              </span>
-            )}
-          </div>
+          </span>
         </div>
-
-        {error && <div className="setup-error">{error}</div>}
 
         {advancedOpen && (
           <AdvancedSettings
@@ -691,6 +663,21 @@ export function SetupScreen({
                 ? `“${presetDef.label}” is drawn on a fixed ${boardSize}×${boardSize} board. Pick a scaling layout to change the board size.`
                 : undefined
             }
+            layouts={{
+              selected: presetDef,
+              boardSize,
+              mapNumber: rolled ? layoutSeed : null,
+              classics: CLASSIC_PRESETS,
+              session: customPresets,
+              fits: layoutFits,
+              error,
+              onSelect: choosePreset,
+              onImport: importPresetFile,
+              onExport: () => downloadCustomPreset(selectionAsPreset(), previewLayout.boardSize),
+              onRemove: () => selectedCustom && removeCustomPreset(selectedCustom.id),
+            }}
+            onDrawLayout={(next) => openEditorFromDialog(next, 'new')}
+            onEditLayout={(next) => openEditorFromDialog(next, 'edit')}
           />
         )}
 
@@ -707,15 +694,6 @@ export function SetupScreen({
           />
         )}
 
-        <button type="button" className="btn accent big" data-testid="start-game" onClick={start}>
-          🌱 Start the war
-        </button>
-
-        {onBack && (
-          <button type="button" className="btn ghost" data-testid="setup-back" onClick={onBack}>
-            ← Back
-          </button>
-        )}
       </div>
     </div>
   );

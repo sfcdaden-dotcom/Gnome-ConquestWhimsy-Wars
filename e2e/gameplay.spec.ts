@@ -6,7 +6,7 @@
 
 import type { Page } from '@playwright/test';
 import { expect, test } from '@playwright/test';
-import { Game, setSeed, stepToward } from './helpers';
+import { Game, openLayouts, setController, setSeed, stepToward } from './helpers';
 
 const SEED = 4242;
 
@@ -36,6 +36,7 @@ test('harvests the Home Garden for a Wish and for a Gnome', async ({ page }) => 
   // so the harvest is clamped — the count holds at the cap rather than rising.
   expect(await g.decision()).toBe('homeHarvest');
   const before = await g.wishes(await g.playerToAct());
+  expect(before).toBe(3);
   await page.getByTestId('home-harvest-wish').click();
   await g.ready();
   const active = await g.activePlayer();
@@ -493,10 +494,36 @@ test('True Random is the default mode and previews a symmetric map', async ({ pa
   expect(homes).toHaveLength(2);
 });
 
+/** The rolled map's number, read off the Layouts page (and closed again). */
+async function mapNumber(page: Page): Promise<string | null> {
+  await openLayouts(page);
+  const text = await page.getByTestId('layout-map-number').textContent();
+  await page.getByTestId('advanced-cancel').click();
+  return text;
+}
+
+test("a seat's one button switches it between Human and CPU", async ({ page }) => {
+  await openSetup(page);
+  const seat1 = page.getByTestId('seat-1-controller');
+
+  // Blue starts as a CPU, with its difficulty beside the switch.
+  await expect(seat1).toHaveText('CPU');
+  await expect(page.getByLabel('Seat 2 CPU difficulty')).toBeVisible();
+
+  // One click hands it to a person, and the difficulty goes with the CPU.
+  await seat1.click();
+  await expect(seat1).toHaveText('Human');
+  await expect(seat1).toHaveAttribute('data-controller', 'human');
+  await expect(page.getByLabel('Seat 2 CPU difficulty')).toHaveCount(0);
+
+  // And back.
+  await seat1.click();
+  await expect(seat1).toHaveText('CPU');
+});
+
 test('re-rolling the map changes the preview', async ({ page }) => {
   await openSetup(page);
-  const label = page.getByText(/^Map #/);
-  const before = await label.textContent();
+  const before = await mapNumber(page);
   const first = await readLayout(page, '.preset-preview');
 
   // A re-roll could in principle repeat a map; a few attempts makes that moot.
@@ -507,7 +534,7 @@ test('re-rolling the map changes the preview', async ({ page }) => {
     changed = JSON.stringify(next) !== JSON.stringify(first);
   }
   expect(changed).toBe(true);
-  expect(await label.textContent()).not.toBe(before);
+  expect(await mapNumber(page)).not.toBe(before);
 });
 
 test('plays exactly the map the setup screen previewed', async ({ page }) => {
@@ -516,8 +543,8 @@ test('plays exactly the map the setup screen previewed', async ({ page }) => {
   const previewed = await readLayout(page, '.preset-preview');
 
   await page.getByTestId('player-count-2').click();
-  await page.getByTestId('seat-0-human').click();
-  await page.getByTestId('seat-1-human').click();
+  await setController(page, 0, 'human');
+  await setController(page, 1, 'human');
   await setSeed(page, SEED);
   await page.getByTestId('start-game').click();
   await expect(page.getByTestId('game-screen')).toBeVisible();
@@ -546,6 +573,7 @@ test('quick chat sends fixed phrases only, and runs out for the turn', async ({ 
 
   // It shows up as a bubble over the board and as a line in the transcript.
   await expect(page.getByTestId('quickchat-bubble-sorry')).toBeVisible();
+  await page.getByTestId('chat-tab-chat').click();
   await expect(page.getByTestId('chat-transcript')).toContainText('Sorry!');
   await expect(page.getByTestId('quickchat-left')).toHaveText('3/4');
   // The picker closes after a pick, so chat never blocks the board.
@@ -620,9 +648,17 @@ test('chat and game log share one window, and unread chat is badged', async ({ p
   await g.completeRollOff();
   await g.resolveHarvest('wish');
 
-  // Chat tab first: the transcript is shown, the event log is not.
+  // Folded by default: neither body is on screen, but saying something is.
+  await expect(page.getByTestId('chat-transcript')).toBeHidden();
+  await expect(page.getByTestId('game-log')).toBeHidden();
+  await expect(page.getByTestId('quickchat-open')).toBeVisible();
+
+  // A tab opens its body; the open tab folds it again.
+  await page.getByTestId('chat-tab-chat').click();
   await expect(page.getByTestId('chat-transcript')).toBeVisible();
   await expect(page.getByTestId('game-log')).toBeHidden();
+  await page.getByTestId('chat-tab-chat').click();
+  await expect(page.getByTestId('chat-transcript')).toBeHidden();
 
   // Switch to the log tab, then say something: the chat tab badges it.
   await page.getByTestId('chat-tab-log').click();
@@ -640,10 +676,16 @@ test('chat and game log share one window, and unread chat is badged', async ({ p
   await expect(page.getByTestId('chat-transcript')).toContainText('Good Luck!');
   await expect(page.getByTestId('chat-unread')).toBeHidden();
 
-  // Collapsing hides both bodies but keeps the composer reachable.
+  // Collapsing hides both bodies but keeps the composer reachable…
   await page.getByTestId('chat-collapse').click();
   await expect(page.getByTestId('chat-transcript')).toBeHidden();
   await expect(page.getByTestId('quickchat-open')).toBeVisible();
+
+  // …and chat said while folded is badged, so folding never hides it.
+  await page.getByTestId('quickchat-open').click();
+  await page.getByTestId('quickchat-group-greetings').click();
+  await page.getByTestId('quickchat-say-hi').click();
+  await expect(page.getByTestId('chat-unread')).toHaveText('1');
 });
 
 test('muting hides chat bubbles but keeps the transcript honest', async ({ page }) => {
@@ -658,6 +700,7 @@ test('muting hides chat bubbles but keeps the transcript honest', async ({ page 
   await page.getByTestId('quickchat-say-hi').click();
 
   await expect(page.getByTestId('quickchat-feed')).toBeHidden();
+  await page.getByTestId('chat-tab-chat').click();
   await expect(page.getByTestId('chat-transcript')).toContainText('Hi!');
 });
 
@@ -765,6 +808,8 @@ test('a chat line that names a rival is completed before it is sent', async ({ p
     await page.waitForTimeout(100);
   }
 
+  // Open the transcript (the window starts folded) to watch what is sent.
+  await page.getByTestId('chat-tab-chat').click();
   await page.getByTestId('quickchat-open').click();
   await page.getByTestId('quickchat-group-tactics').click();
 

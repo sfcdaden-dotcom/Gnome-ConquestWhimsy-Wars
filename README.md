@@ -6,10 +6,11 @@ human hot-seat and CPU, with Easy/Normal/Hard difficulty per seat) on an N×N
 garden board — start from one of three rolled-fresh symmetrical modes
 (**Fresh**: homes only; **Bare Essentials**: a Mushroom and a Dandelion beside
 every home; **True Random**: a full map), draw your own layout in the editor,
-or pick one of the fixed classic layouts. An **advanced panel** on the setup
+or pick one of the fixed classic layouts. **Customize game** on the setup
 screen opens the rest of the game's shape: board size, the economies (starting
 wishes, wish cap, gnome board limit, reinforcements), the per-card deck
-counts, and a fixed seed. Play **local** (hot-seat and CPU on one device) or
+counts, the Center Star and a fixed seed — and its **Layouts** page manages
+layouts (the classic ones, drawing, editing, import/export). Play **local** (hot-seat and CPU on one device) or
 **online** in a private room: host, share the six-character code, and fill any
 empty seats with CPU. Online tables run a **shot clock** (a minute per action)
 so one closed laptop cannot freeze the game. Table talk runs on **quick
@@ -84,6 +85,10 @@ src/assets/art/
     garden-slippery.png
     garden-tunnel.png
   Gnome Assets/               one folder per layer — see below
+  ui-wish.png                 interface icons, drawn by <UiIcon> (see below)
+  ui-reinforcement.png
+  ui-card.png
+  ui-sapling.png
   FX/                         death poofs — one animation per file
     poof-burst.png            (see "Fight animations" below)
     poof-ball.png
@@ -102,6 +107,15 @@ WebP, JPEG).
 different scales: tucked into a cell's top-left corner during play, and filling
 the whole cell in the setup preview and the preset editor. Non-square is allowed
 but letterboxes, since the CSS uses `object-fit: contain`.
+
+**Interface icons** (`ui-*.png`) stand for the game's resources and its
+commonest action: Wishes, reserve gnomes, cards, and planting. They are mapped
+in `UI_ICON_ART` (`src/ui/artAssets.ts`); what each one means, its accessible
+label and the emoji it falls back to in plain text (log lines) live in
+`src/ui/uiIcons.ts`. `<UiIcon>` owns their size — one `em`-relative size that
+sits in a line of text, set once in the `.ui-icon` rule — so no call site sets
+a width. Use one only where it means exactly its kind: a sparkle that is just
+decoration is not a Wish.
 
 ### Fight animations
 
@@ -223,7 +237,7 @@ src/engine/   types, RNG, setup, garden presets (presets/*.json ship as
 src/net/      multiplayer: wire protocol, the room's rules, commit–reveal
 src/worker/   Cloudflare Worker entry + the room Durable Object
 src/ui/       App shell + screen router, home screen, rules viewer, setup
-              screen (difficulty + preset picker + advanced settings), online
+              screen (difficulty + layout menu + Customize game), online
               menu/lobby, game screen, board, panels, decision panel, quick
               chat, preset editor, error boundary, meta text, art (icon
               components), the gnome character creator (gnomeLook model +

@@ -90,4 +90,18 @@ describe('what the lobby is waiting for', () => {
     );
     expect(blockerText({ kind: 'hostless' })).toBe('The host left this room.');
   });
+
+  it('addresses the host as "you" when the room is waiting on them', () => {
+    // Same fact, second person: the host is never told they are waiting for
+    // themselves.
+    expect(blockerText({ kind: 'host', hostName: 'Rose' }, true)).toBe(
+      'Everyone is here. Start the game when you are ready.',
+    );
+    // Everyone else, and the board view (no isHost), keep the shared sentence.
+    expect(blockerText({ kind: 'host', hostName: 'Rose' }, false)).toBe(
+      'Everyone is here. Waiting for Rose to start the game.',
+    );
+    // Other blockers are the same for the host as for everyone.
+    expect(blockerText({ kind: 'seats', seats: [2] }, true)).toBe('Waiting for a player to sit down in seat 2.');
+  });
 });

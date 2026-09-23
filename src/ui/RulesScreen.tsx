@@ -152,7 +152,7 @@ export function RulesScreen({ onBack }: { onBack: () => void }) {
   return (
     <div className="rules-screen" data-testid="rules-screen">
       <header className="rules-header">
-        <button type="button" className="btn" data-testid="rules-back" onClick={onBack}>
+        <button type="button" className="btn ghost" data-testid="rules-back" onClick={onBack}>
           ← Back
         </button>
         <span className="brand">

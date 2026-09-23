@@ -27,7 +27,7 @@
   align-items: flex-start;
   padding-bottom: 16px;
   margin-bottom: 8px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--color-border);
 }
 
 .uip-h1 {
@@ -38,14 +38,14 @@
 }
 .uip-h3 {
   margin: 16px 0 8px;
-  font-size: 0.95rem;
+  font-size: var(--text-section);
 }
 
 .uip-note {
   margin: 0 0 12px;
   max-width: 78ch;
-  color: var(--muted);
-  font-size: 0.85rem;
+  color: var(--color-text-muted);
+  font-size: var(--text-label);
 }
 
 .uip-nav {
@@ -53,22 +53,22 @@
   flex-wrap: wrap;
   gap: 4px 12px;
   max-width: 520px;
-  font-size: 0.8rem;
+  font-size: var(--text-meta);
 }
 .uip-nav a {
-  color: var(--muted);
+  color: var(--color-text-muted);
 }
 
 .uip-section {
   padding: 28px 0;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--color-border);
   scroll-margin-top: 16px;
 }
 
 /* A plain backdrop to sit specimens on. Deliberately flat: it must not read as
    a card, or every specimen would look like it lives in one. */
 .uip-panel {
-  background: var(--panel-2);
+  background: var(--color-surface-subtle);
   padding: 16px;
 }
 
@@ -97,13 +97,15 @@
 
 .uip-label {
   font-family: var(--mono);
-  font-size: 0.7rem;
-  color: var(--muted);
+  font-size: var(--text-tiny);
+  color: var(--color-text-muted);
   max-width: 44ch;
 }
 
+/* The page background, not a panel: the sidebar's regions sit straight on
+   the page in the game, and their fill against it is what groups them. */
 .uip-stage {
-  background: var(--panel-2);
+  background: var(--color-bg);
   padding: 12px;
 }
 
@@ -133,7 +135,7 @@
   gap: 20px;
   align-items: baseline;
   padding: 6px 0;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--color-border);
 }
 .uip-type-row:last-child {
   border-bottom: none;
@@ -151,8 +153,8 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
-  font-size: 0.7rem;
-  color: var(--muted);
+  font-size: var(--text-tiny);
+  color: var(--color-text-muted);
 }
 .uip-spec {
   font-family: var(--mono);
@@ -161,13 +163,13 @@
 .uip-table {
   border-collapse: collapse;
   width: 100%;
-  font-size: 0.85rem;
+  font-size: var(--text-label);
 }
 .uip-table th,
 .uip-table td {
   text-align: left;
   padding: 5px 10px 5px 0;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--color-border);
 }
 .uip-glyph {
   font-size: 1.4rem;
@@ -200,7 +202,7 @@
 .uip-art figcaption {
   display: flex;
   flex-direction: column;
-  font-size: 0.72rem;
+  font-size: var(--text-tiny);
   line-height: 1.3;
 }
 
@@ -208,7 +210,7 @@
 .uip-board-frame {
   position: relative;
   height: 560px;
-  background: var(--panel-2);
+  background: var(--color-surface-subtle);
 }
 .uip-stage.panzoom {
   position: absolute;
@@ -223,4 +225,79 @@
 
 .uip-foot {
   padding-top: 24px;
+}
+
+.uip-theme {
+  display: flex;
+  gap: 4px;
+}
+
+/* Token swatches: a chip of the colour, its name, its resolved value. */
+.uip-swatches {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+}
+.uip-swatch {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.uip-swatch-chip {
+  display: block;
+  height: 40px;
+  border: 1px solid var(--color-border);
+}
+
+.uip-space-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.uip-space-row {
+  display: grid;
+  grid-template-columns: 12ch 40px auto;
+  gap: 10px;
+  align-items: center;
+}
+.uip-space-bar {
+  display: block;
+  height: 10px;
+  background: var(--color-primary);
+}
+.uip-radius {
+  display: block;
+  width: 64px;
+  height: 40px;
+  border: 2px solid var(--color-border-strong);
+}
+
+.uip-btn-table td {
+  padding: 8px 12px 8px 0;
+}
+
+/* The Surfaces section's legend. */
+.uip-legend p {
+  margin: 0 0 6px;
+  max-width: 90ch;
+}
+
+/* A sidebar column at a real desktop height: `.right-col` itself supplies
+   the flex column, the gap and the scrolling. */
+.uip-sidebar {
+  width: 320px;
+  height: 720px;
+}
+
+/* A setup screen at a real device size, scaled down to fit the page. The red
+   rule on its bottom edge is the fold. */
+.uip-frame {
+  position: relative;
+  overflow: hidden;
+  border-bottom: 2px solid #d33;
+}
+.uip-frame iframe {
+  border: 0;
+  transform-origin: 0 0;
+  background: var(--color-bg);
 }

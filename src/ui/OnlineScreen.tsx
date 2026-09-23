@@ -24,7 +24,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import { CLASSIC_PRESETS, MODE_PRESETS } from '../engine';
+import { CLASSIC_PRESETS, GARDEN_PRESETS, MODE_PRESETS } from '../engine';
 import type { AiDifficulty, GardenPreset } from '../engine';
 import { GameScreen } from './GameScreen';
 import { UnitIcon } from './art';
@@ -45,7 +45,7 @@ import {
 import { HOST_GRACE_MS, ROOM_CODE_LENGTH } from '../net/protocol';
 import type { RoomClosedReason } from '../net/protocol';
 import { HostGraceBanner } from './HostGraceBanner';
-import { playerColor } from './meta';
+import { layoutSummary, playerColor } from './meta';
 import { blockerAction, blockerText, canStart, lobbyBlocker } from './lobbyStatus';
 
 /** Point the address bar at the room (or at no room) without a navigation. */
@@ -244,7 +244,7 @@ function OnlineMenu({
         <div className="home-choices">
           <button
             type="button"
-            className="btn big accent home-choice"
+            className="btn big primary home-choice"
             data-testid="online-host"
             disabled={busy}
             onClick={host}
@@ -290,7 +290,7 @@ function OnlineMenu({
               </label>
               <button
                 type="button"
-                className="btn accent"
+                className="btn primary"
                 data-testid="online-join-go"
                 disabled={!codeReady}
                 onClick={() => onEnter(joinCode.trim())}
@@ -389,7 +389,7 @@ function RoomStale({ reason }: { reason: string | null }) {
         </p>
         <button
           type="button"
-          className="btn accent big"
+          className="btn primary big"
           data-testid="room-stale-reload"
           onClick={() => window.location.reload()}
         >
@@ -421,7 +421,7 @@ function RoomClosed({
         <p className="muted small">
           Rooms only last as long as somebody is in them. Host a new one and share the code again.
         </p>
-        <button type="button" className="btn accent big" data-testid="room-closed-back" onClick={onLeave}>
+        <button type="button" className="btn primary big" data-testid="room-closed-back" onClick={onLeave}>
           ← Back to the menu
         </button>
       </div>
@@ -451,9 +451,10 @@ function Lobby({
   // One reading of the room, shared by every screen looking at it. See
   // lobbyStatus.ts for why this is not computed per viewer.
   const blocker = room ? lobbyBlocker(room) : null;
+  const roomLayout = room ? GARDEN_PRESETS.find((p) => p.id === room.gardenPreset) : undefined;
 
   return (
-    <div className="home-screen" data-testid="room-lobby">
+    <div className="home-screen lobby-screen" data-testid="room-lobby">
       <div className="home-card lobby-card">
         <h1 className="home-title">Room {code}</h1>
 
@@ -503,6 +504,29 @@ function Lobby({
 
         {room && (
           <>
+            {/* The same order as local setup: who is playing, then the
+                board, then Start. Only the host can change the table; everyone
+                else reads the same rows. */}
+            {isHost && status === 'lobby' && (
+              <div className="setup-row">
+                <span className="setup-label">Players</span>
+                <div className="btn-row">
+                  {([2, 4] as const).map((n) => (
+                    <button
+                      key={n}
+                      type="button"
+                      className={`btn${room.seats.length === n ? ' on' : ''}`}
+                      aria-pressed={room.seats.length === n}
+                      data-testid={`lobby-count-${n}`}
+                      onClick={() => net.configure({ playerCount: n })}
+                    >
+                      {n} players
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="lobby-seats" data-testid="lobby-seats">
               {room.seats.map((seat) => (
                 <div className="lobby-seat" key={seat.index} data-testid={`lobby-seat-${seat.index}`}>
@@ -522,44 +546,36 @@ function Lobby({
                     )}
                   </span>
 
-                  <span className="muted small seat-status">
-                    {seat.controller === 'cpu'
-                      ? `CPU (${seat.difficulty})`
-                      : seat.connected
-                        ? 'ready'
-                        : 'open — waiting for a player'}
-                  </span>
-
-                  {isHost && status === 'lobby' && (
+                  {isHost && status === 'lobby' ? (
                     <>
-                      <div className="btn-row">
-                        <button
-                          type="button"
-                          className={`btn chip ${seat.controller === 'human' ? 'on' : ''}`}
-                          data-testid={`lobby-seat-${seat.index}-human`}
-                          onClick={() => net.configure({ seats: [{ index: seat.index, controller: 'human' }] })}
-                        >
-                          Human
-                        </button>
-                        <button
-                          type="button"
-                          className={`btn chip ${seat.controller === 'cpu' ? 'on' : ''}`}
-                          data-testid={`lobby-seat-${seat.index}-cpu`}
-                          onClick={() =>
-                            net.configure({
-                              // A CPU seat has no player to build it a gnome,
-                              // so the host rolls one with the flip — the same
-                              // bargain local setup makes. Sent once and stored
-                              // on the seat, so every client draws the same bot.
-                              seats: [{ index: seat.index, controller: 'cpu', look: randomLook() }],
-                            })
-                          }
-                        >
-                          CPU
-                        </button>
-                      </div>
-                      {seat.controller === 'cpu' && (
+                      {/* One switch, Human ⇄ CPU, as in local setup. */}
+                      <button
+                        type="button"
+                        className="btn small seat-controller"
+                        data-testid={`lobby-seat-${seat.index}-controller`}
+                        data-controller={seat.controller}
+                        aria-label={`Seat ${seat.index + 1}: ${seat.controller === 'human' ? 'Human' : 'CPU'} — switch to ${seat.controller === 'human' ? 'CPU' : 'Human'}`}
+                        title={`Switch to ${seat.controller === 'human' ? 'CPU' : 'Human'}`}
+                        onClick={() =>
+                          net.configure({
+                            seats: [
+                              seat.controller === 'human'
+                                ? // A CPU seat has no player to build it a
+                                  // gnome, so the host rolls one with the flip
+                                  // — the same bargain local setup makes. Sent
+                                  // once and stored on the seat, so every
+                                  // client draws the same bot.
+                                  { index: seat.index, controller: 'cpu', look: randomLook() }
+                                : { index: seat.index, controller: 'human' },
+                            ],
+                          })
+                        }
+                      >
+                        {seat.controller === 'human' ? 'Human' : 'CPU'}
+                      </button>
+                      {seat.controller === 'cpu' ? (
                         <select
+                          className="preset-select small"
                           value={seat.difficulty}
                           aria-label={`Seat ${seat.index + 1} CPU difficulty`}
                           onChange={(e) =>
@@ -572,8 +588,20 @@ function Lobby({
                           <option value="normal">Normal</option>
                           <option value="hard">Hard</option>
                         </select>
+                      ) : (
+                        <span className="muted small seat-status">
+                          {seat.connected ? 'ready' : 'waiting for a player'}
+                        </span>
                       )}
                     </>
+                  ) : (
+                    <span className="muted small seat-status">
+                      {seat.controller === 'cpu'
+                        ? `CPU (${seat.difficulty})`
+                        : seat.connected
+                          ? 'ready'
+                          : 'open — waiting for a player'}
+                    </span>
                   )}
                 </div>
               ))}
@@ -590,30 +618,17 @@ function Lobby({
               </p>
             )}
 
-            {isHost && status === 'lobby' && (
-              <div className="lobby-config">
-                <div className="btn-row">
-                  <button
-                    type="button"
-                    className={`btn chip ${room.seats.length === 2 ? 'on' : ''}`}
-                    data-testid="lobby-count-2"
-                    onClick={() => net.configure({ playerCount: 2 })}
-                  >
-                    2 players
-                  </button>
-                  <button
-                    type="button"
-                    className={`btn chip ${room.seats.length === 4 ? 'on' : ''}`}
-                    data-testid="lobby-count-4"
-                    onClick={() => net.configure({ playerCount: 4 })}
-                  >
-                    4 players
-                  </button>
-                </div>
-                <label className="field">
-                  <span>Extra-garden preset</span>
+            {/* The board: what will be played, its size, and one line about
+                it. The room rolls the map itself, so there is no preview to
+                show and nothing to re-roll. */}
+            <div className="lobby-board" data-testid="lobby-board">
+              <div className="preset-controls">
+                {isHost && status === 'lobby' ? (
                   <select
+                    className="preset-select"
                     value={room.gardenPreset}
+                    aria-label="Extra-garden preset"
+                    data-testid="lobby-preset"
                     onChange={(e) => net.configure({ gardenPreset: e.target.value as GardenPreset })}
                   >
                     {/* Same split as local setup: the generated modes first,
@@ -633,19 +648,31 @@ function Lobby({
                       ))}
                     </optgroup>
                   </select>
-                </label>
-                <p className="muted small">
-                  The room picks the map and shuffles the deck itself — no seed to choose, and nobody
-                  (host included) can see the cards. The deck is verified when the game ends.
-                </p>
+                ) : (
+                  <span className="lobby-layout-name">{roomLayout?.label ?? room.gardenPreset}</span>
+                )}
+                <span className="board-dims muted small">
+                  {room.boardSize}×{room.boardSize}
+                </span>
               </div>
-            )}
+              {roomLayout && (
+                <p className="layout-summary muted small" title={roomLayout.description}>
+                  {layoutSummary(roomLayout)}
+                </p>
+              )}
+              <p
+                className="layout-summary muted small"
+                title="The room picks the map and shuffles the deck itself — no seed to choose, and nobody (host included) can see the cards. The deck is verified when the game ends."
+              >
+                The room shuffles the deck; nobody, host included, sees the cards.
+              </p>
+            </div>
 
             {status === 'lobby' && blocker && (
               <div className="lobby-status">
                 {/* The same sentence on every screen in the room. */}
                 <p className="lobby-blocker" data-testid="lobby-blocker">
-                  {blockerText(blocker)}
+                  {blockerText(blocker, isHost)}
                 </p>
                 {blocker.kind === 'hostless' ? (
                   // The room waited out its host and nobody owns it. This is
@@ -654,7 +681,7 @@ function Lobby({
                   <>
                     <button
                       type="button"
-                      className="btn accent big"
+                      className="btn primary big"
                       data-testid="lobby-take-over"
                       onClick={net.takeOverRoom}
                     >
@@ -670,7 +697,7 @@ function Lobby({
                   isHost && (
                     <button
                       type="button"
-                      className="btn accent big"
+                      className="btn primary big"
                       data-testid="lobby-start"
                       disabled={!canStart(blocker)}
                       onClick={net.start}
@@ -689,9 +716,11 @@ function Lobby({
           </>
         )}
 
-        <button type="button" className="btn ghost" data-testid="lobby-leave" onClick={onLeave}>
-          ← Leave room
-        </button>
+        <div className="setup-footer">
+          <button type="button" className="btn ghost" data-testid="lobby-leave" onClick={onLeave}>
+            ← Leave room
+          </button>
+        </div>
       </div>
 
       <div className="toasts">

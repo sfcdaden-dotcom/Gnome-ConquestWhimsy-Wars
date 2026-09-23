@@ -48,11 +48,17 @@ function hostName(room: RoomSnapshot): string | null {
 }
 
 /**
- * The shared sentence. Identical on every screen in the room, including the
- * host's — the host reads the same description of the situation everyone else
- * does, and gets their instructions from `blockerAction` instead.
+ * The shared sentence: the same FACT on every screen in the room, including
+ * the host's, with instructions left to `blockerAction`.
+ *
+ * The one thing that differs by viewer is who the sentence is addressed to.
+ * When the room is waiting on the host, telling the host "Waiting for Ada to
+ * start the game" when they ARE Ada reads as if somebody else has to act —
+ * the very confusion this module exists to prevent — so the host is told the
+ * same thing in the second person. Screens nobody is sitting at (the board
+ * view) leave `isHost` off and get the third-person sentence.
  */
-export function blockerText(blocker: LobbyBlocker): string {
+export function blockerText(blocker: LobbyBlocker, isHost = false): string {
   switch (blocker.kind) {
     case 'seats': {
       const list = blocker.seats.join(' and ');
@@ -60,6 +66,7 @@ export function blockerText(blocker: LobbyBlocker): string {
       return `Waiting for ${plural ? 'players' : 'a player'} to sit down in seat ${list}.`;
     }
     case 'host':
+      if (isHost) return 'Everyone is here. Start the game when you are ready.';
       return blocker.hostName === null
         ? 'Everyone is here. Waiting for the host to start the game.'
         : `Everyone is here. Waiting for ${blocker.hostName} to start the game.`;

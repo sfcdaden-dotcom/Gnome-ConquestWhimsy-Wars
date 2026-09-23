@@ -6,7 +6,7 @@
  * right file and stay out of the accessibility tree by default — every site
  * that shows one already carries its own label or visible text, so an alt
  * string here would only be read out twice. Pass `alt` where the picture
- * genuinely is the only label.
+ * genuinely is the only label. (`UiIcon` is the exception to both: see it.)
  *
  * `UnitIcon` has one wrinkle: a gnome belonging to a seat is that seat's
  * CUSTOM gnome, composited and recoloured at runtime (see gnomeArt.ts). Pass
@@ -18,10 +18,11 @@
 
 import type { CSSProperties } from 'react';
 import type { GardenType, UnitKind } from '../engine';
-import { GARDEN_ART, UNIT_ART } from './artAssets';
+import { GARDEN_ART, UI_ICON_ART, UNIT_ART } from './artAssets';
 import { POOF_FX } from './fxAssets';
 import { useGnomeSprite } from './gnomeArt';
 import { useSeatLook } from './gnomeLooks';
+import type { UiIconKind } from './uiIcons';
 
 interface IconProps {
   /** Extra classes, appended to the base `art` class. */
@@ -70,6 +71,44 @@ export function UnitIcon({
       draggable={false}
       data-art={`unit-${kind}`}
       data-custom={sprite ? 'true' : undefined}
+    />
+  );
+}
+
+/**
+ * A resource or action icon (uiIcons.ts), sized to sit in a line of text.
+ *
+ * Unlike the board art these DO own their size: an interface icon is always a
+ * word-sized thing, scaled in `em` to the text it sits in (the `ui-icon`
+ * rule in index.css) and callers never set a width. `size="lg"` is
+ * the one exception, for an icon that stands alone as a heading's picture.
+ *
+ * Pass `label` wherever the icon is the only thing saying what a number is —
+ * "3/5" beside a Wish needs the word; "✨ Take 1 Wish" does not. With a label
+ * the picture is announced and tooltipped; without one it stays out of the
+ * accessibility tree.
+ */
+export function UiIcon({
+  kind,
+  label,
+  size,
+  className,
+}: {
+  kind: UiIconKind;
+  /** Accessible name + tooltip. Omit where visible text already says it. */
+  label?: string;
+  size?: 'lg';
+  className?: string;
+}) {
+  return (
+    <img
+      className={`ui-icon${size ? ` ${size}` : ''}${className ? ` ${className}` : ''}`}
+      src={UI_ICON_ART[kind]}
+      alt={label ?? ''}
+      title={label}
+      aria-hidden={label ? undefined : true}
+      draggable={false}
+      data-icon={kind}
     />
   );
 }

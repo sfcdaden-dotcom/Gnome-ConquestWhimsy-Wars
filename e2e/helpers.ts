@@ -23,16 +23,48 @@ export async function setSeed(page: Page, seed: number): Promise<void> {
 }
 
 /**
- * Reveal the "Classic layouts" group in the setup screen's layout menu.
- *
- * The menu leads with the three generated modes (Fresh / Bare Essentials /
- * True Random); the fixed layouts these tests pin coordinates against sit
- * behind one toggle. Already-visible is a no-op, so callers need not track it.
+ * Put a setup-screen seat under `controller`. The seat's one button toggles
+ * Human ⇄ CPU, so it is pressed only when the seat is not already there — a
+ * blind click would flip it the wrong way.
  */
-export async function showClassicPresets(page: Page): Promise<void> {
-  const group = page.getByTestId('preset-select').locator('optgroup[label="Classic layouts"]');
-  if ((await group.count()) === 0) await page.getByTestId('toggle-classic-presets').click();
-  await expect(group).toHaveCount(1);
+export async function setController(page: Page, seat: number, controller: 'human' | 'cpu'): Promise<void> {
+  const button = page.getByTestId(`seat-${seat}-controller`);
+  if ((await button.getAttribute('data-controller')) !== controller) await button.click();
+  await expect(button).toHaveAttribute('data-controller', controller);
+}
+
+/** The online lobby's version of `setController`: the host's per-seat switch. */
+export async function setLobbyController(page: Page, seat: number, controller: 'human' | 'cpu'): Promise<void> {
+  const button = page.getByTestId(`lobby-seat-${seat}-controller`);
+  if ((await button.getAttribute('data-controller')) !== controller) await button.click();
+  await expect(button).toHaveAttribute('data-controller', controller);
+}
+
+/**
+ * Open Customize game → Layouts, where layout management lives: the classic
+ * layouts, drawing, editing, import/export and the map number.
+ */
+export async function openLayouts(page: Page): Promise<void> {
+  await page.getByTestId('open-advanced').click();
+  await page.getByTestId('open-layouts').click();
+  await expect(page.getByTestId('layouts-page')).toBeVisible();
+}
+
+/**
+ * Make `id` the setup screen's layout. The layout menu lists the modes, this
+ * session's layouts and any classic already used; anything else — a classic
+ * on first use — is chosen on the Layouts page, after which the menu lists it.
+ */
+export async function selectLayout(page: Page, id: string): Promise<void> {
+  const menu = page.getByTestId('preset-select');
+  if ((await menu.locator(`option[value="${id}"]`).count()) === 0) {
+    await openLayouts(page);
+    await page.getByTestId(`layout-option-${id}`).click();
+    await page.getByTestId('advanced-done').click();
+  } else {
+    await menu.selectOption(id);
+  }
+  await expect(menu).toHaveValue(id);
 }
 
 export interface BoardUnit {
@@ -61,13 +93,12 @@ export class Game {
     await this.page.goto('/');
     // The home screen is the entry point now; local play is one door of three.
     await this.page.getByTestId('home-local').click();
-    await showClassicPresets(this.page);
-    await this.page.getByLabel('Extra-garden preset').selectOption(preset);
+    await selectLayout(this.page, preset);
     await this.page.getByTestId('player-count-2').click();
     // Seat 0 is human by default; make seat 1 human too, so no CPU timer runs
     // and every step of the test is a deliberate click.
-    await this.page.getByTestId('seat-0-human').click();
-    await this.page.getByTestId('seat-1-human').click();
+    await setController(this.page, 0, 'human');
+    await setController(this.page, 1, 'human');
     await setSeed(this.page, seed);
     await this.page.getByTestId('start-game').click();
     await expect(this.page.getByTestId('game-screen')).toBeVisible();
@@ -154,8 +185,10 @@ export class Game {
 
   /** Wishes shown for a seat in the player panel. */
   async wishes(player: number): Promise<number> {
-    const text = await this.page.locator('.pp-row, .player-panel').nth(player).innerText();
-    return Number(text.match(/(\d+)\s*✨/)?.[1] ?? NaN);
+    // The Wish count is "<icon> 3/5"; the icon is a picture, so read the
+    // number off its own element rather than hunting for a glyph beside it.
+    const text = await this.page.locator('.player-panel').nth(player).getByTestId('pp-wishes').innerText();
+    return Number(text.match(/(\d+)\s*\//)?.[1] ?? NaN);
   }
 
   // --- flow ----------------------------------------------------------------

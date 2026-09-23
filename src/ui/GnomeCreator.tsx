@@ -238,12 +238,12 @@ export function GnomeCreator({
             🎲 Surprise me
           </button>
           <span className="spacer" />
-          <button type="button" className="btn small" data-testid="gnome-cancel" onClick={onCancel}>
+          <button type="button" className="btn small ghost" data-testid="gnome-cancel" onClick={onCancel}>
             Cancel
           </button>
           <button
             type="button"
-            className="btn small accent"
+            className="btn small primary"
             data-testid="gnome-save"
             onClick={() => onSave(draft)}
           >

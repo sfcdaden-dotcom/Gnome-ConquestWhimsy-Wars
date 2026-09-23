@@ -21,6 +21,10 @@ import type {
 import { getCardDef, getCurseDef, getQuickChatPhrase, nameSaltOf, whyCannotPlayNow } from '../engine';
 import type { UnitEventRef } from './gnomeNames';
 import { gnomeName, unitNameFromEvent, unitNameLive } from './gnomeNames';
+import { UI_ICON_GLYPH } from './uiIcons';
+
+/** The Wish icon in plain text (log lines and generated labels hold no pictures). */
+const WISH = UI_ICON_GLYPH.wish;
 
 // ---------------------------------------------------------------------------
 // Player + garden presentation
@@ -30,6 +34,21 @@ import { gnomeName, unitNameFromEvent, unitNameLive } from './gnomeNames';
  * `PLAYER_COLOR_NAMES`, which is also what an untouched seat is called. */
 export const PLAYER_COLORS = ['#d8504d', '#3f7ad8', '#c9930a', '#9256cf'];
 export const PLAYER_COLOR_NAMES = ['Red', 'Blue', 'Yellow', 'Purple'];
+
+/**
+ * One line about a layout, for the setup screen and the online lobby — the
+ * full description is on the Layouts page. The generated modes have lines
+ * written for the purpose; other layouts use their own description, which the
+ * screen cuts to one line.
+ */
+const LAYOUT_SUMMARIES: Readonly<Record<string, string>> = {
+  fresh: 'Only Home Gardens — every other garden is one you plant.',
+  essentials: 'A Mushroom and a Dandelion beside every home, nothing else.',
+  random: 'A new symmetrical board, with fairly placed gardens.',
+};
+export function layoutSummary(def: { id: string; description: string }): string {
+  return LAYOUT_SUMMARIES[def.id] ?? def.description;
+}
 
 /** Why a seat left the game, in log-line words. */
 export const ELIMINATION_REASON_TEXT: Record<EliminationReason, string> = {
@@ -231,7 +250,7 @@ export function describeEvent(state: GameState, ev: GameEvent): string {
     case 'homeHarvested':
       return ev.took === 'nothing'
         ? `${pname(state, ev.player)}'s Home Garden produces nothing (limits reached).`
-        : `${pname(state, ev.player)}'s Home Garden grants a ${ev.took === 'wish' ? 'Wish ✨' : 'Gnome'}.`;
+        : `${pname(state, ev.player)}'s Home Garden grants a ${ev.took === 'wish' ? `Wish ${WISH}` : 'Gnome'}.`;
     case 'dandelionHarvested':
       return `${pname(state, ev.player)}'s Dandelion at ${posStr(ev.pos)} blooms for ${ev.gnomes} gnome${ev.gnomes === 1 ? '' : 's'}.`;
     case 'mushroomHarvested':
@@ -355,7 +374,7 @@ export function describeAction(state: GameState, a: Action): string {
     case 'chooseHarvest':
       return `Harvest ${a.sourceKey === 'home' ? 'Home Garden' : `garden at (${a.sourceKey})`}`;
     case 'homeHarvest':
-      return a.take === 'wish' ? '✨ Take 1 Wish' : 'Spawn a Gnome';
+      return a.take === 'wish' ? `${WISH} Take 1 Wish` : 'Spawn a Gnome';
     case 'mushroomClones':
       return `Clone ${a.count} gnome${a.count === 1 ? '' : 's'}`;
     case 'slide':
@@ -391,11 +410,11 @@ export function describeAction(state: GameState, a: Action): string {
     case 'upgrade': {
       const g = state.gardens[`${a.pos.x},${a.pos.y}`];
       return g
-        ? `Upgrade to ${GARDEN_META[g.type].upgradeLabel} at ${posStr(a.pos)} (2 ✨)`
-        : `Upgrade the garden at ${posStr(a.pos)} (2 ✨)`;
+        ? `Upgrade to ${GARDEN_META[g.type].upgradeLabel} at ${posStr(a.pos)} (2 ${WISH})`
+        : `Upgrade the garden at ${posStr(a.pos)} (2 ${WISH})`;
     }
     case 'drawCard':
-      return 'Draw a card (1 ✨)';
+      return `Draw a card (1 ${WISH})`;
     case 'playCard':
       return `Play ${cardName(a.cardId)}`;
     case 'endTurn':

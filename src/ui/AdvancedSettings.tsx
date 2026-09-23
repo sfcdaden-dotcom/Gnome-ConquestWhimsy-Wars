@@ -1,7 +1,8 @@
 /**
- * Advanced setup: the knobs that change the shape of a game rather than who
- * is playing it — board size, the wish and gnome economies, the Center Star,
- * the deck and each player's garden supply.
+ * Customize Game: the knobs that change the shape of a game rather than who
+ * is playing it — the layout (managed on its own page), board size, the wish
+ * and gnome economies, the Center Star, the deck and each player's garden
+ * supply.
  *
  * Opened as a modal from the setup screen and edited on a working copy, so
  * backing out with Cancel leaves the pending game exactly as it was. The
@@ -19,7 +20,7 @@ import {
   PLANTABLE_GARDEN_TYPES,
 } from '../engine';
 import { GARDEN_META } from './meta';
-import { GardenIcon } from './art';
+import { GardenIcon, UiIcon } from './art';
 import {
   BOARD_SIZES,
   DEFAULT_ADVANCED_SETTINGS,
@@ -36,6 +37,8 @@ import {
   whimsyTotal,
 } from './advancedSettings';
 import type { AdvancedSettingsValue } from './advancedSettings';
+import { LayoutsPage } from './LayoutsPage';
+import type { LayoutControls } from './LayoutsPage';
 
 function Stepper({
   value,
@@ -157,7 +160,7 @@ function DeckEditor({
         >
           ↩️ Stock deck
         </button>
-        <button type="button" className="btn small" data-testid="deck-back" onClick={onBack}>
+        <button type="button" className="btn small ghost" data-testid="deck-back" onClick={onBack}>
           ← Back to settings
         </button>
       </div>
@@ -235,7 +238,7 @@ function GardenEditor({
         >
           ↩️ Stock supply
         </button>
-        <button type="button" className="btn small" data-testid="garden-back" onClick={onBack}>
+        <button type="button" className="btn small ghost" data-testid="garden-back" onClick={onBack}>
           ← Back to settings
         </button>
       </div>
@@ -253,30 +256,66 @@ export function AdvancedSettings({
    * reason rather than silently ignored.
    */
   boardSizeLockedReason,
+  layouts,
+  onDrawLayout,
+  onEditLayout,
 }: {
   value: AdvancedSettingsValue;
   onApply: (v: AdvancedSettingsValue) => void;
   onCancel: () => void;
   boardSizeLockedReason?: string;
+  /** The layout and its management (the Layouts page). Absent ⇒ no Layout row. */
+  layouts?: LayoutControls;
+  /**
+   * Leave for the layout editor, taking the working copy with it: the editor
+   * draws on the board size being set here, so it is applied first, as Done
+   * would. Only offered while the working copy is valid.
+   */
+  onDrawLayout?: (v: AdvancedSettingsValue) => void;
+  onEditLayout?: (v: AdvancedSettingsValue) => void;
 }) {
   const [draft, setDraft] = useState<AdvancedSettingsValue>(value);
-  const [view, setView] = useState<'settings' | 'deck' | 'gardens'>('settings');
+  const [view, setView] = useState<'settings' | 'deck' | 'gardens' | 'layouts'>('settings');
   const problem = settingsProblem(draft);
   const centerStarBlurb = draft.centerStar
     ? (CENTER_STAR_BOONS.find((b) => b.id === draft.centerStarBoon)?.blurb ?? '')
     : 'The center space is unmarked and grants nothing.';
 
   return (
-    <div className="overlay" role="dialog" aria-modal="true" aria-label="Advanced settings">
+    <div className="overlay" role="dialog" aria-modal="true" aria-label="Customize game">
       <div className="overlay-card advanced-card">
-        <h2 className="advanced-title">⚙️ Advanced settings</h2>
+        <h2 className="advanced-title">{view === 'layouts' ? 'Layouts' : 'Customize game'}</h2>
 
-        {view === 'deck' ? (
+        {view === 'layouts' && layouts ? (
+          <LayoutsPage
+            layouts={layouts}
+            boardSize={draft.boardSize}
+            editorBlocked={problem !== null}
+            onDraw={() => onDrawLayout?.(draft)}
+            onEdit={() => onEditLayout?.(draft)}
+            onBack={() => setView('settings')}
+          />
+        ) : view === 'deck' ? (
           <DeckEditor value={draft} onChange={setDraft} onBack={() => setView('settings')} />
         ) : view === 'gardens' ? (
           <GardenEditor value={draft} onChange={setDraft} onBack={() => setView('settings')} />
         ) : (
           <div className="advanced-body">
+            {layouts && (
+              <div className="setup-row">
+                <span className="setup-label">Layout</span>
+                <div className="btn-row">
+                  <button
+                    type="button"
+                    className="btn small"
+                    data-testid="open-layouts"
+                    onClick={() => setView('layouts')}
+                  >
+                    {layouts.selected.label} — layouts…
+                  </button>
+                </div>
+              </div>
+            )}
             <div className="setup-row">
               <span className="setup-label">Board size</span>
               <div className="btn-row">
@@ -284,7 +323,8 @@ export function AdvancedSettings({
                   <button
                     key={n}
                     type="button"
-                    className={`btn small${draft.boardSize === n ? ' accent' : ''}`}
+                    className={`btn small${draft.boardSize === n ? ' on' : ''}`}
+                    aria-pressed={draft.boardSize === n}
                     data-testid={`board-size-${n}`}
                     disabled={boardSizeLockedReason !== undefined}
                     onClick={() => setDraft({ ...draft, boardSize: n })}
@@ -321,7 +361,7 @@ export function AdvancedSettings({
                   data-testid="open-deck-editor"
                   onClick={() => setView('deck')}
                 >
-                  🃏 Edit the deck ({deckTotal(draft)} cards)
+                  <UiIcon kind="card" /> Edit the deck ({deckTotal(draft)} cards)
                 </button>
               </div>
             </div>
@@ -340,7 +380,7 @@ export function AdvancedSettings({
                   data-testid="open-garden-editor"
                   onClick={() => setView('gardens')}
                 >
-                  🌱 Edit the garden budget ({tileTotal(draft)} tiles)
+                  <UiIcon kind="plant" /> Edit the garden budget ({tileTotal(draft)} tiles)
                 </button>
               </div>
             </div>
@@ -409,7 +449,7 @@ export function AdvancedSettings({
           </button>
           <button
             type="button"
-            className="btn accent"
+            className="btn primary"
             data-testid="advanced-done"
             disabled={problem !== null}
             onClick={() => onApply(draft)}

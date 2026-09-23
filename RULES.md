@@ -43,7 +43,7 @@ rulebook was ambiguous, the designer's ruling is marked **[RULING]**.
 5. Turn order: each player rolls d6, highest goes first (reroll ties), then clockwise.
 6. **Center Star** (if enabled): the center space is marked. This is a marker on
    the space, not a garden — the space is otherwise normal (can be planted on).
-   Setup picks exactly one **boon** for it (advanced settings), or switches the
+   Setup picks exactly one **boon** for it (Customize game), or switches the
    star off entirely:
 
    | Boon | Effect |

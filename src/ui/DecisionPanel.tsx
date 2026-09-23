@@ -9,7 +9,7 @@ import type { ReactNode } from 'react';
 import type { Action, CardId, GameState, PendingDecision, PlayerId } from '../engine';
 import { MAX_ENTRY_EFFECT_HOPS } from '../engine';
 import { GARDEN_META, cardName, cardText, describeCardTargets, describeAction, pname, posStr } from './meta';
-import { GardenIcon, UnitIcon } from './art';
+import { GardenIcon, UiIcon, UnitIcon } from './art';
 
 export interface DecisionPanelProps {
   state: GameState;
@@ -39,7 +39,7 @@ export function DecisionPanel({ state, decision, legal, interactive, act, onResp
         <Panel title={`🎲 ${who}: roll for turn order`}>
           <div className="small muted">Highest roll goes first; ties reroll.</div>
           <div className="btn-row">
-            <button type="button" className="btn accent" data-testid="roll-off" onClick={() => act({ type: 'rollOff', player: decision.player })}>
+            <button type="button" className="btn primary" data-testid="roll-off" onClick={() => act({ type: 'rollOff', player: decision.player })}>
               Roll the d6
             </button>
           </div>
@@ -54,12 +54,14 @@ export function DecisionPanel({ state, decision, legal, interactive, act, onResp
               <button
                 key={take}
                 type="button"
-                className="btn accent"
+                className="btn"
                 data-testid={`home-harvest-${take}`}
                 onClick={() => act({ type: 'homeHarvest', player: decision.player, take })}
               >
                 {take === 'wish' ? (
-                  '✨ Take 1 Wish'
+                  <>
+                    <UiIcon kind="wish" /> Take 1 Wish
+                  </>
                 ) : (
                   <>
                     <UnitIcon owner={decision.player} className="btn-icon" /> Spawn a Gnome
@@ -73,7 +75,7 @@ export function DecisionPanel({ state, decision, legal, interactive, act, onResp
 
     case 'chooseHarvest':
       return (
-        <Panel title={`🌱 ${who}: choose the next harvest`}>
+        <Panel title={`${who}: choose the next harvest`} icon={<UiIcon kind="plant" className="panel-icon" />}>
           <div className="small muted">Harvests are mandatory — pick the order. (Highlighted on the board.)</div>
           <div className="btn-col">
             {decision.options.map((s) => (
@@ -100,7 +102,7 @@ export function DecisionPanel({ state, decision, legal, interactive, act, onResp
           <button
             key={c}
             type="button"
-            className={`btn${c === decision.max ? ' accent' : ''}`}
+            className={`btn${c === decision.max ? ' primary' : ''}`}
             data-testid={`mushroom-clones-${c}`}
             onClick={() => act({ type: 'mushroomClones', player: decision.player, count: c })}
           >
@@ -172,7 +174,7 @@ export function DecisionPanel({ state, decision, legal, interactive, act, onResp
             devours every garden it slithers over.
           </div>
           <div className="btn-row">
-            <button type="button" className="btn accent" onClick={() => act({ type: 'snailify', player: decision.player, accept: true })}>
+            <button type="button" className="btn primary" onClick={() => act({ type: 'snailify', player: decision.player, accept: true })}>
               <UnitIcon kind="snail" className="btn-icon" /> Become the Snail
             </button>
             <button type="button" className="btn" onClick={() => act({ type: 'snailify', player: decision.player, accept: false })}>
@@ -217,7 +219,7 @@ export function DecisionPanel({ state, decision, legal, interactive, act, onResp
               <button
                 key={cardId}
                 type="button"
-                className="btn accent"
+                className="btn"
                 data-testid={`respond-card-${cardId}`}
                 onClick={() => onRespondCard(cardId, decision.player)}
               >
@@ -278,7 +280,7 @@ export function DecisionPanel({ state, decision, legal, interactive, act, onResp
               Stay put
             </button>
             {meal && (
-              <button type="button" className="btn accent" data-testid="snail-eat" onClick={() => act(meal)}>
+              <button type="button" className="btn primary" data-testid="snail-eat" onClick={() => act(meal)}>
                 {eatLabel(state, decision.from)}
               </button>
             )}
@@ -295,7 +297,7 @@ export function DecisionPanel({ state, decision, legal, interactive, act, onResp
             before your turn ends, or slither off it and leave it standing.
           </div>
           <div className="btn-row">
-            <button type="button" className="btn accent" data-testid="snail-eat" onClick={() => act({ type: 'snailEat', player: decision.player, accept: true })}>
+            <button type="button" className="btn primary" data-testid="snail-eat" onClick={() => act({ type: 'snailEat', player: decision.player, accept: true })}>
               {eatLabel(state, decision.pos)}
             </button>
             <button type="button" className="btn" data-testid="snail-eat-decline" onClick={() => act({ type: 'snailEat', player: decision.player, accept: false })}>

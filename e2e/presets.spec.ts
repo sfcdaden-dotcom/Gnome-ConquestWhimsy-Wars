@@ -1,18 +1,19 @@
 /**
- * The preset area of the setup screen, driven through the DOM.
+ * Layouts, driven through the DOM.
  *
- * Everything preset-related lives in one block below the board preview: the
- * layout dropdown (three generated modes, then this session's own layouts, a
- * "Custom" entry that opens the editor, and the classic fixed layouts behind a
- * toggle), re-roll, and import/export. The editor has two exits that use a
- * layout — playing it, and saving a file first — and these tests pin the
- * difference between them.
+ * The setup screen shows the board: its preview, a menu of what will be
+ * played (the three generated modes, this session's own layouts, and any
+ * classic already used), its size and a re-roll. Managing layouts lives on
+ * the Layouts page of Customize game: the classic layouts, drawing your own,
+ * editing, exporting, importing, removing, and the map number. The editor has
+ * two exits that use a layout — playing it, and saving a file first — and
+ * these tests pin the difference between them.
  */
 
 import { readFile } from 'node:fs/promises';
 import type { Page } from '@playwright/test';
 import { expect, test } from '@playwright/test';
-import { setSeed, showClassicPresets } from './helpers';
+import { openLayouts, selectLayout, setController, setSeed } from './helpers';
 
 const SEED = 4242;
 
@@ -24,9 +25,17 @@ async function openSetup(page: Page): Promise<void> {
 
 const select = (page: Page) => page.getByTestId('preset-select');
 
-/** Open the editor the only way there is: the dropdown's Custom entry. */
+/** Open the editor on a blank board: Customize game → Layouts → Draw your own. */
 async function openEditor(page: Page): Promise<void> {
-  await select(page).selectOption('__custom__');
+  await openLayouts(page);
+  await page.getByTestId('draw-layout').click();
+  await expect(page.getByTestId('preset-play')).toBeVisible();
+}
+
+/** Open the editor on the selected layout: Customize game → Layouts → Edit. */
+async function editSelected(page: Page): Promise<void> {
+  await openLayouts(page);
+  await page.getByTestId('edit-preset').click();
   await expect(page.getByTestId('preset-play')).toBeVisible();
 }
 
@@ -37,10 +46,9 @@ async function setBoardSize(page: Page, size: number): Promise<void> {
   await page.getByTestId('advanced-done').click();
 }
 
-/** Pick one of the classic fixed layouts, revealing that group first. */
+/** Pick one of the classic fixed layouts (through the Layouts page on first use). */
 async function selectClassic(page: Page, id: string): Promise<void> {
-  await showClassicPresets(page);
-  await select(page).selectOption(id);
+  await selectLayout(page, id);
 }
 
 /** Paint one garden of the current tool on an empty space. */
@@ -105,6 +113,25 @@ test('two seats dim the homes they will not use, four light them all', async ({ 
   await expect(preview.locator('.cell.editor-home.unseated')).toHaveCount(0);
 });
 
+test('the setup screen keeps layout management off the default screen', async ({ page }) => {
+  await openSetup(page);
+  const section = page.getByTestId('preset-section');
+
+  // What an ordinary game needs is here: the menu, the board's size, a re-roll
+  // and one line about the layout.
+  await expect(select(page)).toBeVisible();
+  await expect(page.getByTestId('board-dims')).toHaveText('7×7');
+  await expect(page.getByTestId('reroll-layout')).toBeVisible();
+  await expect(page.getByTestId('layout-summary')).toBeVisible();
+
+  // Management is not: it is all on the Layouts page.
+  for (const id of ['draw-layout', 'edit-preset', 'export-preset', 'import-preset', 'remove-preset', 'layout-map-number']) {
+    await expect(page.getByTestId(id)).toHaveCount(0);
+  }
+  await expect(section).not.toContainText('Map #');
+  await expect(page.getByTestId('toggle-classic-presets')).toHaveCount(0);
+});
+
 test('the old standalone labels and buttons are gone', async ({ page }) => {
   await openSetup(page);
 
@@ -118,25 +145,31 @@ test('the old standalone labels and buttons are gone', async ({ page }) => {
   await expect(page.getByRole('button', { name: /New preset|Edit this preset|Custom Preset/i })).toHaveCount(0);
 });
 
-test('the menu leads with the three modes and folds the classic layouts away', async ({ page }) => {
+test('the menu names what will be played; classics come from the Layouts page', async ({ page }) => {
   await openSetup(page);
 
-  // What a player sees on arrival: the modes, then the door to the editor.
+  // What a player sees on arrival: the three modes, and no commands.
   const labels = async () => (await select(page).locator('option').allTextContents()).map((l) => l.trim());
-  expect(await labels()).toEqual(['Fresh', 'Bare Essentials', 'True Random', 'Custom — draw your own…']);
+  expect(await labels()).toEqual(['Fresh', 'Bare Essentials', 'True Random']);
   await expect(select(page)).toHaveValue('random');
 
-  // The classics are one click away, and every one of them still plays.
-  await showClassicPresets(page);
-  expect(await labels()).toContain('Gauntlet');
+  // Every classic is on the Layouts page, and choosing one takes effect at once.
+  await openLayouts(page);
+  await expect(page.getByTestId('layout-option-gauntlet')).toBeVisible();
+  await page.getByTestId('layout-option-few').click();
+  await expect(page.getByTestId('layout-option-few')).toHaveAttribute('aria-pressed', 'true');
+  await page.getByTestId('advanced-done').click();
+
+  // The main screen then names it, and the menu keeps it for the session —
+  // switching away and back needs no second trip to the Layouts page.
+  await expect(select(page)).toHaveValue('few');
+  await expect(select(page).locator('option:checked')).toHaveText('Few (tunnels)');
+  await select(page).selectOption('fresh');
+  expect(await labels()).toContain('Few (tunnels)');
   await select(page).selectOption('few');
   await expect(select(page)).toHaveValue('few');
-
-  // While a classic is selected the group cannot be folded back away — the
-  // menu would otherwise show a blank selection.
-  await expect(page.getByTestId('toggle-classic-presets')).toBeDisabled();
-  await select(page).selectOption('fresh');
-  await expect(page.getByTestId('toggle-classic-presets')).toBeEnabled();
+  // A fixed layout has nothing to re-roll.
+  await expect(page.getByTestId('reroll-layout')).toHaveCount(0);
 });
 
 test('each mode previews the board it promises', async ({ page }) => {
@@ -160,9 +193,12 @@ test('each mode previews the board it promises', async ({ page }) => {
   await expect(gardens().first()).toBeVisible();
   const before = await gardens().count();
   await page.getByTestId('reroll-layout').click();
-  await expect(page.getByTestId('preset-section')).toContainText('Map #');
   expect(await gardens().count()).toBeGreaterThan(0);
   expect(before).toBeGreaterThan(0);
+
+  // The rolled map's number is on the Layouts page.
+  await openLayouts(page);
+  await expect(page.getByTestId('layout-map-number')).toHaveText(/Map #\d+/);
 });
 
 test('the sparse modes fit a 5×5 board, where the full random map does not', async ({ page }) => {
@@ -181,7 +217,7 @@ test('the sparse modes fit a 5×5 board, where the full random map does not', as
   await expect(select(page).locator('option[value="random"]')).toBeDisabled();
 });
 
-test('choosing Custom opens the editor; cancelling keeps the previous preset', async ({ page }) => {
+test('Draw your own opens the editor; cancelling keeps the previous layout', async ({ page }) => {
   await openSetup(page);
   await selectClassic(page, 'gauntlet');
 
@@ -214,8 +250,8 @@ test('plays a custom preset without saving: no download, no filename, and the ma
 
   // And it is the layout that actually gets played.
   await page.getByTestId('player-count-2').click();
-  await page.getByTestId('seat-0-human').click();
-  await page.getByTestId('seat-1-human').click();
+  await setController(page, 0, 'human');
+  await setController(page, 1, 'human');
   await setSeed(page, SEED);
   await page.getByTestId('start-game').click();
   await expect(page.getByTestId('game-screen')).toBeVisible();
@@ -244,7 +280,7 @@ test('unnamed layouts are numbered, and Edit reopens the selected one', async ({
   await expect(select(page).locator('option')).toContainText([/Unnamed preset 1/, /Unnamed preset 2/]);
 
   // Edit reopens the SELECTED layout, keeping its number and its board.
-  await page.getByTestId('edit-preset').click();
+  await editSelected(page);
   await expect(page.getByLabel('Preset name')).toHaveValue('Unnamed preset 2');
   await expect(page.getByRole('button', { name: 'Space 5,5, Tunnel' })).toBeVisible();
   await page.getByTestId('preset-play').click();
@@ -259,7 +295,7 @@ test('a built-in preset can be edited and exported, which is how it becomes a fi
   // Edit opens the built-in's own map, as a copy — the registry is fixed at
   // build time, so the way to change a stock preset is to fork, export, and
   // drop the .json into src/engine/presets/.
-  await page.getByTestId('edit-preset').click();
+  await editSelected(page);
   await expect(page.getByLabel('Preset name')).toHaveValue('Few (tunnels) (copy)');
   await expect(page.getByRole('button', { name: 'Space 1,1, Tunnel' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Space 5,5, Tunnel' })).toBeVisible();
@@ -284,8 +320,8 @@ test('a preset shipped as a file plays its own home positions', async ({ page })
   await expect(preview.locator('.cell.editor-home')).toHaveCount(4);
 
   await page.getByTestId('player-count-2').click();
-  await page.getByTestId('seat-0-human').click();
-  await page.getByTestId('seat-1-human').click();
+  await setController(page, 0, 'human');
+  await setController(page, 1, 'human');
   await setSeed(page, SEED);
   await page.getByTestId('start-game').click();
   await expect(page.getByTestId('game-screen')).toBeVisible();
@@ -319,18 +355,54 @@ test('saving still exports a file, and the export imports back in', async ({ pag
   expect(saved.homes).toHaveLength(4);
   expect(saved.gardens).toEqual([{ pos: { x: 2, y: 2 }, type: 'tunnel' }]);
 
-  // …and a fresh session can import it back.
+  // …and a fresh session can import it back, from the Layouts page.
   await openSetup(page);
+  await openLayouts(page);
   await page.getByLabel('Import a garden preset file').setInputFiles(file!);
+  await expect(page.getByTestId('layouts-page').locator('.layout-option.on')).toContainText('Twin Rivers');
+  await page.getByTestId('advanced-done').click();
   await expect(select(page).locator('option:checked')).toHaveText('Twin Rivers');
+});
+
+test('the Layouts page exports the selected layout as a file', async ({ page }) => {
+  await openSetup(page);
+  await selectClassic(page, 'few');
+  await openLayouts(page);
+  const [download] = await Promise.all([page.waitForEvent('download'), page.getByTestId('export-preset').click()]);
+  expect(download.suggestedFilename()).toMatch(/\.whimsy-preset\.json$/);
+  const saved = JSON.parse(await readFile((await download.path())!, 'utf8'));
+  expect(saved).toMatchObject({ kind: 'whimsy-wars-garden-preset', boardSize: 7 });
+  expect(saved.gardens).toHaveLength(4);
+});
+
+test('removing a session layout drops it from the menu and falls back to the default', async ({ page }) => {
+  await openSetup(page);
+  await openEditor(page);
+  await paint(page, 'Space 1,1');
+  await page.getByTestId('preset-play').click();
+  await expect(select(page).locator('option:checked')).toHaveText('Unnamed preset 1');
+
+  // Only a layout made this session can be removed; a stock one cannot.
+  await openLayouts(page);
+  await page.getByTestId('remove-preset').click();
+  await expect(page.getByTestId('remove-preset')).toHaveCount(0);
+  await page.getByTestId('advanced-done').click();
+
+  await expect(select(page)).toHaveValue('random');
+  await expect(select(page).locator('option', { hasText: 'Unnamed preset' })).toHaveCount(0);
 });
 
 test('the editor draws the board the game is set up to play, not a fixed 7×7', async ({ page }) => {
   await openSetup(page);
   await select(page).selectOption('fresh');
-  await setBoardSize(page, 13);
 
-  await openEditor(page);
+  // Board size chosen in the dialog and carried straight into Draw your own,
+  // without pressing Done first: leaving for the editor applies it.
+  await page.getByTestId('open-advanced').click();
+  await page.getByTestId('board-size-13').click();
+  await page.getByTestId('open-layouts').click();
+  await page.getByTestId('draw-layout').click();
+  await expect(page.getByTestId('preset-play')).toBeVisible();
   const board = page.getByLabel('Preset editor board');
   await expect(board.locator('.cell')).toHaveCount(13 * 13);
   // Homes sit on the 13×13 edge midpoints, which do not exist on a 7×7 grid.

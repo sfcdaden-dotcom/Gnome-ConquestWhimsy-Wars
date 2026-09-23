@@ -38,31 +38,68 @@ export interface ChatPanelProps {
   muted: boolean;
   onToggleMute: () => void;
   onSay: (player: PlayerId, phraseId: QuickChatId, target?: QuickChatTarget) => void;
+  /**
+   * Which body starts open, or null (the default) for the folded window.
+   * The game never passes it; it is for the UI laboratory's specimens.
+   */
+  initialView?: Tab | null;
 }
 
 type Tab = 'chat' | 'log';
 
-export function ChatPanel({ state, seat, disabled, muted, onToggleMute, onSay }: ChatPanelProps) {
-  const [tab, setTab] = useState<Tab>('chat');
-  const [collapsed, setCollapsed] = useState(false);
-  const [seen, setSeen] = useState(0);
+/**
+ * The window starts FOLDED: just its two tabs and the phrase button. In a
+ * strategy game the sidebar belongs to the decision and the hand, and an empty
+ * transcript is the last thing that should claim the space left over. A tab
+ * opens its body; the open tab (or Hide) folds it again; unread chat is badged
+ * on the Chat tab whenever the chat itself is not on screen, so folding it
+ * never means missing something said.
+ */
+export function ChatPanel({ state, seat, disabled, muted, onToggleMute, onSay, initialView = null }: ChatPanelProps) {
+  const [tab, setTab] = useState<Tab>(initialView ?? 'chat');
+  const [collapsed, setCollapsed] = useState(initialView === null);
+  /**
+   * The newest event this window has accounted for, as a match-wide ordinal
+   * (see `eventCount`). Unread chat is chat said AFTER it.
+   *
+   * It starts at the end of the log as it stands when the window mounts: a
+   * reload or a reconnect rebuilds the window with the whole transcript
+   * already in it, and those lines were said before this screen existed —
+   * they are history to read, not news to badge. An ordinal rather than a
+   * count of lines, because the engine keeps only the last MAX_EVENTS events:
+   * once that window is full, a new line can leave the count unchanged.
+   */
+  const [seenThrough, setSeenThrough] = useState(() => state.eventCount - 1);
 
+  // Each event's ordinal in the whole match: the retained window is the tail.
+  const firstOrdinal = state.eventCount - state.events.length;
   const lines = useMemo(
     () =>
       state.events.flatMap((e, i) =>
         e.type === 'quickChatSaid'
-          ? [{ key: i, player: e.player, phraseId: e.phraseId, target: e.target }]
+          ? [{ key: firstOrdinal + i, player: e.player, phraseId: e.phraseId, target: e.target }]
           : [],
       ),
-    [state.events],
+    [state.events, firstOrdinal],
   );
 
-  // Reading the chat clears its unread badge; the log tab lets it build up.
+  // Reading the chat clears its unread badge; the log tab and the folded
+  // window both let it build up.
   const showingChat = tab === 'chat' && !collapsed;
   useEffect(() => {
-    if (showingChat) setSeen(lines.length);
-  }, [showingChat, lines.length]);
-  const unread = Math.max(0, lines.length - seen);
+    if (showingChat) setSeenThrough(state.eventCount - 1);
+  }, [showingChat, state.eventCount]);
+  const unread = lines.filter((l) => l.key > seenThrough).length;
+
+  /** A folded tab opens; the tab already open folds the window back up. */
+  const openTab = (t: Tab) => {
+    if (t === tab && !collapsed) {
+      setCollapsed(true);
+      return;
+    }
+    setTab(t);
+    setCollapsed(false);
+  };
 
   return (
     <div className={`chat-panel${collapsed ? ' collapsed' : ''}`} data-testid="chat-panel" data-tab={tab}>
@@ -72,15 +109,13 @@ export function ChatPanel({ state, seat, disabled, muted, onToggleMute, onSay }:
             type="button"
             role="tab"
             aria-selected={tab === 'chat'}
-            className={`btn small chip${tab === 'chat' ? ' on' : ''}`}
+            aria-expanded={showingChat}
+            className={`btn small ghost chip${showingChat ? ' on' : ''}`}
             data-testid="chat-tab-chat"
-            onClick={() => {
-              setTab('chat');
-              setCollapsed(false);
-            }}
+            onClick={() => openTab('chat')}
           >
             💬 Chat
-            {unread > 0 && tab !== 'chat' && (
+            {unread > 0 && !showingChat && (
               <span className="chat-unread" data-testid="chat-unread">
                 {unread}
               </span>
@@ -90,12 +125,10 @@ export function ChatPanel({ state, seat, disabled, muted, onToggleMute, onSay }:
             type="button"
             role="tab"
             aria-selected={tab === 'log'}
-            className={`btn small chip${tab === 'log' ? ' on' : ''}`}
+            aria-expanded={tab === 'log' && !collapsed}
+            className={`btn small ghost chip${tab === 'log' && !collapsed ? ' on' : ''}`}
             data-testid="chat-tab-log"
-            onClick={() => {
-              setTab('log');
-              setCollapsed(false);
-            }}
+            onClick={() => openTab('log')}
           >
             📜 Game log
           </button>
@@ -103,7 +136,7 @@ export function ChatPanel({ state, seat, disabled, muted, onToggleMute, onSay }:
         <span className="chat-head-right">
           <button
             type="button"
-            className={`btn small${muted ? ' on' : ''}`}
+            className={`btn small ghost${muted ? ' on' : ''}`}
             aria-pressed={muted}
             data-testid="quickchat-mute"
             title={muted ? 'Chat bubbles hidden — the transcript still records them' : 'Hide chat bubbles'}
@@ -113,12 +146,14 @@ export function ChatPanel({ state, seat, disabled, muted, onToggleMute, onSay }:
           </button>
           <button
             type="button"
-            className="btn small"
+            className="btn small ghost"
             aria-expanded={!collapsed}
+            aria-label={collapsed ? 'Show the chat window' : 'Hide the chat window'}
+            title={collapsed ? 'Show' : 'Hide'}
             data-testid="chat-collapse"
             onClick={() => setCollapsed((c) => !c)}
           >
-            {collapsed ? 'Show ▸' : 'Hide ▾'}
+            <span aria-hidden="true">{collapsed ? '▸' : '▾'}</span>
           </button>
         </span>
       </div>

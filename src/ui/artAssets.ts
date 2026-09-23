@@ -1,6 +1,6 @@
 /**
  * The game's picture assets: one map from garden type to file, one from unit
- * kind to file.
+ * kind to file, and one from interface icon to file.
  *
  * Gardens and units used to be emoji, which meant the board looked like a
  * different game on every platform (and like nothing at all where a glyph was
@@ -18,6 +18,7 @@
  */
 
 import type { GardenType, UnitKind } from '../engine';
+import type { UiIconKind } from './uiIcons';
 
 import gardenHome from '../assets/art/Gardens/garden-home.png';
 import gardenDandelion from '../assets/art/Gardens/garden-dandelion.png';
@@ -28,6 +29,10 @@ import gardenSlippery from '../assets/art/Gardens/garden-slippery.png';
 import gardenTunnel from '../assets/art/Gardens/garden-tunnel.png';
 import unitGnome from '../assets/art/unit-gnome.png';
 import unitSnail from '../assets/art/unit-snail.png';
+import uiWish from '../assets/art/ui-wish.png';
+import uiReinforcement from '../assets/art/ui-reinforcement.png';
+import uiCard from '../assets/art/ui-card.png';
+import uiPlant from '../assets/art/ui-sapling.png';
 
 export const GARDEN_ART: Record<GardenType, string> = {
   home: gardenHome,
@@ -42,4 +47,12 @@ export const GARDEN_ART: Record<GardenType, string> = {
 export const UNIT_ART: Record<UnitKind, string> = {
   gnome: unitGnome,
   snail: unitSnail,
+};
+
+/** Resource and action icons — see uiIcons.ts for what each one means. */
+export const UI_ICON_ART: Record<UiIconKind, string> = {
+  wish: uiWish,
+  reinforcement: uiReinforcement,
+  card: uiCard,
+  plant: uiPlant,
 };
