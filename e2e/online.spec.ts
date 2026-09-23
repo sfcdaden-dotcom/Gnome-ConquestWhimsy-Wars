@@ -45,6 +45,8 @@ test('two browsers meet in a room and play a networked turn', async ({ browser }
     /Waiting for Ada to start the game/,
   );
   await expect(host.getByTestId('lobby-start')).toBeEnabled();
+  // The host is waiting on nobody but themselves, and is told so directly.
+  await expect(host.getByTestId('lobby-blocker')).toHaveText('Everyone is here. Start the game when you are ready.');
   await host.getByTestId('lobby-start').click();
 
   // Both land on the board, and both see the room code as the game tag.
@@ -130,6 +132,11 @@ test('a refresh keeps your seat and your hand', async ({ page }) => {
   await page.getByTestId('lobby-start').click();
   await expect(page.getByTestId('game-screen')).toBeVisible();
 
+  // Say something first, so there is a transcript for the reload to rebuild.
+  await page.getByTestId('quickchat-open').click();
+  await page.getByTestId('quickchat-group-greetings').click();
+  await page.getByTestId('quickchat-say-hi').click();
+
   // Reload, and nothing else: the room is the page's address now, so this is
   // a new socket presenting this tab's token for a room it never left.
   await page.reload();
@@ -139,6 +146,11 @@ test('a refresh keeps your seat and your hand', async ({ page }) => {
   await expect(page.getByTestId('game-screen')).toBeVisible();
   await expect(page.getByText(`room ${code}`)).toBeVisible();
   await expect(page.locator('.hand-panel .panel-title')).toContainText('Ada', { timeout: 10_000 });
+
+  // The transcript came back with it — as history, not as unread news.
+  await expect(page.getByTestId('chat-unread')).toHaveCount(0);
+  await page.getByTestId('chat-tab-chat').click();
+  await expect(page.getByTestId('chat-transcript')).toContainText('Hi!');
 });
 
 /**

@@ -58,25 +58,38 @@ type Tab = 'chat' | 'log';
 export function ChatPanel({ state, seat, disabled, muted, onToggleMute, onSay, initialView = null }: ChatPanelProps) {
   const [tab, setTab] = useState<Tab>(initialView ?? 'chat');
   const [collapsed, setCollapsed] = useState(initialView === null);
-  const [seen, setSeen] = useState(0);
+  /**
+   * The newest event this window has accounted for, as a match-wide ordinal
+   * (see `eventCount`). Unread chat is chat said AFTER it.
+   *
+   * It starts at the end of the log as it stands when the window mounts: a
+   * reload or a reconnect rebuilds the window with the whole transcript
+   * already in it, and those lines were said before this screen existed —
+   * they are history to read, not news to badge. An ordinal rather than a
+   * count of lines, because the engine keeps only the last MAX_EVENTS events:
+   * once that window is full, a new line can leave the count unchanged.
+   */
+  const [seenThrough, setSeenThrough] = useState(() => state.eventCount - 1);
 
+  // Each event's ordinal in the whole match: the retained window is the tail.
+  const firstOrdinal = state.eventCount - state.events.length;
   const lines = useMemo(
     () =>
       state.events.flatMap((e, i) =>
         e.type === 'quickChatSaid'
-          ? [{ key: i, player: e.player, phraseId: e.phraseId, target: e.target }]
+          ? [{ key: firstOrdinal + i, player: e.player, phraseId: e.phraseId, target: e.target }]
           : [],
       ),
-    [state.events],
+    [state.events, firstOrdinal],
   );
 
   // Reading the chat clears its unread badge; the log tab and the folded
   // window both let it build up.
   const showingChat = tab === 'chat' && !collapsed;
   useEffect(() => {
-    if (showingChat) setSeen(lines.length);
-  }, [showingChat, lines.length]);
-  const unread = Math.max(0, lines.length - seen);
+    if (showingChat) setSeenThrough(state.eventCount - 1);
+  }, [showingChat, state.eventCount]);
+  const unread = lines.filter((l) => l.key > seenThrough).length;
 
   /** A folded tab opens; the tab already open folds the window back up. */
   const openTab = (t: Tab) => {

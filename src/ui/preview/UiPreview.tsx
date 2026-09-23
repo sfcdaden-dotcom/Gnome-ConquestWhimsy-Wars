@@ -1156,6 +1156,10 @@ const TOKEN_GROUPS: Array<[string, string[]]> = [
   ['Meaning', ['--color-wish', '--color-warning', '--color-danger']],
   ['Players', ['--color-player-red', '--color-player-blue', '--color-player-yellow', '--color-player-purple']],
   ['Board', ['--color-cell', '--color-cell-alt', '--color-bloom-eye']],
+  [
+    'Board highlights',
+    ['--color-highlight-move', '--color-highlight-decision', '--color-highlight-target', '--color-highlight-picked'],
+  ],
 ];
 
 const SPACE_TOKENS = [

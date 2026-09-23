@@ -672,7 +672,7 @@ function Lobby({
               <div className="lobby-status">
                 {/* The same sentence on every screen in the room. */}
                 <p className="lobby-blocker" data-testid="lobby-blocker">
-                  {blockerText(blocker)}
+                  {blockerText(blocker, isHost)}
                 </p>
                 {blocker.kind === 'hostless' ? (
                   // The room waited out its host and nobody owns it. This is
