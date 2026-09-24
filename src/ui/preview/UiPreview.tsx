@@ -869,7 +869,7 @@ function UiLab() {
         <Section
           id="board"
           title="Board & zoom"
-          note="The real Board on the real PanZoom stage. Every garden type and its upgraded form, all four homes, the centre star, a freshly-planted (faded) garden, a moved (dimmed) gnome, a 3-gnome stack, a two-seat standoff, a snail, all four highlight kinds and the selection ring. The zoom cluster is PanZoom's own."
+          note="The real Board on the real PanZoom stage. Every garden type and its upgraded form (gilt frame), all four homes, the centre star, a freshly-planted garden (drawn as a sapling), a stunned (grey) flytrap, a moved (dimmed) gnome, a 3-gnome stack, a two-seat standoff, a snail, all four highlight kinds and the selection ring. The zoom cluster is PanZoom's own."
         >
           <div className="uip-board-frame">
             <PanZoom className="uip-stage" label="Preview board" contentWidth={boardPx} contentHeight={boardPx} maxFitScale={1.4}>
@@ -1115,8 +1115,7 @@ function CardSpecimen({ name, text, timing }: { name: string; text: string; timi
  */
 const RESOURCE_ICONS: Array<{ glyph: string; meaning: string; kind: string; where: string }> = [
   { glyph: '✨', meaning: 'Wishes — plain-text fallback only (log lines, generated action labels)', kind: 'fallback', where: 'meta' },
-  { glyph: '⭐', meaning: 'Centre Star, and an upgraded garden’s badge', kind: 'game object', where: 'Board, meta, SetupScreen' },
-  { glyph: '💫', meaning: 'Flytrap stunned', kind: 'game object', where: 'Board' },
+  { glyph: '⭐', meaning: 'Centre Star, and the garden-upgraded log line', kind: 'game object', where: 'Board, meta, SetupScreen' },
   { glyph: '🌱', meaning: '“Start the war” — decoration, not planting, so it did not become the Plant icon', kind: 'decorative', where: 'SetupScreen' },
   { glyph: '⚡', meaning: 'Sudden Magic (card timing)', kind: 'category', where: 'panels' },
   { glyph: '🕯️', meaning: 'Ritual Magic (card timing)', kind: 'category', where: 'panels' },

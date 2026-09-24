@@ -32,15 +32,27 @@ interface IconProps {
   title?: string;
 }
 
-export function GardenIcon({ type, className, alt = '', title }: IconProps & { type: GardenType }) {
+/**
+ * A garden's picture. `sapling` draws a freshly planted garden, one that is
+ * not Active until next turn, as the planting sapling instead of its grown
+ * art: the space's own tint and tooltip still say which garden is coming.
+ */
+export function GardenIcon({
+  type,
+  sapling = false,
+  className,
+  alt = '',
+  title,
+}: IconProps & { type: GardenType; sapling?: boolean }) {
   return (
     <img
       className={`art${className ? ` ${className}` : ''}`}
-      src={GARDEN_ART[type]}
+      src={sapling ? UI_ICON_ART.plant : GARDEN_ART[type]}
       alt={alt}
       title={title}
       draggable={false}
-      data-art={`garden-${type}`}
+      data-art={sapling ? 'garden-sapling' : `garden-${type}`}
+      data-garden={type}
     />
   );
 }
