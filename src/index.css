@@ -65,6 +65,11 @@
   --color-highlight-decision: #d8a93e;
   --color-highlight-target: #c23636;
   --color-highlight-picked: #7a3bd8;
+  /* An upgraded garden's gilt frame: a bright gold line inside a dark bronze
+     edge. Two tones so it holds on the yellow Dandelion and Maize cells, and
+     so it never reads as the flat amber decision ring above. */
+  --color-upgraded: #e9b820;
+  --color-upgraded-edge: #7a5a0c;
 
   --shadow-raised: 0 4px 14px rgba(44, 66, 24, 0.12);
 
@@ -142,6 +147,8 @@
     --color-highlight-decision: #e0b447;
     --color-highlight-target: #e56c6c;
     --color-highlight-picked: #a574ec;
+    --color-upgraded: #f2c94c;
+    --color-upgraded-edge: #8a6412;
     --shadow-raised: 0 4px 14px rgba(0, 0, 0, 0.4);
   }
 }
@@ -170,6 +177,8 @@
   --color-highlight-decision: #e0b447;
   --color-highlight-target: #e56c6c;
   --color-highlight-picked: #a574ec;
+  --color-upgraded: #f2c94c;
+  --color-upgraded-edge: #8a6412;
   --shadow-raised: 0 4px 14px rgba(0, 0, 0, 0.4);
 }
 :root[data-theme='light'] {
@@ -1317,9 +1326,10 @@ h2 {
   position: absolute;
   top: 2px;
   left: 3px;
-  /* ≈ a third of one cell, whatever the board size (--n). */
-  width: clamp(14px, calc(40cqi / var(--n, 7)), 24px);
-  height: clamp(14px, calc(40cqi / var(--n, 7)), 24px);
+  /* ≈ half of one cell, whatever the board size (--n). Picked in the UI lab
+     as the largest the art gets before it crowds a gnome standing on it. */
+  width: clamp(21px, calc(60cqi / var(--n, 7)), 36px);
+  height: clamp(21px, calc(60cqi / var(--n, 7)), 36px);
   line-height: 1;
   pointer-events: none;
 }
@@ -1332,6 +1342,11 @@ h2 {
 .garden-icon.inactive {
   opacity: 0.45;
   filter: grayscale(0.6);
+}
+/* A flytrap that has already bitten this turn. Fully grey but NOT faded, so
+   it stays distinct from a freshly planted garden (faded, part colour). */
+.garden-icon.stunned {
+  filter: grayscale(1) brightness(0.9);
 }
 /* Boards that hold no units let the garden art take the whole space. */
 .preset-preview .garden-icon,
@@ -1348,20 +1363,19 @@ h2 {
   font-size: clamp(10px, calc(28cqi / var(--n, 7)), 16px);
   pointer-events: none;
 }
-.stun {
-  position: absolute;
-  bottom: 2px;
-  left: 4px;
-  font-size: 12px;
-  pointer-events: none;
-}
-.upgraded {
-  position: absolute;
-  top: 2px;
-  left: 4px;
-  font-size: clamp(9px, calc(24cqi / var(--n, 7)), 13px);
-  pointer-events: none;
-  filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.45));
+/* An upgraded garden: the space itself gets a gilt frame — the existing 1px
+   border turns bronze and a 2px gold line runs just inside it. It is an
+   outline so it composes with the inset box-shadow highlights below rather
+   than competing with them for the one box-shadow. The soft inner glow is
+   what tells it apart from the amber decision ring and from Yellow's home
+   border, which are both plain lines; a highlight replaces the glow while it
+   is up, but never the frame. */
+.cell.upgraded {
+  --hl-ring: 5px;
+  border-color: var(--color-upgraded-edge);
+  outline: 2px solid var(--color-upgraded);
+  outline-offset: -3px;
+  box-shadow: inset 0 0 10px 1px color-mix(in srgb, var(--color-upgraded) 55%, transparent);
 }
 
 .tokens {
@@ -1448,24 +1462,25 @@ h2 {
   padding: 0 3px;
 }
 
-/* Highlights */
+/* Highlights. `--hl-ring` is 3px, widened on an upgraded space so the ring
+   still shows 3px inside the gilt frame drawn over its outer edge. */
 .cell.hl-move {
-  box-shadow: inset 0 0 0 3px var(--color-highlight-move);
+  box-shadow: inset 0 0 0 var(--hl-ring, 3px) var(--color-highlight-move);
   filter: brightness(1.08);
 }
 .cell.hl-decision {
-  box-shadow: inset 0 0 0 3px var(--color-highlight-decision);
+  box-shadow: inset 0 0 0 var(--hl-ring, 3px) var(--color-highlight-decision);
   animation: pulse 1.1s ease-in-out infinite;
 }
 .cell.hl-target {
-  box-shadow: inset 0 0 0 3px var(--color-highlight-target);
+  box-shadow: inset 0 0 0 var(--hl-ring, 3px) var(--color-highlight-target);
   animation: pulse 1.1s ease-in-out infinite;
 }
 .cell.hl-picked {
-  box-shadow: inset 0 0 0 3px var(--color-highlight-picked);
+  box-shadow: inset 0 0 0 var(--hl-ring, 3px) var(--color-highlight-picked);
 }
 .cell.sel {
-  box-shadow: inset 0 0 0 3px var(--color-text);
+  box-shadow: inset 0 0 0 var(--hl-ring, 3px) var(--color-text);
 }
 
 @keyframes pulse {

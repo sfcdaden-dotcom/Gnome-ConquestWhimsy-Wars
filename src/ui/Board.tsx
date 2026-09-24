@@ -83,6 +83,9 @@ export function Board({ state, highlights, selectedKey, poofs = [], sizePx, onCe
 
       const classes = ['cell'];
       if (garden) classes.push(`g-${garden.type}`);
+      // An upgraded garden is marked by the space's gilt frame, not a badge on
+      // the art — a badge sat on top of the picture it was describing.
+      if (garden?.upgraded) classes.push('upgraded');
       if (hl) classes.push(`hl-${hl}`);
       if (selectedKey === key) classes.push('sel');
       if (contested) classes.push('contested');
@@ -102,6 +105,7 @@ export function Board({ state, highlights, selectedKey, poofs = [], sizePx, onCe
           style={style as CSSProperties}
           data-testid={`cell-${key}`}
           data-highlight={hl ?? ''}
+          data-upgraded={garden?.upgraded ? 'true' : undefined}
           data-contested={contested || undefined}
           data-selected={selectedKey === key ? 'true' : 'false'}
           onClick={() => onCellClick(pos)}
@@ -111,12 +115,8 @@ export function Board({ state, highlights, selectedKey, poofs = [], sizePx, onCe
           {garden && (
             <GardenIcon
               type={garden.type}
-              className={`garden-icon${gardenInactive(state, garden.plantedOnTurn) ? ' inactive' : ''}`}
+              className={`garden-icon${gardenInactive(state, garden.plantedOnTurn) ? ' inactive' : ''}${gardenStunned(garden) ? ' stunned' : ''}`}
             />
-          )}
-          {garden?.upgraded && <span className="upgraded" data-testid="upgraded-badge">⭐</span>}
-          {garden?.type === 'flytrap' && garden.stunnedForPlayerTurn !== null && (
-            <span className="stun">💫</span>
           )}
           {isCenter && <span className="star">⭐</span>}
           {units.length > 0 && (
@@ -161,6 +161,14 @@ function gardenInactive(state: GameState, plantedOnTurn: number): boolean {
   return plantedOnTurn >= turnNo; // planted this turn — not Active yet
 }
 
+/**
+ * A flytrap that has already bitten this turn. Checked as "set", not
+ * `!== null`: a garden that never had the field is not stunned.
+ */
+function gardenStunned(garden: GameState['gardens'][string]): boolean {
+  return garden.type === 'flytrap' && garden.stunnedForPlayerTurn != null;
+}
+
 function cellTitle(state: GameState, pos: Pos): string {
   const parts: string[] = [posKey(pos)];
   const g = state.gardens[posKey(pos)];
@@ -172,7 +180,7 @@ function cellTitle(state: GameState, pos: Pos): string {
         : `${meta.label}${g.owner !== undefined ? ` (${state.players[g.owner]?.name})` : ''} — ${meta.blurb}`,
     );
     if (gardenInactive(state, g.plantedOnTurn)) parts.push('Freshly planted (inactive until next turn).');
-    if (g.type === 'flytrap' && g.stunnedForPlayerTurn !== null) parts.push('Stunned this turn.');
+    if (gardenStunned(g)) parts.push('Stunned this turn.');
     if (g.type === 'maize' && g.doubledForPlayerTurn !== null) parts.push('Exit cost doubled this turn.');
     if (g.skipNextHarvest) parts.push('Skips its next harvest.');
   }

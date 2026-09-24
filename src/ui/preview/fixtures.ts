@@ -142,8 +142,9 @@ export function previewState(): GameState {
     garden(d, { x: 2, y: 3 }, 'slippery', { plantedBy: 3, upgraded: true });
     garden(d, { x: 3, y: 3 }, 'tunnel', { plantedBy: 0 });
     garden(d, { x: 4, y: 3 }, 'tunnel', { plantedBy: 0, upgraded: true });
-    garden(d, { x: 5, y: 3 }, 'flytrap');
-    garden(d, { x: 6, y: 3 }, 'flytrap', { upgraded: true });
+    // Stunned: it has bitten this turn, so it draws greyed out.
+    garden(d, { x: 5, y: 3 }, 'flytrap', { stunnedForPlayerTurn: 1 });
+    garden(d, { x: 6, y: 3 }, 'flytrap', { upgraded: true, stunnedForPlayerTurn: null });
     // Freshly planted: drawn faded until it goes Active next turn.
     garden(d, { x: 7, y: 3 }, 'dandelion', { plantedBy: 1, plantedOnTurn: 3 });
 
@@ -330,55 +331,5 @@ export function decisionFixtures(): DecisionFixture[] {
 export function emptyHandFixture(): GameState {
   return edit(previewState(), (d) => {
     d.players[0].hand = [];
-  });
-}
-
-/**
- * TEMPORARY — the Board Art Scale specimen (see UiPreview.tsx, `#board-art`).
- *
- * A 7×7 board — the default size, so the `cqi / --n` clamps land where a real
- * game's do — laid out as a table rather than a position. Rows 0–5 are the six
- * gardens under review; row 6 is the same three unit states with no garden, as
- * the baseline a gnome has to read against anyway.
- *
- *   col 0  garden only
- *   col 1  garden + one gnome
- *   col 2  garden + a 3-gnome stack (count badge)
- *   col 3  upgraded garden + one gnome (the ⭐ badge also lives top-left)
- *   col 4+ empty, unoccupied cells
- *
- * The seat rotates by row so every gnome colourway meets a garden; the Home
- * row is seat 0 standing on its own home, which is the common case.
- */
-export const BOARD_ART_ROWS: GardenType[] = ['mushroom', 'flytrap', 'dandelion', 'tunnel', 'slippery', 'home'];
-
-export function boardArtScaleFixture(): GameState {
-  nextId = 1;
-  const base = createGame(
-    {
-      players: SEAT_NAMES.map((name) => ({ name, controller: 'human' as const })),
-      boardSize: 7,
-      gardenPreset: 'none',
-      centerStar: false,
-    },
-    7,
-  );
-  return edit(base, (d) => {
-    d.status = 'playing';
-    d.turn = { number: 3, activePlayer: 0, phase: 'action', snailLostFight: false, snailEatOffered: false };
-    d.gardens = {};
-    d.units = {};
-    BOARD_ART_ROWS.forEach((type, y) => {
-      const seat = type === 'home' ? 0 : (y + 1) % 4;
-      // A flytrap left without `stunnedForPlayerTurn: null` draws as stunned.
-      const extra = type === 'home' ? { owner: 0 } : type === 'flytrap' ? { stunnedForPlayerTurn: null } : {};
-      for (let x = 0; x < 4; x++) {
-        if (x === 3 && type === 'home') continue; // a home has no upgraded form
-        garden(d, { x, y }, type, x === 3 ? { ...extra, upgraded: true } : extra);
-      }
-      put(d, [gnome(seat, { x: 1, y }), gnome(seat, { x: 2, y }), gnome(seat, { x: 2, y }), gnome(seat, { x: 2, y })]);
-      if (type !== 'home') put(d, [gnome(seat, { x: 3, y })]);
-    });
-    put(d, [gnome(1, { x: 1, y: 6 }), gnome(2, { x: 2, y: 6 }), gnome(2, { x: 2, y: 6 }), gnome(2, { x: 2, y: 6 })]);
   });
 }
