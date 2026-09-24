@@ -115,6 +115,7 @@ export function Board({ state, highlights, selectedKey, poofs = [], sizePx, onCe
           {garden && (
             <GardenIcon
               type={garden.type}
+              sapling={gardenInactive(state, garden.plantedOnTurn)}
               className={`garden-icon${gardenInactive(state, garden.plantedOnTurn) ? ' inactive' : ''}${gardenStunned(garden) ? ' stunned' : ''}`}
             />
           )}

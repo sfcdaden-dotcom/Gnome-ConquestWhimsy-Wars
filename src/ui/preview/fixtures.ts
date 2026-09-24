@@ -145,7 +145,7 @@ export function previewState(): GameState {
     // Stunned: it has bitten this turn, so it draws greyed out.
     garden(d, { x: 5, y: 3 }, 'flytrap', { stunnedForPlayerTurn: 1 });
     garden(d, { x: 6, y: 3 }, 'flytrap', { upgraded: true, stunnedForPlayerTurn: null });
-    // Freshly planted: drawn faded until it goes Active next turn.
+    // Freshly planted: drawn as a sapling until it goes Active next turn.
     garden(d, { x: 7, y: 3 }, 'dandelion', { plantedBy: 1, plantedOnTurn: 3 });
 
     put(d, [

@@ -1339,12 +1339,9 @@ h2 {
   height: auto;
   font-size: clamp(12px, calc(36cqi / var(--n, 7)), 20px);
 }
-.garden-icon.inactive {
-  opacity: 0.45;
-  filter: grayscale(0.6);
-}
-/* A flytrap that has already bitten this turn. Fully grey but NOT faded, so
-   it stays distinct from a freshly planted garden (faded, part colour). */
+/* A freshly planted garden draws as the sapling (GardenIcon's `sapling`),
+   so it needs no filter of its own. `.inactive` stays on it as a hook.
+   A flytrap that has already bitten this turn draws fully grey. */
 .garden-icon.stunned {
   filter: grayscale(1) brightness(0.9);
 }

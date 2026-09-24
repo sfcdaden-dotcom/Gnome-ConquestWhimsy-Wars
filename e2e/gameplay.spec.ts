@@ -89,6 +89,10 @@ test('moves a gnome and plants a garden after moving', async ({ page }) => {
   await plantButton.click();
   await g.ready();
   expect(await g.gardenAt(to)).toBe(type);
+  // Not Active until next turn, so the space shows the sapling, not the garden.
+  const art = g.cell(to).locator('.garden-icon');
+  await expect(art).toHaveAttribute('data-art', 'garden-sapling');
+  await expect(art).toHaveAttribute('data-garden', type);
   // Picking a garden closes the submenu — the action list is back.
   await expect(page.getByTestId('end-turn')).toBeVisible();
 });

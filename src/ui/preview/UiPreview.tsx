@@ -869,7 +869,7 @@ function UiLab() {
         <Section
           id="board"
           title="Board & zoom"
-          note="The real Board on the real PanZoom stage. Every garden type and its upgraded form (gilt frame), all four homes, the centre star, a freshly-planted (faded) garden, a stunned (grey) flytrap, a moved (dimmed) gnome, a 3-gnome stack, a two-seat standoff, a snail, all four highlight kinds and the selection ring. The zoom cluster is PanZoom's own."
+          note="The real Board on the real PanZoom stage. Every garden type and its upgraded form (gilt frame), all four homes, the centre star, a freshly-planted garden (drawn as a sapling), a stunned (grey) flytrap, a moved (dimmed) gnome, a 3-gnome stack, a two-seat standoff, a snail, all four highlight kinds and the selection ring. The zoom cluster is PanZoom's own."
         >
           <div className="uip-board-frame">
             <PanZoom className="uip-stage" label="Preview board" contentWidth={boardPx} contentHeight={boardPx} maxFitScale={1.4}>
