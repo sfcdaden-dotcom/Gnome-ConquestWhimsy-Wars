@@ -29,6 +29,7 @@ import type { ReactNode } from 'react';
 import type { CardId, CardTiming, GardenType } from '../../engine';
 import { CARD_DEFINITIONS, CLASSIC_PRESETS, CURSE_DEFINITIONS, MODE_PRESETS, PLANTABLE_GARDEN_TYPES } from '../../engine';
 import { Board } from '../Board';
+import type { HighlightKind } from '../Board';
 import { boardPixelSize } from '../boardGeometry';
 import { CursePanel } from '../GameScreen';
 import { PanZoom } from '../PanZoom';
@@ -46,6 +47,7 @@ import { unitChipLabels } from '../selection';
 import { GnomeLooksContext } from '../gnomeLooks';
 import {
   PREVIEW_SELECTED_KEY,
+  boardArtScaleFixture,
   cursedFixture,
   decisionFixtures,
   emptyHandFixture,
@@ -79,6 +81,7 @@ const SECTIONS = [
   ['icons', 'Icons & resources'],
   ['gardens', 'Garden art'],
   ['board', 'Board & zoom'],
+  ['board-art', 'Board art scale (temp)'],
   ['players', 'Player panels'],
   ['hand', 'Hand & cards'],
   ['decisions', 'Decision panels'],
@@ -179,6 +182,8 @@ function UiLab() {
   const decisions = decisionFixtures();
   const boardPx = boardPixelSize(state.config.boardSize);
   const emptyHand = emptyHandFixture();
+  const artState = boardArtScaleFixture();
+  const artPx = boardPixelSize(artState.config.boardSize);
   // The seat-0 stack on (3,5): what the action bar shows for a selected gnome.
   const stack = Object.values(state.units).filter((u) => u.pos.x === 3 && u.pos.y === 5);
   const stackChips = unitChipLabels(state, stack);
@@ -885,6 +890,32 @@ function UiLab() {
         </Section>
 
         {/* --------------------------------------------------------------- */}
+        {/* TEMPORARY: Board Art Scale specimen. Delete this section, its
+            fixture and the `uip-bas` rules in preview.css once a scale is
+            chosen and moved into index.css. */}
+        <Section
+          id="board-art"
+          title="Board art scale (temporary)"
+          note="How large can garden art get before it hurts unit readability? The real Board, a 7×7 fixture, three treatments. Rows: Mushroom, Flytrap, Dandelion, Tunnel, Slippery, Home, then no garden. Columns: garden only · + one gnome · + 3-gnome stack · upgraded + one gnome · empty cells. B and C override only .garden-icon (and C the .tokens anchor) inside this specimen — production styling is untouched. Each board is shown at zoom 1 (64px cells) and at 0.6, roughly a phone's fitted board."
+        >
+          {BOARD_ART_TREATMENTS.map((t) => (
+            <div key={t.id} className="uip-bas-row" data-testid={`board-art-${t.id}`}>
+              <div className="uip-label">
+                <strong>{t.title}</strong> — {t.detail}
+              </div>
+              <div className={`uip-bas uip-bas-${t.id}`}>
+                <div className="uip-bas-board">
+                  <Board state={artState} highlights={EMPTY_HL} selectedKey={null} sizePx={artPx} onCellClick={noop} />
+                </div>
+                <div className="uip-bas-small" style={{ width: artPx * 0.6, height: artPx * 0.6 }}>
+                  <Board state={artState} highlights={EMPTY_HL} selectedKey={null} sizePx={artPx} onCellClick={noop} />
+                </div>
+              </div>
+            </div>
+          ))}
+        </Section>
+
+        {/* --------------------------------------------------------------- */}
         <Section
           id="players"
           title="Player panels"
@@ -1092,6 +1123,19 @@ function UiLab() {
  * the root, the head row with its name and timing tag, the rules text and the
  * Play button — so the gallery and a real hand cannot drift apart.
  */
+/** TEMPORARY — the three treatments the Board Art Scale specimen compares. */
+const BOARD_ART_TREATMENTS = [
+  { id: 'a', title: 'A. Current production', detail: 'garden art ≈24px, top-left; gnomes centred' },
+  { id: 'b', title: 'B. 1.5× art, same position', detail: 'garden art ≈36px, top-left; gnomes centred' },
+  {
+    id: 'c',
+    title: 'C. 1.5× art, placed',
+    detail: 'garden art ≈36px, bottom-left; gnomes anchored top-right, leaving that corner clear',
+  },
+] as const;
+
+const EMPTY_HL: ReadonlyMap<string, HighlightKind> = new Map();
+
 function CardSpecimen({ name, text, timing }: { name: string; text: string; timing: CardTiming }) {
   return (
     <div className={`card ${timing}`}>
