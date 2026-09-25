@@ -375,8 +375,6 @@ export function describeAction(state: GameState, a: Action): string {
       return `Harvest ${a.sourceKey === 'home' ? 'Home Garden' : `garden at (${a.sourceKey})`}`;
     case 'homeHarvest':
       return a.take === 'wish' ? `${WISH} Take 1 Wish` : 'Spawn a Gnome';
-    case 'mushroomClones':
-      return `Clone ${a.count} gnome${a.count === 1 ? '' : 's'}`;
     case 'slide':
       return `Slide to ${posStr(a.to)}`;
     case 'tunnel':
@@ -486,8 +484,6 @@ export function decisionLabel(kind: string): string {
       return 'choose harvest order';
     case 'homeHarvest':
       return 'home harvest';
-    case 'mushroomClones':
-      return 'mushroom clones';
     case 'slide':
       return 'slide destination';
     case 'tunnel':

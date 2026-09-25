@@ -6,11 +6,13 @@
  *  - At turn start `beginHarvestPhase` snapshots every qualifying source into
  *    `draft.harvest.remaining`.
  *  - The settle loop calls `continueHarvest` until the phase is done:
- *      * >1 sources remaining  → `chooseHarvest` decision (owner picks order),
- *      *  1 source remaining   → resolved automatically (order can't matter),
+ *      * resource gardens (dandelion, mushroom, maize) resolve first, all at
+ *        once and without a prompt (mushrooms clone the maximum), then the
+ *        Home Garden,
+ *      * >1 movement/flytrap sources remaining → `chooseHarvest` decision
+ *        (owner picks order); 1 remaining → resolved automatically,
  *      * a resolved source may surface inner decisions (home wish-or-gnome,
- *        mushroom clone count, slide/tunnel destinations) or queue fights
- *        (flytrap attacks).
+ *        slide/tunnel destinations) or queue fights (flytrap attacks).
  *  - Sources are re-validated when resolved: a garden vacated or invalidated
  *    by an earlier harvest (e.g. a slide moved the gnome away) is skipped.
  *    Gardens newly entered mid-harvest do NOT harvest this turn.
@@ -418,8 +420,18 @@ export function continueHarvest(draft: GameState): void {
     return;
   }
 
-  if (h.remaining.length === 1) {
-    resolveHarvestSourceByKey(draft, h.remaining[0].key);
+  // Resource gardens (dandelion wishes, mushroom clones, maize rolls) all pay
+  // out at once, with nothing to ask: none of them moves a gnome or starts a
+  // fight, so the order they resolve in cannot change anything worth a click.
+  const passive = h.remaining.find(isPassiveSource);
+  if (passive) {
+    resolveHarvestSourceByKey(draft, passive.key);
+    return;
+  }
+  // Then the Home Garden, whose wish-or-gnome choice is its own prompt.
+  const home = h.remaining.find((s) => s.kind === 'home');
+  if (home || h.remaining.length === 1) {
+    resolveHarvestSourceByKey(draft, (home ?? h.remaining[0]).key);
     return;
   }
 
@@ -428,6 +440,11 @@ export function continueHarvest(draft: GameState): void {
     player: t.activePlayer,
     options: h.remaining.map((s) => ({ ...s, pos: { ...s.pos } })),
   };
+}
+
+/** A harvest that only pays out resources — no movement, no fight, no prompt. */
+function isPassiveSource(s: HarvestSource): boolean {
+  return s.kind === 'garden' && (s.gardenType === 'dandelion' || s.gardenType === 'mushroom' || s.gardenType === 'maize');
 }
 
 /** Handle the chooseHarvest decision answer. */
@@ -493,11 +510,9 @@ function resolveHarvestSourceByKey(draft: GameState, sourceKey: string): void {
     }
     case 'mushroom': {
       const max = mushroomCloneMax(draft, player.id, ownGnomes.length);
-      if (max === 0) {
-        pushEvent(draft, { type: 'mushroomHarvested', player: player.id, pos: source.pos, cloned: 0 });
-        return;
-      }
-      draft.pendingDecision = { kind: 'mushroomClones', player: player.id, pos: { ...source.pos }, max };
+      // Always the most it can: cloning fewer is never worth a prompt.
+      pushEvent(draft, { type: 'mushroomHarvested', player: player.id, pos: source.pos, cloned: max });
+      for (let i = 0; i < max; i++) spawnGnome(draft, player.id, source.pos);
       return;
     }
     case 'maize': {
@@ -631,21 +646,6 @@ export function resolveHomeHarvest(draft: GameState, player: PlayerId, take: Hom
   if (!d.options.includes(take)) illegal(`"${take}" is not a legal home-harvest choice right now`);
   draft.pendingDecision = null;
   applyHomeHarvest(draft, player, take);
-}
-
-export function resolveMushroomClones(draft: GameState, player: PlayerId, count: number): void {
-  const d = draft.pendingDecision;
-  if (!d || d.kind !== 'mushroomClones') illegal('No mushroom-clone decision is pending');
-  if (d.player !== player) illegal(`It is player ${d.player}'s decision, not player ${player}'s`);
-  if (!Number.isInteger(count) || count < 0 || count > d.max) {
-    badArg(`Clone count must be an integer between 0 and ${d.max}`);
-  }
-  draft.pendingDecision = null;
-  pushEvent(draft, { type: 'mushroomHarvested', player, pos: d.pos, cloned: count });
-  for (let i = 0; i < count; i++) {
-    if (!canSpawnGnome(draft, player)) break; // defensive; max already capped
-    spawnGnome(draft, player, d.pos);
-  }
 }
 
 export function resolveSlide(draft: GameState, player: PlayerId, to: Pos): void {

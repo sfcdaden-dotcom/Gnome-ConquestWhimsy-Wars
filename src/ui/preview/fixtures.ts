@@ -281,12 +281,6 @@ export function decisionFixtures(): DecisionFixture[] {
     context: 'entry',
     hops: 0,
   };
-  const mushroom: PendingDecision = {
-    kind: 'mushroomClones',
-    player: 0,
-    pos: { x: 3, y: 1 },
-    max: 2,
-  };
 
   return [
     {
@@ -308,13 +302,6 @@ export function decisionFixtures(): DecisionFixture[] {
       note: 'Board-position options, plus a decline.',
       state: withDecision(slide),
       decision: slide,
-      interactive: true,
-    },
-    {
-      label: 'Mushroom clones',
-      note: 'A numeric choice.',
-      state: withDecision(mushroom),
-      decision: mushroom,
       interactive: true,
     },
     {

@@ -95,32 +95,6 @@ export function DecisionPanel({ state, decision, legal, interactive, act, onResp
         </Panel>
       );
 
-    case 'mushroomClones': {
-      const buttons = [];
-      for (let c = 0; c <= decision.max; c++) {
-        buttons.push(
-          <button
-            key={c}
-            type="button"
-            className={`btn${c === decision.max ? ' primary' : ''}`}
-            data-testid={`mushroom-clones-${c}`}
-            onClick={() => act({ type: 'mushroomClones', player: decision.player, count: c })}
-          >
-            {c === 0 ? 'None' : `Clone ${c}`}
-          </button>,
-        );
-      }
-      return (
-        <Panel
-          title={`${who}: Mushroom at ${posStr(decision.pos)}`}
-          icon={<GardenIcon type="mushroom" className="panel-icon" />}
-        >
-          <div className="small muted">How many gnomes to clone (max {decision.max})?</div>
-          <div className="btn-row">{buttons}</div>
-        </Panel>
-      );
-    }
-
     case 'slide':
     case 'tunnel': {
       const verb = decision.kind === 'slide' ? 'Slide' : 'Tunnel';

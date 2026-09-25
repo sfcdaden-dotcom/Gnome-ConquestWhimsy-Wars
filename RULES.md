@@ -77,7 +77,11 @@ Each turn has two phases, in order.
 - A garden only activates when **Active**: (a) the turn it was planted has ended,
   (b) one or more of the active player's gnomes occupy it, (c) no unresolved fights
   on the space. (Home Garden is the exception — it produces even when unoccupied.)
-- The active player resolves their harvests in any order they choose.
+- **[RULING — playtest simplification]** Resource gardens (Dandelion, Mushroom,
+  Maize) all pay out at once at the start of the phase, with no prompt. Then the
+  Home Garden's wish-or-gnome choice. The active player picks the order only among
+  what remains — gardens that move gnomes or fight (Slippery, Tunnel, Flytrap) —
+  and only when there is more than one.
 
 ### 2. Action Phase
 
@@ -227,8 +231,8 @@ Any non-Home garden can be upgraded once to a stronger form — see each garden'
   playtesting.)
 
 ### Mushroom Garden (economy)
-- Harvest: clone up to 2 occupying gnomes (owner picks how many, capped by board/
-  reserve limits). New gnomes spawn on this mushroom garden.
+- Harvest: clone up to 2 occupying gnomes — always as many as possible, capped
+  by occupancy and board/reserve limits (no prompt). New gnomes spawn on this mushroom garden.
 - **[RULING]** Spawned gnomes may move normally during the Action Phase of the turn
   they spawn (they do not get an extra harvest-phase move).
 - **Upgraded — Elder Mushroom**: harvest unchanged (still clones up to 2);

@@ -37,7 +37,6 @@ import {
   resolveChooseHarvest,
   resolveDeclineEffect,
   resolveHomeHarvest,
-  resolveMushroomClones,
   resolveSlide,
   resolveSnailMove,
   resolveTunnel,
@@ -73,8 +72,6 @@ export function dispatch(draft: GameState, action: Action): void {
       return resolveChooseHarvest(draft, action.player, action.sourceKey);
     case 'homeHarvest':
       return resolveHomeHarvest(draft, action.player, action.take);
-    case 'mushroomClones':
-      return resolveMushroomClones(draft, action.player, action.count);
     case 'slide':
       return resolveSlide(draft, action.player, action.to);
     case 'tunnel':

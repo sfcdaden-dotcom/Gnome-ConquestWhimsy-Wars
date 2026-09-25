@@ -56,11 +56,6 @@ export function getLegalActionIntents(state: GameState, player?: PlayerId): Acti
         return d.options.map((s) => ({ type: 'chooseHarvest', player: actor, sourceKey: s.key }));
       case 'homeHarvest':
         return d.options.map((take) => ({ type: 'homeHarvest', player: actor, take }));
-      case 'mushroomClones': {
-        const out: Action[] = [];
-        for (let c = 0; c <= d.max; c++) out.push({ type: 'mushroomClones', player: actor, count: c });
-        return out;
-      }
       case 'slide': {
         const out: Action[] = d.options.map((to) => ({ type: 'slide', player: actor, to }));
         if (d.optional) out.push({ type: 'declineEffect', player: actor });

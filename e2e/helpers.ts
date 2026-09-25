@@ -251,9 +251,6 @@ export class Game {
         case 'chooseHarvest':
           await this.page.locator('[data-testid^="choose-harvest-"]').first().click();
           break;
-        case 'mushroomClones':
-          await this.page.locator('[data-testid^="mushroom-clones-"]').last().click();
-          break;
         case 'slide':
         case 'tunnel':
         case 'snailMove':

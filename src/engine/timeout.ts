@@ -38,7 +38,7 @@ export const MAX_TIMEOUT_STEPS = 500;
  *   4. `endTurn`         — end the Action Phase,
  *   5. otherwise the first action of the engine's own (deterministic) legal
  *      enumeration, which is what mandatory decisions offer: the first harvest
- *      source, `mushroomClones: 0`, the first slide/tunnel destination, the
+ *      source, the first slide/tunnel destination, the
  *      first forced move, and so on.
  *
  * Card plays are never chosen — a timed-out player never spends a card. Returns
