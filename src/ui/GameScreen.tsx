@@ -17,7 +17,7 @@ import { Board } from './Board';
 import { DecisionPanel } from './DecisionPanel';
 import { FightPanel, FightPlaybackCard, HandPanel, PlayerPanels } from './panels';
 import { ChatPanel, QuickChatFeed } from './QuickChat';
-import { GARDEN_META, cardName, cardText, playerColor, pname } from './meta';
+import { GARDEN_META, cardName, cardText, curseIcon, playerColor, pname } from './meta';
 import { GardenIcon, UiIcon, UnitIcon } from './art';
 import { unitNameLive } from './gnomeNames';
 import { actionableUnitsAt, unitChipLabels } from './selection';
@@ -485,6 +485,11 @@ export function GameScreen({ game: g, onPlayAgain, onQuit }: GameScreenProps) {
           />
         </PanZoom>
 
+        {/* Stacked, chat bubbles hang in the board's top corner: the rows
+            under the board are all controls, and bubbles over them hid the
+            action bar. */}
+        {!floating && <QuickChatFeed state={state} bubbles={g.chatBubbles} />}
+
         <aside className="left-col" ref={leftCol}>
           <h2 className="rail-heading">Players</h2>
           <PlayerPanels state={state} takenOverSeats={g.takenOverSeats} />
@@ -492,7 +497,6 @@ export function GameScreen({ game: g, onPlayAgain, onQuit }: GameScreenProps) {
         </aside>
 
         <section className="board-wrap">
-          <QuickChatFeed state={state} bubbles={g.chatBubbles} />
           {/* The dice replay, beside the board rather than over it. Hidden once
               the game ends, where the end overlay is the thing to read. */}
           {playback && state.status !== 'finished' && (
@@ -596,6 +600,10 @@ export function GameScreen({ game: g, onPlayAgain, onQuit }: GameScreenProps) {
               column so the phrase picker opens upward over the transcript.
               Chat outlives the game itself: "gg" is the one action a finished
               game still accepts. */}
+          {/* On a desktop layout the bubbles pop up right above the chat
+              window, in the column's own flow, so they never land on the
+              board, the replay card or a panel. */}
+          {floating && <QuickChatFeed state={state} bubbles={g.chatBubbles} />}
           <ChatPanel
             state={state}
             seat={handSeat}
@@ -694,7 +702,9 @@ function ShotClockPill({
 }
 
 /**
- * Active curses, each with a hover/focus tooltip carrying its rules text.
+ * Active curses as a strip of symbols, each with a hover/focus/tap tooltip
+ * carrying its name and rules text — a full panel of names took far more room
+ * than a rule everyone already knows needs.
  * The text comes straight from the curse definition, so the panel never
  * restates rules the engine owns.
  *
@@ -743,13 +753,18 @@ export function CursePanel({ state }: { state: GameState }) {
   }, [openId, place]);
 
   return (
-    <div className="curse-panel">
-      <div className="panel-title">☠️ Active Curses</div>
+    <div className="curse-panel" role="group" aria-label="Active curses" data-testid="curse-panel">
+      <span className="curse-label" aria-hidden="true" title="Active curses">
+        ☠️
+      </span>
       {state.activeCurses.map((id) => (
-        <div
+        <span
           key={id}
-          className="small curse-item"
+          className="curse-item"
           tabIndex={0}
+          role="img"
+          aria-label={cardName(id)}
+          data-testid={`curse-${id}`}
           aria-describedby={openId === id ? `curse-tip-${id}` : undefined}
           // Pointer events, not mouse ones: a tap also emits compatibility
           // mouseenter/mouseleave, and the trailing mouseleave would close the
@@ -766,8 +781,8 @@ export function CursePanel({ state }: { state: GameState }) {
             if (e.pointerType !== 'mouse') toggle(id, e.currentTarget);
           }}
         >
-          <b>{cardName(id)}</b>
-        </div>
+          {curseIcon(id)}
+        </span>
       ))}
       {openId !== null && pos && (
         <div
@@ -779,7 +794,9 @@ export function CursePanel({ state }: { state: GameState }) {
             ...(pos.above ? { bottom: window.innerHeight - pos.y } : { top: pos.y }),
           }}
         >
-          <b>{cardName(openId)}</b>
+          <b>
+            {curseIcon(openId)} {cardName(openId)}
+          </b>
           <span>{cardText(openId) || 'Unknown curse.'}</span>
         </div>
       )}

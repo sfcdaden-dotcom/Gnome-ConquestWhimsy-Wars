@@ -161,6 +161,19 @@ export function cardName(id: string): string {
   return getCardDef(id)?.name ?? getCurseDef(id)?.name ?? id;
 }
 
+/** One symbol per curse, for the compact active-curse strip. */
+const CURSE_ICONS: Readonly<Record<string, string>> = {
+  'curse-compost-combustion': '🔥',
+  'curse-snailmaggedon': '🐌',
+  'curse-magic-drain': '🪫',
+  'curse-mulch-fever': '🤒',
+  'curse-antsy-pants': '🐜',
+};
+
+export function curseIcon(id: string): string {
+  return CURSE_ICONS[id] ?? '☠️';
+}
+
 /** Rules text of a card or curse, for tooltips. Empty when the id is unknown. */
 export function cardText(id: string): string {
   return getCardDef(id)?.text ?? getCurseDef(id)?.text ?? '';

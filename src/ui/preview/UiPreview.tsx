@@ -1004,7 +1004,7 @@ function UiLab() {
         <Section
           id="curses"
           title="Curses & tooltip"
-          note="All five curses revealed. Hover or focus a row for the game's only real tooltip — it is position: fixed and placed from the row's rect."
+          note="All five curses revealed, as a strip of symbols. Hover, focus or tap one for the game's only real tooltip — it is position: fixed and placed from the row's rect."
         >
           <div className="uip-cols">
             <Item label="<CursePanel> + tooltip">
