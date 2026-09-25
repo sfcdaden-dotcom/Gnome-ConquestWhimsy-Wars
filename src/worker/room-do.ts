@@ -22,12 +22,14 @@ import { createSeal } from '../net/commitment';
 import type { PersistedRoom, RoomConnection, RoomStore } from '../net/room';
 import { Room } from '../net/room';
 import type { ClientMessage, ServerMessage } from '../net/protocol';
-import { parseClientMessage } from '../net/protocol';
+import { PROTOCOL_VERSION, parseClientMessage } from '../net/protocol';
 
 /** What a hibernating socket remembers about itself. */
 interface SocketAttachment {
   connId: string;
   token: string;
+  /** A board view, which must come back as one rather than claim a seat. */
+  spectate?: boolean;
 }
 
 /**
@@ -121,7 +123,18 @@ export class RoomDurableObject implements DurableObject {
       const at = ws.deserializeAttachment() as SocketAttachment | null;
       if (!at) continue;
       this.nextConnId = Math.max(this.nextConnId, Number(at.connId) + 1 || this.nextConnId);
-      await room.hello(this.connection(ws, at.connId), { t: 'hello', protocol: 1, token: at.token });
+      // A socket that never got as far as its hello has no seat to restore;
+      // its real hello will still arrive and introduce it.
+      if (!at.token) continue;
+      // The socket already passed the version check on its real hello; this
+      // replay speaks the room's own version, or every wake from hibernation
+      // would reject every live player as a stale client.
+      await room.hello(this.connection(ws, at.connId), {
+        t: 'hello',
+        protocol: PROTOCOL_VERSION,
+        token: at.token,
+        ...(at.spectate ? { spectate: true } : {}),
+      });
     }
   }
 
@@ -198,7 +211,13 @@ export class RoomDurableObject implements DurableObject {
       await room.hello(conn, parsed);
       // Remember who this socket is, so hibernation cannot lose the seat.
       const token = room.tokenFor(at.connId);
-      if (token) ws.serializeAttachment({ connId: at.connId, token } satisfies SocketAttachment);
+      if (token) {
+        ws.serializeAttachment({
+          connId: at.connId,
+          token,
+          ...(parsed.spectate ? { spectate: true } : {}),
+        } satisfies SocketAttachment);
+      }
       return;
     }
     await room.handle(at.connId, parsed);
