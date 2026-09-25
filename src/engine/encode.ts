@@ -61,8 +61,15 @@ export const ENCODED_CURSE_IDS: readonly string[] = CURSE_DEFINITIONS.map((c) =>
 const GARDEN_TYPES: readonly GardenType[] = ['home', 'dandelion', 'mushroom', 'flytrap', 'maize', 'slippery', 'tunnel'];
 const PLANTABLE_TYPES: readonly PlantableGardenType[] = ['dandelion', 'mushroom', 'flytrap', 'maize', 'slippery', 'tunnel'];
 
-const ACTION_TYPES: readonly Action['type'][] = [
-  'rollOff', 'chooseHarvest', 'homeHarvest', 'mushroomClones', 'slide', 'tunnel',
+/**
+ * A slot the schema keeps after the engine stopped using it: mushrooms now
+ * clone the maximum without asking, so nothing produces this action or
+ * decision any more, but removing it would shift every index after it.
+ */
+const RETIRED_MUSHROOM_CLONES = 'mushroomClones';
+
+const ACTION_TYPES: readonly (Action['type'] | typeof RETIRED_MUSHROOM_CLONES)[] = [
+  'rollOff', 'chooseHarvest', 'homeHarvest', RETIRED_MUSHROOM_CLONES, 'slide', 'tunnel',
   'declineEffect', 'respondPass', 'respondPlayCard', 'discardCard', 'snailify',
   'sacrificeGnome', 'snailMove', 'selectTarget', 'cancelTargeting',
   'move', 'plant', 'upgrade', 'drawCard', 'playCard', 'endTurn',
@@ -70,8 +77,8 @@ const ACTION_TYPES: readonly Action['type'][] = [
   'snailEat',
 ];
 
-const DECISION_KINDS: readonly PendingDecision['kind'][] = [
-  'rollOff', 'chooseHarvest', 'homeHarvest', 'mushroomClones', 'slide', 'tunnel',
+const DECISION_KINDS: readonly (PendingDecision['kind'] | typeof RETIRED_MUSHROOM_CLONES)[] = [
+  'rollOff', 'chooseHarvest', 'homeHarvest', RETIRED_MUSHROOM_CLONES, 'slide', 'tunnel',
   'fightRespond', 'cardResponse', 'discard', 'snailify', 'sacrificeGnome',
   'snailMove', 'cardTargeting',
   // Appended, never inserted (see ACTION_TYPES).
@@ -445,9 +452,6 @@ export function encodeOption(state: GameState, seat: PlayerId, action: Action): 
     case 'homeHarvest':
       out[OPT_CHOICE + 1] = action.take === 'wish' ? 1 : 0;
       out[OPT_CHOICE + 2] = action.take === 'gnome' ? 1 : 0;
-      break;
-    case 'mushroomClones':
-      out[OPT_CHOICE] = Math.min(action.count, 6) / 6;
       break;
     case 'snailify':
     case 'snailEat':

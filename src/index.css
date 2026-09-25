@@ -1163,7 +1163,7 @@ h2 {
 }
 
 .board-wrap {
-  position: relative; /* anchors the quick-chat feed over the board */
+  position: relative; /* anchors the fight replay card */
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1633,11 +1633,34 @@ h2 {
   flex: none;
 }
 
-/* Curse rows: hover or keyboard focus reveals the curse's rules text. */
+/* The curse strip is a single row of symbols, not a titled panel: the
+   skull says what the row is, and each symbol's tooltip says the rest. */
+.curse-panel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px;
+  align-self: flex-start;
+}
+.curse-label {
+  font-size: 14px;
+  line-height: 1;
+  margin-right: 2px;
+}
+/* One symbol per curse: hover, keyboard focus or a tap reveals its name and
+   rules text. */
 .curse-item {
   position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--color-danger) 12%, var(--color-surface));
+  font-size: 15px;
+  line-height: 1;
   cursor: help;
-  padding: 1px 0;
   outline: none;
 }
 /* Fixed-positioned (coords set in JS) so the scrolling left column can't
@@ -2475,17 +2498,30 @@ h2 {
   text-align: center;
 }
 
-/* Bubbles over the board. Pointer-events off: chat never eats a board click. */
+/* Chat bubbles. Desktop: in the right column's flow, just above the chat
+   window (which is pushed to the bottom by its margin-top: auto — the feed
+   takes the push instead, so the pair stays together). Nothing is covered.
+   Pointer-events off: chat never eats a click. */
 .qc-feed {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  z-index: 30;
   display: flex;
   flex-direction: column;
   align-items: flex-end;
   gap: 4px;
+  flex: none;
+  margin-top: auto;
   pointer-events: none;
+}
+.qc-feed + .chat-panel {
+  margin-top: 0;
+}
+/* Stacked: the rows under the board are controls, so the bubbles hang in the
+   board's top-right corner instead (the zoom buttons are at the bottom). */
+.main > .qc-feed {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  z-index: 30;
+  margin-top: 0;
   max-width: min(60%, 320px);
 }
 .qc-bubble {
@@ -2559,6 +2595,10 @@ h2 {
   }
   .left-col > * {
     flex: 1 1 220px;
+  }
+  /* The curse strip is a handful of symbols — it takes only their width. */
+  .left-col > .curse-panel {
+    flex: 0 0 auto;
   }
   .left-col > .rail-heading {
     flex: 0 0 100%;

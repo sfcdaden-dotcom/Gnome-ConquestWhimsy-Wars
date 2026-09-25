@@ -84,14 +84,17 @@ describe('Snake Eyes / 4 Leaf Clover', () => {
     });
     const myTurnNo = s.turn?.number ?? 0;
     s = applyAction(s, { type: 'endTurn', player: me });
-    // Foe's whole turn plays out; stop at my chooseHarvest (home + maize).
+    // Foe's whole turn plays out; the maize resolves on its own at the start
+    // of my Harvest Phase, ahead of the Home Garden's prompt.
     s = drive(
       s,
-      (x) => x.turn?.activePlayer === me && x.pendingDecision?.kind === 'chooseHarvest',
+      (x) =>
+        x.turn?.activePlayer === me &&
+        x.turn.number > myTurnNo &&
+        (x.pendingDecision?.kind === 'homeHarvest' || x.turn.phase === 'action'),
       300,
     );
     expect(s.turn?.number).toBeGreaterThan(myTurnNo);
-    s = applyAction(s, { type: 'chooseHarvest', player: me, sourceKey: '2,2' });
     expect(s.events.some((e) => e.type === 'rollModified' && e.player === me && e.modifier === 3)).toBe(true);
     expect(s.events.some((e) => e.type === 'maizeHarvested' && e.player === me)).toBe(true);
     expect(s.rollModifiers[me]).toBe(0); // consumed
@@ -374,14 +377,17 @@ describe('Sundown Sabotage', () => {
     s = play(s, me, 'sundown-sabotage', { spaces: [{ x: 2, y: 2 }] });
     expect(s.gardens['2,2']?.skipNextHarvest).toBe(true);
 
-    // My next Harvest Phase: choosing the dandelion consumes the skip.
+    // My next Harvest Phase: the dandelion resolves first and consumes the skip.
+    const myTurnNo = s.turn?.number ?? 0;
     s = applyAction(s, { type: 'endTurn', player: me });
     s = drive(
       s,
-      (x) => x.turn?.activePlayer === me && x.pendingDecision?.kind === 'chooseHarvest',
+      (x) =>
+        x.turn?.activePlayer === me &&
+        x.turn.number > myTurnNo &&
+        (x.pendingDecision?.kind === 'homeHarvest' || x.turn.phase === 'action'),
       300,
     );
-    s = applyAction(s, { type: 'chooseHarvest', player: me, sourceKey: '2,2' });
     expect(
       s.events.some((e) => e.type === 'harvestSkipped' && e.reason.includes('Sabotage')),
     ).toBe(true);

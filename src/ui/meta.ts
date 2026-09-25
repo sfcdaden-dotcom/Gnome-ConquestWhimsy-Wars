@@ -161,6 +161,19 @@ export function cardName(id: string): string {
   return getCardDef(id)?.name ?? getCurseDef(id)?.name ?? id;
 }
 
+/** One symbol per curse, for the compact active-curse strip. */
+const CURSE_ICONS: Readonly<Record<string, string>> = {
+  'curse-compost-combustion': '🔥',
+  'curse-snailmaggedon': '🐌',
+  'curse-magic-drain': '🪫',
+  'curse-mulch-fever': '🤒',
+  'curse-antsy-pants': '🐜',
+};
+
+export function curseIcon(id: string): string {
+  return CURSE_ICONS[id] ?? '☠️';
+}
+
 /** Rules text of a card or curse, for tooltips. Empty when the id is unknown. */
 export function cardText(id: string): string {
   return getCardDef(id)?.text ?? getCurseDef(id)?.text ?? '';
@@ -375,8 +388,6 @@ export function describeAction(state: GameState, a: Action): string {
       return `Harvest ${a.sourceKey === 'home' ? 'Home Garden' : `garden at (${a.sourceKey})`}`;
     case 'homeHarvest':
       return a.take === 'wish' ? `${WISH} Take 1 Wish` : 'Spawn a Gnome';
-    case 'mushroomClones':
-      return `Clone ${a.count} gnome${a.count === 1 ? '' : 's'}`;
     case 'slide':
       return `Slide to ${posStr(a.to)}`;
     case 'tunnel':
@@ -486,8 +497,6 @@ export function decisionLabel(kind: string): string {
       return 'choose harvest order';
     case 'homeHarvest':
       return 'home harvest';
-    case 'mushroomClones':
-      return 'mushroom clones';
     case 'slide':
       return 'slide destination';
     case 'tunnel':

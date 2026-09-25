@@ -67,8 +67,6 @@ export function chooseDecisionAction(
       );
       return { type: 'chooseHarvest', player: actor, sourceKey: sorted[0].key };
     }
-    case 'mushroomClones':
-      return { type: 'mushroomClones', player: actor, count: d.max };
     case 'slide':
     case 'tunnel':
     case 'snailMove':

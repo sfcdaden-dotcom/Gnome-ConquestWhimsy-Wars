@@ -84,8 +84,6 @@ describe('actionKey is content-addressed', () => {
       { type: 'drawCard', player: 0 },
       { type: 'snailify', player: 0, accept: true },
       { type: 'snailify', player: 0, accept: false }, // accept flag
-      { type: 'mushroomClones', player: 0, count: 1 },
-      { type: 'mushroomClones', player: 0, count: 2 }, // count
       { type: 'homeHarvest', player: 0, take: 'wish' },
       { type: 'homeHarvest', player: 0, take: 'gnome' },
     ];

@@ -445,7 +445,6 @@ export type PendingDecision =
   | { kind: 'rollOff'; player: PlayerId }
   | { kind: 'chooseHarvest'; player: PlayerId; options: HarvestSource[] }
   | { kind: 'homeHarvest'; player: PlayerId; options: HomeHarvestChoice[] }
-  | { kind: 'mushroomClones'; player: PlayerId; pos: Pos; max: number }
   | {
       kind: 'slide';
       player: PlayerId;
@@ -577,7 +576,6 @@ export type Action =
   | { type: 'rollOff'; player: PlayerId }
   | { type: 'chooseHarvest'; player: PlayerId; sourceKey: string }
   | { type: 'homeHarvest'; player: PlayerId; take: HomeHarvestChoice }
-  | { type: 'mushroomClones'; player: PlayerId; count: number }
   | { type: 'slide'; player: PlayerId; to: Pos }
   | { type: 'tunnel'; player: PlayerId; to: Pos }
   | { type: 'declineEffect'; player: PlayerId }

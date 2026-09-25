@@ -139,8 +139,6 @@ export function actionKey(action: Action): string {
       return `${head}:${esc(action.sourceKey)}`;
     case 'homeHarvest':
       return `${head}:${action.take}`;
-    case 'mushroomClones':
-      return `${head}:${action.count}`;
     case 'slide':
     case 'tunnel':
     case 'snailMove':

@@ -197,8 +197,8 @@ isOnTheClock(state, player) → boolean
 
 `getTimeoutAction` picks the most passive legal option — `declineEffect`,
 then `respondPass`, `cancelTargeting`, `endTurn`, otherwise the first action of
-the engine's own deterministic enumeration (the first harvest source,
-`mushroomClones: 0`, the first forced move under Antsy Pants…). It never plays a
+the engine's own deterministic enumeration (the first harvest source, the
+first forced move under Antsy Pants…). It never plays a
 card. `applyTimeout` repeats that until somebody else is on the clock, so one
 call closes a whole stalled turn including the moves Antsy Pants forces before
 `endTurn` becomes legal. It is pure, like `applyAction`, and identical on every
@@ -391,7 +391,6 @@ store the order. Logged in TECH_DEBT.md.
 | `rollOff` | `rollOff` |
 | `chooseHarvest` | `chooseHarvest` |
 | `homeHarvest` | `homeHarvest` |
-| `mushroomClones` | `mushroomClones` |
 | `slide` / `tunnel` | `slide` / `tunnel`, `declineEffect` when optional (carries `hops`, capped by `MAX_ENTRY_EFFECT_HOPS`) |
 | `fightRespond` | `respondPass`, `respondPlayCard` |
 | `cardResponse` | `respondPass`, `respondPlayCard` (incl. Nope-Gnome) |

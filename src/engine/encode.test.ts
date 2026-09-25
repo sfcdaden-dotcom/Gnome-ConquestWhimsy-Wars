@@ -18,6 +18,7 @@ import {
   OBS_SCALARS,
   OPTION_SIZE,
   encodeObservation,
+  applyAction,
   encodeOption,
   getLegalActionIntents,
   obsSize,
@@ -252,9 +253,19 @@ describe('encodeOption', () => {
   });
 
   it('chooseHarvest options carry the source position from the live decision', () => {
-    // Drive a real game until it offers a chooseHarvest decision (home + at
-    // least one planted garden). Deterministic: fixed seed, fixed AI.
-    const found = drive(newGame(9), (x) => x.pendingDecision?.kind === 'chooseHarvest', 4000);
+    // Two movement gardens under one player's gnomes are what still asks for
+    // an order (resource gardens and the Home Garden resolve on their own).
+    let s = toActionPhase(9);
+    const me = activePlayer(s);
+    const a1 = withGnome(s, me, { x: 2, y: 2 });
+    const a2 = withGnome(a1.state, me, { x: 4, y: 4 });
+    s = withGarden(a2.state, { x: 2, y: 2 }, 'slippery', 0, me);
+    s = withGarden(s, { x: 4, y: 4 }, 'tunnel', 0, me);
+    const found = drive(
+      applyAction(s, { type: 'endTurn', player: me }),
+      (x) => x.pendingDecision?.kind === 'chooseHarvest',
+      400,
+    );
     expect(found.pendingDecision?.kind).toBe('chooseHarvest');
     const actor = found.pendingDecision!.player;
     const options = getLegalActionIntents(found);

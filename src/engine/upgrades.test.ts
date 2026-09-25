@@ -31,14 +31,17 @@ function setWishes(s: GameState, player: PlayerId, wishes: number): GameState {
   });
 }
 
-/** End `me`'s turn and drive through the foe's turn to `me`'s chooseHarvest. */
-function toMyChooseHarvest(s: GameState, me: PlayerId): GameState {
+/**
+ * End `me`'s turn and drive through the foe's turn into `me`'s Harvest Phase,
+ * stopping at the first of `me`'s decisions of `kind`.
+ */
+function toMyHarvestDecision(s: GameState, me: PlayerId, kind: 'homeHarvest' | 'slide'): GameState {
   const out = drive(
     applyAction(s, { type: 'endTurn', player: me }),
-    (x) => x.turn?.activePlayer === me && x.pendingDecision?.kind === 'chooseHarvest',
+    (x) => x.turn?.activePlayer === me && x.turn.phase === 'harvest' && x.pendingDecision?.kind === kind,
     300,
   );
-  expect(out.pendingDecision?.kind).toBe('chooseHarvest');
+  expect(out.pendingDecision?.kind).toBe(kind);
   return out;
 }
 
@@ -206,14 +209,16 @@ describe('Elder Mushroom', () => {
         (u) => u.owner === me && u.kind === 'gnome',
       ).length;
     });
-    s = toMyChooseHarvest(s, me);
-    s = applyAction(s, { type: 'chooseHarvest', player: me, sourceKey: '2,2' });
-    // Max is 1: the clone cap is 2, but board room is exactly the +1 bonus.
-    expect(s.pendingDecision).toMatchObject({ kind: 'mushroomClones', player: me, max: 1 });
-    const before = Object.values(s.units).filter((u) => u.owner === me && u.kind === 'gnome').length;
-    s = applyAction(s, { type: 'mushroomClones', player: me, count: 1 });
+    s = drive(
+      applyAction(s, { type: 'endTurn', player: me }),
+      (x) => x.turn?.activePlayer === me && x.turn.phase === 'action',
+      300,
+    );
+    // The mushroom clones the most it can without asking: the clone cap is 2,
+    // but board room is exactly the +1 bonus.
+    const cloned = s.events.find((e) => e.type === 'mushroomHarvested' && e.player === me);
+    expect(cloned).toMatchObject({ cloned: 1 });
     const after = Object.values(s.units).filter((u) => u.owner === me && u.kind === 'gnome').length;
-    expect(after).toBe(before + 1);
     expect(after).toBe(s.config.gnomeBoardLimit + 1); // exactly the bonus room
   });
 });
@@ -296,8 +301,7 @@ describe('Glacier', () => {
     });
     // An enemy on the middle space of the eastward line: slid PAST, no fight.
     const blocker = withGnome(s, foe, { x: 3, y: 2 });
-    s = toMyChooseHarvest(blocker.state, me);
-    s = applyAction(s, { type: 'chooseHarvest', player: me, sourceKey: '2,2' });
+    s = toMyHarvestDecision(blocker.state, me, 'slide');
     expect(s.pendingDecision).toMatchObject({ kind: 'slide', optional: false });
     const d = s.pendingDecision as Extract<typeof s.pendingDecision, { kind: 'slide' }>;
     expect(asKeys(d.options)).toEqual(asKeys([
@@ -319,7 +323,8 @@ describe('Glacier', () => {
     s = mutate(s, (d) => {
       d.gardens['2,2'].upgraded = true;
     });
-    s = toMyChooseHarvest(s, me);
+    // The Home Garden's prompt comes before the slide.
+    s = toMyHarvestDecision(s, me, 'homeHarvest');
     // Raise the wall mid-harvest (a Great Wall expires at the start of its
     // caster's turn, so only a wall raised during THIS phase can be standing
     // when the slide options are computed — they are read from live state).
@@ -327,7 +332,7 @@ describe('Glacier', () => {
     s = mutate(s, (d) => {
       d.timedEffects.push({ kind: 'greatWall', caster: foe, pos: { x: 3, y: 2 } });
     });
-    s = applyAction(s, { type: 'chooseHarvest', player: me, sourceKey: '2,2' });
+    s = applyAction(s, { type: 'homeHarvest', player: me, take: 'wish' });
     const d = s.pendingDecision as Extract<typeof s.pendingDecision, { kind: 'slide' }>;
     expect(d.kind).toBe('slide');
     expect(asKeys(d.options)).not.toContain('4,2'); // line through the wall is gone
