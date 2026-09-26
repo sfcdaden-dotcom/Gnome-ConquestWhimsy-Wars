@@ -10,7 +10,7 @@
  * otherwise deals only in layout.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { Action, CardId, CardTarget, GameState, PendingDecision, PlayerId, Pos } from '../engine';
 import { gardenAt, getLegalActionIntents, getPendingDecisionOptions, posKey, upgradeWishCost } from '../engine';
 import { Board } from './Board';
@@ -720,6 +720,7 @@ export function CursePanel({ state }: { state: GameState }) {
   const [openId, setOpenId] = useState<CardId | null>(null);
   const [pos, setPos] = useState<TipPos | null>(null);
   const anchor = useRef<HTMLElement | null>(null);
+  const tip = useRef<HTMLDivElement>(null);
 
   const place = useCallback(() => {
     const el = anchor.current;
@@ -751,6 +752,18 @@ export function CursePanel({ state }: { state: GameState }) {
       window.removeEventListener('resize', place);
     };
   }, [openId, place]);
+
+  // The bubble starts at its symbol's left edge, which for a symbol near the
+  // right of a phone screen runs it off the edge. Once it has a size, slide it
+  // back inside the viewport. Written straight to the element: it is a nudge
+  // to the position just rendered, not new state to render again.
+  useLayoutEffect(() => {
+    const el = tip.current;
+    if (!el || !pos) return;
+    const w = el.getBoundingClientRect().width;
+    const maxLeft = window.innerWidth - w - TIP_EDGE_GAP;
+    el.style.left = `${Math.max(TIP_EDGE_GAP, Math.min(pos.x, maxLeft))}px`;
+  }, [openId, pos]);
 
   return (
     <div className="curse-panel" role="group" aria-label="Active curses" data-testid="curse-panel">
@@ -786,6 +799,7 @@ export function CursePanel({ state }: { state: GameState }) {
       ))}
       {openId !== null && pos && (
         <div
+          ref={tip}
           className="curse-tip"
           role="tooltip"
           id={`curse-tip-${openId}`}
@@ -810,6 +824,9 @@ interface TipPos {
   /** True when the bubble hangs above its row instead of below it. */
   above: boolean;
 }
+
+/** The least gap kept between a curse tooltip and the edge of the screen. */
+const TIP_EDGE_GAP = 8;
 
 /** Room to reserve below a curse row before the tooltip flips above it. */
 const CURSE_TIP_MAX_HEIGHT = 110;
