@@ -9,15 +9,15 @@
  * `looks` prop through Board, panels, DecisionPanel and GameScreen purely to
  * pass it on.
  *
- * An empty context is the honest default: `UnitIcon` falls back to the stock
- * `unit-gnome.png` for any seat it has no look for, so a screen that never
- * provides one (the rules, the home screen) keeps working untouched.
+ * An empty context is the honest default: `UnitIcon` rolls a random stand-in
+ * for any seat it has no look for, so a screen that never provides one (the
+ * rules, the home screen) keeps working untouched.
  */
 
 import { createContext, useContext } from 'react';
 import type { GnomeLook } from './gnomeLook';
 
-/** Looks by seat index. A missing entry means "draw the stock gnome". */
+/** Looks by seat index. A missing entry means "draw a random stand-in". */
 export type SeatLooks = ReadonlyArray<GnomeLook | undefined>;
 
 export const GnomeLooksContext = createContext<SeatLooks>([]);

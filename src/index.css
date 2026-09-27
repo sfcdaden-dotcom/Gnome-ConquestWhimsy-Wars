@@ -2579,6 +2579,41 @@ h2 {
   .main > .board-wrap {
     justify-content: flex-start;
   }
+  /* Stacked order, top to bottom: players (with the curse strip under them),
+     board, action bar, then the hand and chat. Explicit rows rather than DOM
+     order, so the desktop layout keeps its source order. The chat feed shares
+     the board's row so its bubbles still hang in the board's top corner. */
+  .main > .left-col {
+    grid-row: 1;
+  }
+  .main > .board-stage,
+  .main > .qc-feed {
+    grid-row: 2;
+    grid-column: 1;
+  }
+  .main > .board-wrap {
+    grid-row: 3;
+  }
+  .main > .right-col {
+    grid-row: 4;
+  }
+  /* The footer holds its height on desktop so the board never jumps; stacked,
+     the board sits above it and nothing moves, so an empty slot (no action
+     bar, no replay) just collapses and the panels close up under the board. */
+  .board-footer {
+    min-height: 0;
+  }
+  .main > .board-wrap:has(> .board-footer:only-child:empty) {
+    display: none;
+  }
+  .main:has(> .board-wrap > .board-footer:only-child:empty) > .right-col {
+    grid-row: 3;
+  }
+  /* Draw card / End turn are the buttons thumbs go for most: a touch bigger. */
+  .action-bar .btn:not(.small) {
+    padding: var(--space-md) var(--space-xl);
+    font-size: var(--text-body);
+  }
   /* Player cards sit side by side instead of a tall stack. */
   .player-panels {
     flex-direction: row;
@@ -2588,20 +2623,10 @@ h2 {
     flex: 1 1 180px;
     min-width: 0;
   }
-  .left-col {
-    flex-direction: row;
-    flex-wrap: wrap;
-    align-items: stretch;
-  }
-  .left-col > * {
-    flex: 1 1 220px;
-  }
-  /* The curse strip is a handful of symbols — it takes only their width. */
+  /* Heading, then the player cards, then the curse strip on its own line
+     between them and the board. The strip takes only its symbols' width. */
   .left-col > .curse-panel {
-    flex: 0 0 auto;
-  }
-  .left-col > .rail-heading {
-    flex: 0 0 100%;
+    align-self: flex-start;
   }
   /* Stacked, the board already fills the width — a corner card would sit on
      top of it, so the replay goes under the board instead of beside it. */

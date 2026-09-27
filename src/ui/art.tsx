@@ -11,17 +11,21 @@
  * `UnitIcon` has one wrinkle: a gnome belonging to a seat is that seat's
  * CUSTOM gnome, composited and recoloured at runtime (see gnomeArt.ts). Pass
  * `owner` wherever the gnome on screen belongs to somebody. Leave it off and
- * you get the stock gnome, which is what the rules screen, the page header and
- * the "spawn a gnome" button want — those are gnomes in the abstract, not
- * anyone's in particular.
+ * you get a random gnome in a random seat's colours, which is what the rules
+ * screen and the page header want — those are gnomes in the abstract, not
+ * anyone's in particular. A seat with no look yet (an online player who has
+ * not sent one) gets a random stand-in too, the same one every time it shows.
  */
 
 import type { CSSProperties } from 'react';
+import { useState } from 'react';
 import type { GardenType, UnitKind } from '../engine';
-import { GARDEN_ART, UI_ICON_ART, UNIT_ART } from './artAssets';
+import { GARDEN_ART, SNAIL_ART, UI_ICON_ART } from './artAssets';
 import { POOF_FX } from './fxAssets';
-import { useGnomeSprite } from './gnomeArt';
+import { randomLook, useGnomeSprite } from './gnomeArt';
+import type { GnomeLook } from './gnomeLook';
 import { useSeatLook } from './gnomeLooks';
+import { PLAYER_COLORS } from './meta';
 import type { UiIconKind } from './uiIcons';
 
 interface IconProps {
@@ -57,6 +61,18 @@ export function GardenIcon({
   );
 }
 
+/** Shown for the frame or two a gnome takes to composite: a transparent pixel,
+ *  so the slot keeps its size and nothing flashes in. */
+const BLANK = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+
+/** Random stand-ins for seats with no look, rolled once per seat per page. */
+const strayLooks = new Map<number, GnomeLook>();
+function strayLook(seat: number): GnomeLook {
+  let look = strayLooks.get(seat);
+  if (!look) strayLooks.set(seat, (look = randomLook()));
+  return look;
+}
+
 export function UnitIcon({
   kind = 'gnome',
   owner,
@@ -68,12 +84,16 @@ export function UnitIcon({
   /** Seat this unit belongs to. Gnomes only; the snail has no custom art. */
   owner?: number;
 }) {
-  const look = useSeatLook(kind === 'gnome' ? owner : undefined);
-  const sprite = useGnomeSprite(look, owner ?? 0);
-  // The stock gnome stands in until the sprite is composited, which is a frame
-  // or two the first time a look is seen and instant on every one after. A
-  // placeholder beats a hole, and both are the same size.
-  const src = sprite ?? UNIT_ART[kind];
+  const seatLook = useSeatLook(owner);
+  // An ownerless gnome is rolled once when it mounts, colours and all.
+  const [abstract] = useState(() => ({
+    look: randomLook(),
+    seat: Math.floor(Math.random() * PLAYER_COLORS.length),
+  }));
+  const isGnome = kind === 'gnome';
+  const look = !isGnome ? undefined : owner === undefined ? abstract.look : (seatLook ?? strayLook(owner));
+  const sprite = useGnomeSprite(look, owner ?? abstract.seat);
+  const src = isGnome ? (sprite ?? BLANK) : SNAIL_ART;
   return (
     <img
       className={`art${className ? ` ${className}` : ''}${sprite ? ' custom-gnome' : ''}`}

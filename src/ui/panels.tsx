@@ -56,12 +56,11 @@ export function PlayerPanels({ state, takenOverSeats = [] }: { state: GameState;
           >
             <div className="pp-head">
               <span className="pp-dot" />
-              <span className="pp-name">{p.name}</span>
               <span
-                className="pp-ctl"
+                className="pp-name"
                 title={takenOverSeats.includes(p.id) ? 'Stopped playing — a CPU took the seat' : undefined}
               >
-                {p.controller === 'cpu' || takenOverSeats.includes(p.id) ? '🤖' : '🧑'}
+                {p.name}
               </span>
               {p.id === actor && <span className="pp-act">acting</span>}
             </div>
