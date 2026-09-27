@@ -338,7 +338,7 @@ function RoomView({
   const net = useNetGame(code, name, look);
   // Everyone's gnome, straight off the room snapshot, indexed by seat. A seat
   // whose player has not sent one yet is simply absent, and `UnitIcon` draws
-  // the stock gnome for it.
+  // a random stand-in for it.
   const looks: SeatLooks = (net.room?.seats ?? []).map((s) =>
     s.look ? sanitizeLook(s.look) : undefined,
   );

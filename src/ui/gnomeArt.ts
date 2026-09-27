@@ -20,9 +20,9 @@
  * Layers and variants are read off disk with `import.meta.glob` rather than
  * listed here, so adding a new hat is dropping a PNG into `Hats/` — no code
  * change, no registry to forget to update. The folder name is the layer and
- * the file name is the variant. (`unit-gnome.png` and the garden art keep
- * their hand-written map in `artAssets.ts`: those are one-per-game-type and
- * the filename really is the whole contract.)
+ * the file name is the variant. (The garden and snail art keep their
+ * hand-written map in `artAssets.ts`: those are one-per-game-type and the
+ * filename really is the whole contract.)
  */
 
 import { useCallback, useEffect, useSyncExternalStore } from 'react';
@@ -370,8 +370,8 @@ export function ensureSprite(look: GnomeLook, seatId: number): string | undefine
  * The sprite for a look, rendering it on first use.
  *
  * Returns `undefined` until the canvas work finishes, which is a frame or two
- * on a cold cache and never again afterwards — callers show the stock gnome in
- * the meantime rather than a gap. The cache is module-level and shared, so the
+ * on a cold cache and never again afterwards — callers hold the slot with a
+ * blank of the same size in the meantime. The cache is module-level and shared, so the
  * sixteen tokens of one seat's gnomes all resolve from a single render.
  */
 export function useGnomeSprite(look: GnomeLook | undefined, seatId: number): string | undefined {

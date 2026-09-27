@@ -76,11 +76,11 @@ icon is a board fixture in one place and a word in a sentence in another.
 
 ```
 src/assets/art/
-  Gardens/                    unit-gnome.png      (the stock gnome; a
-    garden-home.png             unit-snail.png     placeholder while a custom
-    garden-dandelion.png                           one composites, and what
-    garden-mushroom.png                            shows where no seat owns
-    garden-flytrap.png                             the gnome on screen)
+  Gardens/                    unit-snail.png      (every gnome, even one no
+    garden-home.png                                seat owns, is composited
+    garden-dandelion.png                           from Gnome Assets/)
+    garden-mushroom.png
+    garden-flytrap.png
     garden-maize.png
     garden-slippery.png
     garden-tunnel.png
@@ -98,7 +98,7 @@ src/assets/art/
     poof-ring.png
 ```
 
-To replace a garden or the stock gnome, overwrite the file: the filenames are
+To replace a garden or the snail, overwrite the file: the filenames are
 the whole contract, and `src/ui/artAssets.ts` is the one place that maps them to
 game types (edit it to change a name or use another format Vite handles: SVG,
 WebP, JPEG).

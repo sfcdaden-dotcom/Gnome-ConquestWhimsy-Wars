@@ -2597,6 +2597,18 @@ h2 {
   .main > .right-col {
     grid-row: 4;
   }
+  /* The footer holds its height on desktop so the board never jumps; stacked,
+     the board sits above it and nothing moves, so an empty slot (no action
+     bar, no replay) just collapses and the panels close up under the board. */
+  .board-footer {
+    min-height: 0;
+  }
+  .main > .board-wrap:has(> .board-footer:only-child:empty) {
+    display: none;
+  }
+  .main:has(> .board-wrap > .board-footer:only-child:empty) > .right-col {
+    grid-row: 3;
+  }
   /* Draw card / End turn are the buttons thumbs go for most: a touch bigger. */
   .action-bar .btn:not(.small) {
     padding: var(--space-md) var(--space-xl);

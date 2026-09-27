@@ -1,6 +1,8 @@
 /**
- * The game's picture assets: one map from garden type to file, one from unit
- * kind to file, and one from interface icon to file.
+ * The game's picture assets: one map from garden type to file, the snail, and
+ * one map from interface icon to file. (Gnomes have no single file: every one
+ * on screen is composited from the layers in `Gnome Assets/` — see
+ * gnomeArt.ts.)
  *
  * Gardens and units used to be emoji, which meant the board looked like a
  * different game on every platform (and like nothing at all where a glyph was
@@ -17,7 +19,7 @@
  * plain data, and never half of each.
  */
 
-import type { GardenType, UnitKind } from '../engine';
+import type { GardenType } from '../engine';
 import type { UiIconKind } from './uiIcons';
 
 import gardenHome from '../assets/art/Gardens/garden-home.png';
@@ -27,7 +29,6 @@ import gardenFlytrap from '../assets/art/Gardens/garden-flytrap.png';
 import gardenMaize from '../assets/art/Gardens/garden-maize.png';
 import gardenSlippery from '../assets/art/Gardens/garden-slippery.png';
 import gardenTunnel from '../assets/art/Gardens/garden-tunnel.png';
-import unitGnome from '../assets/art/unit-gnome.png';
 import unitSnail from '../assets/art/unit-snail.png';
 import uiWish from '../assets/art/ui-wish.png';
 import uiReinforcement from '../assets/art/ui-reinforcement.png';
@@ -44,10 +45,7 @@ export const GARDEN_ART: Record<GardenType, string> = {
   tunnel: gardenTunnel,
 };
 
-export const UNIT_ART: Record<UnitKind, string> = {
-  gnome: unitGnome,
-  snail: unitSnail,
-};
+export const SNAIL_ART: string = unitSnail;
 
 /** Resource and action icons — see uiIcons.ts for what each one means. */
 export const UI_ICON_ART: Record<UiIconKind, string> = {
