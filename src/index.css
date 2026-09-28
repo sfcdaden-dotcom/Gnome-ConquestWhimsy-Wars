@@ -2599,15 +2599,26 @@ h2 {
   }
   /* The footer holds its height on desktop so the board never jumps; stacked,
      the board sits above it and nothing moves, so an empty slot (no action
-     bar, no replay) just collapses and the panels close up under the board. */
+     bar, no replay) just collapses and the panels close up under the board.
+     The spacing between rows is margins rather than the grid gap, so the
+     empty row costs nothing — and the grid itself never changes shape. Hiding
+     the row and moving the panels up through :has() instead left iOS Safari
+     laying the grid out as one min-content-wide column after "End turn". */
+  .main {
+    row-gap: 0;
+  }
+  .main > .left-col,
+  .main > .board-stage {
+    margin-bottom: 12px;
+  }
+  .main > .board-wrap {
+    gap: 0;
+  }
+  .main > .board-wrap > :not(:empty) {
+    margin-bottom: 12px;
+  }
   .board-footer {
     min-height: 0;
-  }
-  .main > .board-wrap:has(> .board-footer:only-child:empty) {
-    display: none;
-  }
-  .main:has(> .board-wrap > .board-footer:only-child:empty) > .right-col {
-    grid-row: 3;
   }
   /* Draw card / End turn are the buttons thumbs go for most: a touch bigger. */
   .action-bar .btn:not(.small) {
