@@ -51,6 +51,10 @@ import { TUNED_FLY_PARAMS } from './tunedFlyParams';
 import type { FlyIntent, OpponentProfiles, Sighting } from './flyIntent';
 import { FLY_INTENT, heldEconomyGardens, readIntent, recordHabits, snapshot } from './flyIntent';
 import { enemyReach, reachersOf } from './flyReach';
+import type { FlySenses, FlyUrges, HarvestTally } from './flyBrain';
+import { FLY_BRAIN, brainSeed, expectedBounty, flySenses, flyUrges } from './flyBrain';
+import type { FlyGoalId } from './flyGoals';
+import { FLY_ATTRACTION, FLY_GOALS, goalOf, reinforce } from './flyGoals';
 
 // ---------------------------------------------------------------------------
 // Tuning — every knob that shapes the fly's personality
@@ -184,6 +188,8 @@ export interface FlyBrain {
   gamesPlayed: number;
   /** Average credit per `${situation}:${tag}`; absent = never reviewed. */
   values: Record<string, number>;
+  /** Learned attraction to each goal's targets, from bliss (flyGoals.ts). */
+  attraction?: Partial<Record<FlyGoalId, number>>;
 }
 
 /** Drives read off the board: 1 is neutral. */
@@ -220,6 +226,15 @@ interface FlyEpisode {
   choices: Array<{ seq: number; turn: number; keys: string[] }>;
   rewards: Array<FlyRewardEntry & { seq: number }>;
   finished: boolean;
+  /** Tallied from events for the brain's harvest treat (flyBrain.ts). */
+  harvesting: boolean;
+  harvest: HarvestTally;
+  /** Own gnomes lost since the brain last ran (its bitter sense). */
+  lostSinceBrain: number;
+  /** Bliss from goals completed since the brain last ran, released next turn. */
+  bliss: number;
+  /** This turn's senses and urges, computed once per fly turn. */
+  mind: { turn: number; senses: FlySenses; urges: FlyUrges } | null;
 }
 
 /** The fly's slice of `AiMemory`. */
@@ -243,6 +258,8 @@ export interface FlyContext {
   drives: FlyDrives;
   situation: string;
   intent: FlyIntent;
+  /** The connectome's urges this turn, or null (brain off, or not yet run). */
+  urges: FlyUrges | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -279,7 +296,12 @@ export function parseFlyBrain(json: string): FlyBrain | null {
     for (const [k, v] of Object.entries(r.values)) {
       if (typeof v === 'number' && Number.isFinite(v)) values[k] = v;
     }
-    return { version: 2, gamesPlayed: r.gamesPlayed, values };
+    const attraction: Partial<Record<FlyGoalId, number>> = {};
+    for (const id of Object.keys(FLY_GOALS) as FlyGoalId[]) {
+      const a = r.attraction?.[id];
+      if (typeof a === 'number' && Number.isFinite(a)) attraction[id] = Math.max(0, Math.min(FLY_ATTRACTION.cap, a));
+    }
+    return { version: 2, gamesPlayed: r.gamesPlayed, values, attraction };
   } catch {
     return null;
   }
@@ -485,7 +507,7 @@ function fightOdds(state: GameState, player: PlayerId, action: Action): number |
  */
 export function flyObserve(state: GameState, player: PlayerId, memory: FlyMemory): FlyContext {
   const episode = episodeFor(memory, state, player);
-  logEvents(state, player, episode);
+  logEvents(state, player, episode, memory);
 
   // New own turn: territory reward for what the last turn gained or lost, and
   // a fresh fight budget.
@@ -510,8 +532,16 @@ export function flyObserve(state: GameState, player: PlayerId, memory: FlyMemory
   const intent = readIntent(state, player, episode.sightings, memory.opponents);
   const home = ownHomePos(state, player);
   if (home) intent.homeReachers = new Set(reachersOf(enemyReach(state, player), home));
+  // The brain runs once per fly turn, once its Harvest Phase is over.
+  if (FLY_BRAIN.enabled && turn && turn.activePlayer === player && turn.phase === 'action' && episode.mind?.turn !== turn.number) {
+    const senses = flySenses(state, player, episode.harvest, episode.lostSinceBrain, memory.brain.attraction ?? {}, episode.bliss);
+    episode.mind = { turn: turn.number, senses, urges: flyUrges(senses, brainSeed(state, player)) };
+    episode.lostSinceBrain = 0;
+    episode.bliss = 0;
+  }
+  const urges = FLY_BRAIN.enabled ? (episode.mind?.urges ?? null) : null;
   const drives = flyDrives(state, player);
-  return { brain: memory.brain, episode, drives, situation: situationOf(drives), intent };
+  return { brain: memory.brain, episode, drives, situation: situationOf(drives), intent, urges };
 }
 
 /**
@@ -520,18 +550,57 @@ export function flyObserve(state: GameState, player: PlayerId, memory: FlyMemory
  * one the tactics rejected.
  */
 export function flyBias(ctx: FlyContext, state: GameState, player: PlayerId, action: Action): number {
-  const { drives } = ctx;
+  const { drives, urges } = ctx;
+  const w = FLY_BRAIN.weight;
   let bias = 0;
   for (const tag of flyTags(state, player, action, ctx.intent)) {
     let drive = 1;
-    if (tag === 'territory') drive = 0.5 + 0.5 * drives.aggression;
-    else if (tag === 'plant' || tag === 'harvest') drive = drives.hunger;
-    else if (tag === 'fight') drive = drives.aggression / drives.fear;
-    else if (tag === 'defend' && action.type === 'move') drive = defendDrive(state, player, action.to, ctx.intent);
-    else if (tag === 'advance') drive = 1 + FLY_INTENT.counterattack * exposureAhead(state, player, action, ctx.intent);
+    if (tag === 'territory') drive = urges ? 0.5 + w * urges.feed : 0.5 + 0.5 * drives.aggression;
+    else if (tag === 'plant' || tag === 'harvest') drive = urges ? 0.5 + w * urges.feed : drives.hunger;
+    else if (tag === 'fight') drive = urges ? (0.5 + w * urges.approach) / drives.fear : drives.aggression / drives.fear;
+    else if (tag === 'defend' && action.type === 'move') {
+      drive = defendDrive(state, player, action.to, ctx.intent) * (urges ? 1 + urges.escape : 1);
+    } else if (tag === 'advance') {
+      drive = 1 + FLY_INTENT.counterattack * exposureAhead(state, player, action, ctx.intent);
+      if (urges) drive *= (0.5 + w * urges.approach) * (1 - 0.5 * Math.min(1, urges.retreat));
+    }
     bias += FLY_PRIORITY[tag] * drive + learned(ctx, tag);
   }
+  if (urges) bias += urgeBias(urges, state, player, action);
   return bias;
+}
+
+/**
+ * What the urges want from a move beyond its tags: the background hum (how the
+ * move changes the next harvest's expected bounty, felt more when hungry) and,
+ * under panic, getting a threatened gnome to safety.
+ */
+function urgeBias(urges: FlyUrges, state: GameState, player: PlayerId, action: Action): number {
+  let bias = 0;
+  if (action.type === 'move' || action.type === 'plant') {
+    const change = expectedBounty(state, player, action) - expectedBounty(state, player);
+    bias += FLY_BRAIN.bountyPull * (0.5 + urges.feed) * change;
+  }
+  if (action.type === 'move' && urges.escape > 0) {
+    const unit = state.units[action.unitId];
+    if (unit && threatened(state, player, unit.pos) && isSafe(state, player, action.to, unit.id)) {
+      bias += FLY_BRAIN.safetyPull * urges.escape;
+    }
+  }
+  return bias;
+}
+
+/** An enemy gnome within panic range of `pos`. */
+function threatened(state: GameState, player: PlayerId, pos: Pos): boolean {
+  return enemyGnomes(state, player).some((e) => manhattan(e.pos, pos) <= FLY_BRAIN.panic.radius);
+}
+
+/** Safety: our Home, or a square other friendly gnomes hold without enemies. */
+function isSafe(state: GameState, player: PlayerId, pos: Pos, mover: string): boolean {
+  if (enemyUnitsAt(state, pos, player).length > 0) return false;
+  const home = ownHomePos(state, player);
+  if (home && samePos(home, pos)) return true;
+  return playerUnitsAt(state, pos, player).some((u) => u.kind === 'gnome' && u.id !== mover);
 }
 
 /** Exposure of the enemy Home this move advances on (0 when it advances on none). */
@@ -582,7 +651,8 @@ export function flyBrake(ctx: FlyContext, state: GameState, player: PlayerId, ac
     0.15 * (ctx.drives.fear - 1) - // scarce reinforcements raise every bar
     0.1 * (ctx.drives.aggression - 1) - // a stronger force lowers it a little
     (storming ? 0.1 : 0) -
-    FLY_THREAT.oddsRelief * Math.min(2, action.type === 'move' ? defendDrive(state, player, action.to, ctx.intent) : 0);
+    FLY_THREAT.oddsRelief * Math.min(2, action.type === 'move' ? defendDrive(state, player, action.to, ctx.intent) : 0) +
+    0.1 * Math.min(2, ctx.urges?.escape ?? 0); // the Giant Fiber firing: less keen to fight
   if (odds < bar) return Math.min(score, END_TURN_SCORE - 0.05);
   // Accepted — but still priced: the expected loss, heavier when gnomes are scarce.
   return score - (1 - odds) * 2 * ctx.drives.fear;
@@ -607,7 +677,7 @@ export function finishFlyGames(state: GameState, memory: FlyMemory): void {
     if (p.difficulty !== 'fly') continue;
     const episode = memory.episodes.get(p.id);
     if (!episode || episode.finished || episode.seed !== state.seed) continue;
-    logEvents(state, p.id, episode);
+    logEvents(state, p.id, episode, memory);
     const outcome = state.winner === p.id ? 1 : state.winner === null ? 0 : -1;
     if (memory.learn) review(memory.brain, episode, outcome);
     episode.finished = true;
@@ -638,6 +708,11 @@ function episodeFor(memory: FlyMemory, state: GameState, player: PlayerId): FlyE
     choices: [],
     rewards: [],
     finished: false,
+    harvesting: false,
+    harvest: { wishes: 0, gnomes: 0 },
+    lostSinceBrain: 0,
+    bliss: 0,
+    mind: null,
   };
   memory.episodes.set(player, fresh);
   return fresh;
@@ -690,9 +765,18 @@ function newEvents(state: GameState, episode: FlyEpisode): readonly GameEvent[] 
   return state.events.slice(Math.max(0, state.events.length - fresh));
 }
 
-function logEvents(state: GameState, player: PlayerId, episode: FlyEpisode): void {
+function logEvents(state: GameState, player: PlayerId, episode: FlyEpisode, memory: FlyMemory): void {
   const turn = state.turn?.number ?? 0;
   for (const ev of newEvents(state, episode)) {
+    const goal = goalOf(state, player, ev);
+    if (goal) {
+      // Bliss: released into the brain next turn, and — while learning —
+      // a lasting rise in attraction to this goal's targets.
+      episode.bliss += FLY_GOALS[goal].bliss;
+      if (memory.learn) reinforce((memory.brain.attraction ??= {}), goal);
+      logReward(episode, turn, FLY_GOALS[goal].reward, FLY_GOALS[goal].label);
+      continue;
+    }
     const r = rewardFor(state, player, episode, ev);
     if (r) logReward(episode, turn, r.amount, r.reason);
   }
@@ -756,8 +840,24 @@ function rewardFor(
     case 'cardCancelled':
     case 'cardDiscarded':
       return ev.player === player ? { amount: R.cardWasted, reason: `wasted ${ev.cardId}` } : null;
+    case 'harvestPhaseStarted':
+      if (ev.player === player) {
+        episode.harvesting = true;
+        episode.harvest = { wishes: 0, gnomes: 0 };
+      }
+      return null;
+    case 'actionPhaseStarted':
+      if (ev.player === player) episode.harvesting = false;
+      return null;
+    case 'wishesGained':
+      if (ev.player === player && episode.harvesting) episode.harvest.wishes += ev.gained;
+      return null;
+    case 'gnomeSpawned':
+      if (ev.player === player && episode.harvesting) episode.harvest.gnomes += 1;
+      return null;
     case 'unitDestroyed':
       if (ev.unitKind !== 'gnome') return null;
+      if (ev.player === player) episode.lostSinceBrain += 1;
       return ev.player === player
         ? { amount: R.ownGnomeLost * scarcity(state, player), reason: 'lost a gnome' }
         : heldEconomyGardens(state, player).some((g) => manhattan(g, ev.pos) <= FLY_THREAT.radius)
