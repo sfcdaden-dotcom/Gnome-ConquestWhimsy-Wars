@@ -33,7 +33,7 @@ it.skipIf(!TRAIN)(
         controller: 'cpu' as const,
         difficulty: i === flySeat ? ('fly' as const) : opponent,
       }));
-      let s = createGame({ players, gardenPreset: 'random' }, seed);
+      let s = createGame({ players, gardenPreset: 'fresh' }, seed);
       for (let i = 0; i < 10_000 && !isGameOver(s); i++) s = applyAction(s, chooseAiAction(s, memory));
       finishFlyGames(s, memory.fly);
       if (s.winner === flySeat) wins += 1;

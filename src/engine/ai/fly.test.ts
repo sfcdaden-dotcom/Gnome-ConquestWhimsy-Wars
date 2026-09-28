@@ -3,7 +3,7 @@
  * into the next game, and keeps to its fight rules.
  */
 
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Action, GameState, PlayerId, Pos } from '../types';
 import { applyAction, chooseAiAction, createAiMemory, createGame, isGameOver } from '../index';
 import { mutate, toActionPhase, withGarden, withGnome } from '../testkit';
@@ -23,6 +23,21 @@ import {
   parseFlyBrain,
 } from './fly';
 import { END_TURN_SCORE } from './scoring';
+import { FLY_BRAIN } from './flyBrain';
+
+/**
+ * The hand-written rules (fight odds, garden alarm) are tested with the
+ * connectome switched off, so its urges do not move the thresholds under test;
+ * flyBrain.test.ts covers the brain.
+ */
+function withoutBrain(): void {
+  beforeAll(() => {
+    FLY_BRAIN.enabled = false;
+  });
+  afterAll(() => {
+    FLY_BRAIN.enabled = true;
+  });
+}
 
 /** Fly (seat 0) against a Normal CPU (seat 1), to the end. */
 function playFlyGame(seed: number, brain: FlyBrain): { state: GameState; memory: ReturnType<typeof createAiMemory> } {
@@ -33,7 +48,7 @@ function playFlyGame(seed: number, brain: FlyBrain): { state: GameState; memory:
         { name: 'Fly', controller: 'cpu', difficulty: 'fly' },
         { name: 'Steady', controller: 'cpu', difficulty: 'normal' },
       ],
-      gardenPreset: 'random',
+      gardenPreset: 'fresh',
     },
     seed,
   );
@@ -72,7 +87,7 @@ describe('fly: whole games', () => {
           { name: 'Fly', controller: 'cpu', difficulty: 'fly' },
           { name: 'Steady', controller: 'cpu', difficulty: 'normal' },
         ],
-        gardenPreset: 'random',
+        gardenPreset: 'fresh',
       },
       5,
     );
@@ -94,7 +109,7 @@ describe('fly: whole games', () => {
 
 describe('fly: brain file', () => {
   it('round-trips through JSON', () => {
-    const brain: FlyBrain = { version: 2, gamesPlayed: 5, values: { 'calm:territory': 1.25 } };
+    const brain: FlyBrain = { version: 2, gamesPlayed: 5, values: { 'calm:territory': 1.25 }, attraction: { killGnome: 0.4 } };
     expect(parseFlyBrain(JSON.stringify(brain))).toEqual(brain);
   });
 
@@ -107,6 +122,7 @@ describe('fly: brain file', () => {
 });
 
 describe('fly: fight rules', () => {
+  withoutBrain();
   /** Fly's turn, Action Phase, with `defenders` enemy gnomes stacked on `at`. */
   function scene(defenders: number, gnomesLost = 0): { state: GameState; fly: PlayerId; at: Pos } {
     let s = toActionPhase(11);
@@ -171,6 +187,7 @@ describe('fly: tags', () => {
 });
 
 describe('fly: threats to held economy gardens', () => {
+  withoutBrain();
   /**
    * Fly holds a Mushroom at (2,1). `raiders` enemy gnomes stand within the
    * threat radius of it; one more enemy stands far away, beside its own Home.
