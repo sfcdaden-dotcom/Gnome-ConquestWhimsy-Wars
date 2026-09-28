@@ -2,7 +2,8 @@
 
 A digital version of the Whimsy Wars tabletop game: harvest gardens, hoard
 Wishes, and gnome your enemies into the compost. 2 or 4 players (any mix of
-human hot-seat and CPU, with Easy/Normal/Hard difficulty per seat) on an N×N
+human hot-seat and CPU, with Easy/Normal/Hard difficulty per seat, or the
+experimental learning [Fly](FLY.md)) on an N×N
 garden board — start from one of three rolled-fresh symmetrical modes
 (**Fresh**: homes only; **Bare Essentials**: a Mushroom and a Dandelion beside
 every home; **True Random**: a full map), draw your own layout in the editor,

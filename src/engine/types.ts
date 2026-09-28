@@ -118,7 +118,8 @@ export type CenterStarBoon = 'wishCap' | 'gnomeLimit' | 'freePlant' | 'freeUpgra
 export type UnitKind = 'gnome' | 'snail';
 export type PlayerController = 'human' | 'cpu';
 /** CPU strength. Meaningless for 'human' seats, but stored uniformly. Default 'normal'. */
-export type AiDifficulty = 'easy' | 'normal' | 'hard';
+/** 'fly' is the experimental learning seat — see ai/fly.ts. */
+export type AiDifficulty = 'easy' | 'normal' | 'hard' | 'fly';
 
 /**
  * 'playing'  — normal participant.

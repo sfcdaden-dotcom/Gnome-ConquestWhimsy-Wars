@@ -30,10 +30,18 @@
 
 import type { GameState, PlayerId } from '../types';
 import type { AiPlan } from './objectives';
+import type { FlyBrain, FlyMemory } from './fly';
+import type { OpponentProfiles } from './flyIntent';
+import { createFlyMemory } from './fly';
 
 /** Opaque per-game, per-seat plan storage. Created by `createAiMemory`. */
 export interface AiMemory {
   readonly seats: Map<PlayerId, SeatMemory>;
+  /**
+   * Fly seats' learned brain (meant to outlive the game — pass the same brain
+   * to the next game's store) and their per-game episodes. See `fly.ts`.
+   */
+  readonly fly: FlyMemory;
 }
 
 interface SeatMemory {
@@ -42,8 +50,18 @@ interface SeatMemory {
   plan: AiPlan;
 }
 
-export function createAiMemory(): AiMemory {
-  return { seats: new Map() };
+/**
+ * `flyBrain` and `flyOpponents` are the fly's cross-game memory — pass the same
+ * objects to the next game's store to keep them. `flyLearn` lets the post-game
+ * review change the brain (off by default; see fly.ts).
+ */
+export function createAiMemory(
+  options: { flyBrain?: FlyBrain; flyOpponents?: OpponentProfiles; flyLearn?: boolean } = {},
+): AiMemory {
+  return {
+    seats: new Map(),
+    fly: createFlyMemory(options.flyBrain, { opponents: options.flyOpponents, learn: options.flyLearn }),
+  };
 }
 
 /** The default store, used when a caller does not supply one. */
@@ -80,4 +98,5 @@ export function planFor(memory: AiMemory, state: GameState, player: PlayerId): A
 /** Forget everything. Exposed for tests and for a host starting a new game. */
 export function clearAiMemory(memory: AiMemory): void {
   memory.seats.clear();
+  memory.fly.episodes.clear();
 }

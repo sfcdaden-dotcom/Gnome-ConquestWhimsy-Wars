@@ -587,6 +587,7 @@ function Lobby({
                           <option value="easy">Easy</option>
                           <option value="normal">Normal</option>
                           <option value="hard">Hard</option>
+                          <option value="fly">Fly</option>
                         </select>
                       ) : (
                         <span className="muted small seat-status">

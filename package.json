@@ -11,6 +11,8 @@
     "lint": "oxlint",
     "test": "vitest run",
     "test:watch": "vitest",
+    "tune:fly": "node scripts/tune-fly.mjs",
+    "train:fly": "FLY_TRAIN=1 vitest run src/engine/ai/fly.train.test.ts",
     "preview": "npm run build && wrangler dev",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",

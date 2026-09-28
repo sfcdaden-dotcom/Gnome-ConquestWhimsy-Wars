@@ -47,6 +47,7 @@
  * | `cardPlans.ts` | `planCardPlay` + one deterministic target picker per card, and `cardKeepValue` |
  * | `decisions.ts` | one policy per `PendingDecision` kind, incl. both respond windows |
  * | `chatter.ts` | `idleChatter` — flavor only, changes no game state |
+ * | `fly.ts` | the 'fly' seat: drives, learned incentive values, the fight brake |
  * | `util.ts` | small shared reads (own/enemy gnomes, home, difficulty, the desperation and turtle-breaker ramps) |
  *
  * Dependencies run one way — `index → {objectives, objectiveScoring, decisions,
@@ -142,6 +143,8 @@ import type { PlanContext } from './objectiveScoring';
 import { cardObjectiveMultiplier, homeIsStormed, objectiveBonus, objectiveField } from './objectiveScoring';
 import type { AiPersonality } from './personality';
 import { personalityFor } from './personality';
+import type { FlyContext } from './fly';
+import { flyBias, flyBrake, flyObserve, flyRecordChoice, homeShortfall, isFly } from './fly';
 
 export { allUnitsMoved } from './util';
 export { createAiMemory, clearAiMemory, sharedAiMemory } from './memory';
@@ -149,6 +152,20 @@ export type { AiMemory } from './memory';
 export type { AiPlan, Objective, ObjectiveKind, StrategicState } from './objectives';
 export { PERSONALITIES, personalityFor } from './personality';
 export type { AiPersonality } from './personality';
+export {
+  FLY_FIGHT_ODDS,
+  FLY_PRIORITY,
+  FLY_REWARDS,
+  createFlyBrain,
+  finishFlyGames,
+  flyDrives,
+  flyRewardLog,
+  parseFlyBrain,
+  trainedFlyBrain,
+} from './fly';
+export { FLY_INTENT } from './flyIntent';
+export type { FlyBrain, FlyDrives, FlyRewardEntry, FlyTag } from './fly';
+export type { OpponentProfiles } from './flyIntent';
 
 /**
  * Pick one legal action for the player who must act.
@@ -216,11 +233,25 @@ function chooseAiActionInner(state: GameState, memory: AiMemory): Action {
   // is exactly what a posture answers.
   const personality = personalityFor(state, actor);
   const plan = planFor(memory, state, actor);
+  // A fly seat learns from whatever happened since it last looked, on every
+  // call — decisions included — so no reward is missed.
+  const fly: FlyContext | null = isFly(state, actor) ? flyObserve(state, actor, memory.fly) : null;
   const d = state.pendingDecision;
   const objective =
     d === null || POSTURE_DECISIONS.has(d.kind)
       ? updatePlan(state, actor, plan, personality)
       : currentObjective(plan);
+
+  // The fly's Home watch: when more enemy gnomes could land on its Home next
+  // turn than stand guard, the Home harvest spawns a defender right there.
+  if (
+    fly &&
+    d?.kind === 'homeHarvest' &&
+    d.options.includes('gnome') &&
+    homeShortfall(state, actor, fly.intent) > 0
+  ) {
+    return { type: 'homeHarvest', player: actor, take: 'gnome' };
+  }
 
   if (d) {
     // A decision never needs the movement field, which is the expensive half —
@@ -258,19 +289,27 @@ function chooseAiActionInner(state: GameState, memory: AiMemory): Action {
     if (a.type === 'playCard') {
       const cardPlan = planCardPlay(state, actor, a.cardId);
       if (!cardPlan) continue;
-      const biased = cardPlan.score * cardObjectiveMultiplier(a.cardId, ctx);
+      let biased = cardPlan.score * cardObjectiveMultiplier(a.cardId, ctx);
+      if (fly) biased += flyBias(fly, state, actor, a);
       scored.push({ action: cardPlan.action, score: respectTactics(a, cardPlan.score, biased) });
     } else {
       const base = scoreActionPhase(state, actor, a);
-      const biased = base + objectiveBonus(state, actor, a, ctx);
-      scored.push({ action: a, score: respectTactics(a, base, biased) });
+      let biased = base + objectiveBonus(state, actor, a, ctx);
+      if (fly) biased += flyBias(fly, state, actor, a);
+      const score = respectTactics(a, base, biased);
+      // The fly's risk rules come after the vetoes: a brake, not a preference.
+      scored.push({ action: a, score: fly ? flyBrake(fly, state, actor, a, score) : score });
     }
   }
 
   const action = pickAction(state, actor, scored, personality) ?? legal[0];
   // Say the plan before playing it, when there is a new one to say (chat costs
   // the turn nothing; the action below follows on the next call).
-  return idleChatter(state, actor, legal, action, plan) ?? action;
+  const chat = idleChatter(state, actor, legal, action, plan);
+  if (chat) return chat;
+  // Logged only once actually played, not when chat deferred it to next call.
+  if (fly) flyRecordChoice(fly, state, actor, action);
+  return action;
 }
 
 /**

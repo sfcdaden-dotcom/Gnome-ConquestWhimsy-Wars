@@ -97,9 +97,23 @@ export const PERSONALITIES: Record<string, AiPersonality> = {
     objectiveFocus: 1.25,
     explorationBand: 0.4,
   },
+  // The Fly (see fly.ts): hungry for ground and gardens. Its risk rules live in
+  // fly.ts's brake, not here, so riskTolerance stays neutral.
+  fly: {
+    name: 'Fly',
+    aggression: 1.3,
+    defense: 0.8,
+    expansion: 1.3,
+    whimsyPreference: 1.1,
+    riskTolerance: 1,
+    gardenPreference: 1.5,
+    homeAttackPreference: 1,
+    objectiveFocus: 1,
+    explorationBand: 1,
+  },
 };
 
-const BY_DIFFICULTY = { easy: 'dawdle', normal: 'steady', hard: 'grimble' } as const;
+const BY_DIFFICULTY = { easy: 'dawdle', normal: 'steady', hard: 'grimble', fly: 'fly' } as const;
 
 /** The personality driving one seat. Deterministic; a pure read of the state. */
 export function personalityFor(state: GameState, player: PlayerId): AiPersonality {

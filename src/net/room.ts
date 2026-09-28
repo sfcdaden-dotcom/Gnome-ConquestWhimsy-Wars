@@ -54,6 +54,8 @@ import {
   applyAction,
   chooseAiAction,
   createAiMemory,
+  finishFlyGames,
+  trainedFlyBrain,
   createGame,
   getPlayerToAct,
   getTimeoutAction,
@@ -363,7 +365,7 @@ export class Room {
    * replaying its actions simply has CPU seats that re-read the board and pick
    * a fresh intention on their next turn.
    */
-  private readonly aiMemory = createAiMemory();
+  private readonly aiMemory = createAiMemory({ flyBrain: trainedFlyBrain(), flyLearn: true });
   /** Per-connection intake budgets, by connection id. Never persisted. */
   private readonly meters = new Map<string, Meter>();
   /**
@@ -1110,6 +1112,8 @@ export class Room {
     this.data.actions.push(action);
     if (isGameOver(next)) this.data.phase = 'finished';
     const justFinished = !wasFinished && this.data.phase === 'finished';
+    // A fly seat's post-game review. The brain lives only as long as this room.
+    if (justFinished) finishFlyGames(next, this.aiMemory.fly);
 
     // Quick chat is the one action that must NOT buy time: it is sendable out
     // of turn and after the game ends, so letting it restart the clock would
