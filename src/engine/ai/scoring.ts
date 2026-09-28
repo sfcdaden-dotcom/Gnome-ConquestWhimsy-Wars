@@ -120,7 +120,7 @@ export function scoreDestination(state: GameState, player: PlayerId, from: Pos, 
       // Easy: no late-game push, and barely weighs being outnumbered —
       // walks into bad fights a Normal/Hard opponent would decline.
       score += (attackingHome ? 15 : 4) - 3 * enemies.length;
-    } else if (difficulty === 'hard') {
+    } else if (difficulty === 'hard' || difficulty === 'fly') {
       // Hard: an actual win-probability calculation instead of a flat
       // threshold. Stack fights are repeated fair 1v1 rounds until one side
       // is wiped (RULES.md "Fights") — a classic gambler's-ruin, so with 1
@@ -130,8 +130,10 @@ export function scoreDestination(state: GameState, player: PlayerId, from: Pos, 
       // applied inside the probability instead of on top of it).
       const effectiveAttackers = 1 + desperation(state) * 0.15;
       const winProb = effectiveAttackers / (effectiveAttackers + enemies.length);
-      const winPayoff = attackingHome ? 20 : 6;
-      const losePenalty = 10;
+      // The fly values ground more (territory is its top incentive) and prices
+      // the loss itself in fly.ts's brake, so a fair 1v1 scores positive here.
+      const winPayoff = attackingHome ? 20 : difficulty === 'fly' ? 10 : 6;
+      const losePenalty = difficulty === 'fly' ? 8 : 10;
       score += winProb * winPayoff - (1 - winProb) * losePenalty;
     } else {
       // 1v1 fights are coin flips: only worth it when storming a home or when

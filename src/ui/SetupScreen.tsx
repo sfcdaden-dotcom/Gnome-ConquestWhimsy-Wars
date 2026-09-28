@@ -85,8 +85,8 @@ interface SeatDraft {
  * for the table that doesn't bother.)
  */
 const DEFAULT_NAMES = PLAYER_COLOR_NAMES;
-const DIFFICULTIES: readonly AiDifficulty[] = ['easy', 'normal', 'hard'];
-const DIFFICULTY_LABELS: Record<AiDifficulty, string> = { easy: 'Easy', normal: 'Normal', hard: 'Hard' };
+const DIFFICULTIES: readonly AiDifficulty[] = ['easy', 'normal', 'hard', 'fly'];
+const DIFFICULTY_LABELS: Record<AiDifficulty, string> = { easy: 'Easy', normal: 'Normal', hard: 'Hard', fly: 'Fly' };
 
 function isCustomPresetId(id: string): boolean {
   return id.startsWith('custom:');
