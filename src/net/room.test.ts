@@ -1982,3 +1982,76 @@ describe('malformed input', () => {
     expect(c0.errors().filter((e) => e === 'RATE_LIMITED')).toHaveLength(1);
   });
 });
+
+describe('lobby settings are checked before any of them apply', () => {
+  it('refuses a layout the room cannot deal, and changes nothing', async () => {
+    const { host, room, c0 } = await lobby();
+    const before = structuredClone(host.stored);
+
+    await room.handle('c0', { t: 'configure', gardenPreset: 'no-such-layout' });
+
+    expect(c0.last('error')?.code).toBe('BAD_CONFIG');
+    expect(room.snapshot().gardenPreset).toBe('random');
+    expect(host.stored).toEqual(before);
+  });
+
+  it('accepts every layout the lobby menu offers', async () => {
+    const { room, c0 } = await lobby();
+    for (const id of ['fresh', 'essentials', 'random', 'none', 'fortress']) {
+      await room.handle('c0', { t: 'configure', gardenPreset: id });
+      expect(room.snapshot().gardenPreset, id).toBe(id);
+    }
+    expect(c0.errors()).toEqual([]);
+  });
+
+  it('refuses a board too small for the layout when it is set, not at start', async () => {
+    const { room, c0 } = await lobby();
+
+    await room.handle('c0', { t: 'configure', boardSize: 5 }); // 'random' needs 7
+
+    expect(c0.last('error')?.code).toBe('BAD_CONFIG');
+    expect(c0.last('error')?.message).toMatch(/at least 7×7/);
+    expect(room.snapshot().boardSize).toBe(7);
+  });
+
+  it('applies none of a configure whose last seat is bad', async () => {
+    const { room, c0 } = await lobby(['human', 'human']);
+    await room.handle('c0', { t: 'configure', playerCount: 4 });
+    const before = room.snapshot().seats.map((s) => ({ controller: s.controller, difficulty: s.difficulty }));
+
+    await room.handle('c0', {
+      t: 'configure',
+      seats: [
+        { index: 1, controller: 'cpu', difficulty: 'hard' },
+        { index: 2, controller: 'cpu' },
+        { index: 3, look: { cap: 'x' } as never },
+      ],
+    });
+
+    expect(c0.last('error')?.code).toBe('BAD_CONFIG');
+    expect(room.snapshot().seats.map((s) => ({ controller: s.controller, difficulty: s.difficulty }))).toEqual(before);
+  });
+
+  it('refuses an unknown controller or difficulty that reaches the room directly', async () => {
+    const { room, c0 } = await lobby();
+
+    await room.handle('c0', { t: 'configure', seats: [{ index: 1, controller: 'robot' as never }] });
+    await room.handle('c0', { t: 'configure', seats: [{ index: 1, difficulty: 'impossible' as never }] });
+
+    expect(c0.errors()).toEqual(['BAD_CONFIG', 'BAD_CONFIG']);
+    expect(room.snapshot().seats[1]).toMatchObject({ controller: 'cpu', difficulty: 'normal' });
+  });
+
+  it('settles nonsense seat settings stored before these checks existed', async () => {
+    const host = makeHost();
+    const room = await Room.open(host, 'ABC123');
+    await room.hello(new FakeConn('c0'), { ...HELLO });
+    const stored = structuredClone(host.stored!);
+    stored.seats[1] = { ...stored.seats[1], controller: 'robot' as never, difficulty: 'impossible' as never };
+    host.stored = stored;
+
+    const reopened = await Room.open(host, 'ABC123');
+
+    expect(reopened.snapshot().seats[1]).toMatchObject({ controller: 'cpu', difficulty: 'normal' });
+  });
+});

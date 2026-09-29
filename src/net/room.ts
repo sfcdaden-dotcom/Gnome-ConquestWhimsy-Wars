@@ -57,6 +57,7 @@ import {
   finishFlyGames,
   trainedFlyBrain,
   createGame,
+  findGardenPreset,
   getPlayerToAct,
   getTimeoutAction,
   isGameOver,
@@ -302,6 +303,14 @@ function defaultSeats(count: 2 | 4): PersistedSeat[] {
   }));
 }
 
+function isController(v: unknown): v is PersistedSeat['controller'] {
+  return v === 'human' || v === 'cpu';
+}
+
+function isDifficulty(v: unknown): v is AiDifficulty {
+  return v === 'easy' || v === 'normal' || v === 'hard';
+}
+
 class RoomError extends Error {
   code: RoomErrorCode;
 
@@ -432,6 +441,14 @@ export class Room {
     room.data.clock ??= null;
     room.data.graceUntil ??= null;
     room.data.reapAt ??= null;
+    // Before the boundary checked lobby settings, a host could store any
+    // controller or difficulty string. Such a room is at most a few hours old;
+    // settle it to values the room and the engine understand rather than
+    // refusing its host every future edit.
+    for (const seat of room.data.seats) {
+      if (!isController(seat.controller)) seat.controller = 'cpu';
+      if (!isDifficulty(seat.difficulty)) seat.difficulty = 'normal';
+    }
     if (stored && stored.config && stored.seed !== null) room.hydrate();
     return room;
   }
@@ -976,21 +993,48 @@ export class Room {
       throw new RoomError('WRONG_PHASE', 'The game has already started');
     }
 
+    // Everything is worked out on copies and checked BEFORE any of it is
+    // applied. It used to be applied field by field, so a message whose third
+    // seat was bad had already changed the first two by the time it was
+    // refused — a refusal that nonetheless changed the table.
+    let seats = this.data.seats.map((s) => ({ ...s }));
     if (message.playerCount !== undefined) {
       if (message.playerCount !== 2 && message.playerCount !== 4) {
         throw new RoomError('BAD_CONFIG', 'Whimsy Wars seats exactly 2 or 4 players');
       }
-      this.data.seats = this.resizeSeats(message.playerCount);
+      seats = this.resizeSeats(seats, message.playerCount);
     }
+    let boardSize = this.data.boardSize;
     if (message.boardSize !== undefined) {
       const n = message.boardSize;
       if (!Number.isInteger(n) || n < 5 || n % 2 === 0) {
         throw new RoomError('BAD_CONFIG', 'boardSize must be an odd integer >= 5');
       }
-      this.data.boardSize = n;
+      boardSize = n;
     }
-    if (message.gardenPreset !== undefined) this.data.gardenPreset = message.gardenPreset;
-    for (const seat of message.seats ?? []) this.applySeatConfig(seat);
+    let gardenPreset = this.data.gardenPreset;
+    if (message.gardenPreset !== undefined) {
+      // Only layouts the room can actually deal. Anything else used to be
+      // stored as-is and fail later, at start, as somebody else's problem.
+      if (!findGardenPreset(message.gardenPreset)) {
+        throw new RoomError('BAD_CONFIG', 'Unknown board layout');
+      }
+      gardenPreset = message.gardenPreset;
+    }
+    if (message.boardSize !== undefined || message.gardenPreset !== undefined) {
+      const layout = findGardenPreset(gardenPreset);
+      if (layout && boardSize < layout.minBoardSize) {
+        throw new RoomError(
+          'BAD_CONFIG',
+          `${layout.label} needs a board of at least ${layout.minBoardSize}×${layout.minBoardSize}`,
+        );
+      }
+    }
+    for (const seat of message.seats ?? []) this.applySeatConfig(seats, seat);
+
+    this.data.seats = seats;
+    this.data.boardSize = boardSize;
+    this.data.gardenPreset = gardenPreset;
 
     // Nobody is left holding a seat the host just turned into a CPU (or a seat
     // that a shrink to two players removed).
@@ -1010,24 +1054,30 @@ export class Room {
     this.broadcastRoom();
   }
 
-  private resizeSeats(count: 2 | 4): PersistedSeat[] {
+  private resizeSeats(current: PersistedSeat[], count: 2 | 4): PersistedSeat[] {
     const next = defaultSeats(count);
-    for (let i = 0; i < next.length && i < this.data.seats.length; i++) next[i] = this.data.seats[i];
+    for (let i = 0; i < next.length && i < current.length; i++) next[i] = current[i];
     return next;
   }
 
-  private applySeatConfig(cfg: SeatConfig): void {
-    const seat = this.data.seats[cfg.index];
-    if (!seat) throw new RoomError('BAD_CONFIG', `No seat ${cfg.index}`);
+  /** Apply one seat edit to `seats` (a working copy). Throws, applying nothing, on a bad one. */
+  private applySeatConfig(seats: PersistedSeat[], cfg: SeatConfig): void {
+    const seat = seats[cfg.index];
+    if (!seat) throw new RoomError('BAD_CONFIG', `No seat ${cfg.index + 1}`);
+    if (cfg.controller !== undefined && !isController(cfg.controller)) {
+      throw new RoomError('BAD_CONFIG', `Seat ${cfg.index + 1}: a seat is either human or cpu`);
+    }
+    if (cfg.difficulty !== undefined && !isDifficulty(cfg.difficulty)) {
+      throw new RoomError('BAD_CONFIG', `Seat ${cfg.index + 1}: unknown difficulty`);
+    }
+    const look = cfg.look === undefined ? undefined : validateLookWire(cfg.look);
+    if (look === null) throw new RoomError('BAD_CONFIG', `Seat ${cfg.index + 1}: malformed gnome`);
+
     if (cfg.controller) seat.controller = cfg.controller;
     if (cfg.difficulty) seat.difficulty = cfg.difficulty;
     const name = sanitizeSeatName(cfg.name);
     if (name !== null) seat.name = name;
-    if (cfg.look !== undefined) {
-      const look = validateLookWire(cfg.look);
-      if (!look) throw new RoomError('BAD_CONFIG', `Seat ${cfg.index + 1}: malformed gnome`);
-      seat.look = look;
-    }
+    if (look) seat.look = look;
   }
 
   /**
