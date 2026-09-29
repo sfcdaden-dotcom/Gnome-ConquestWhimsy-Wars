@@ -21,6 +21,10 @@ export default defineConfig({
         // The real migration files, handed to the tests so they can apply
         // them to the test database (see src/worker/db/d1TestEnv.ts).
         bindings: { TEST_MIGRATIONS: await readD1Migrations(path.join(root, 'migrations')) },
+        // A second, disposable local D1 for testing the migrations themselves:
+        // those tests need a database at 0001 only, which DB never is again
+        // once the suites have migrated it.
+        d1Databases: ['MIGRATION_DB'],
       },
     })),
   ],

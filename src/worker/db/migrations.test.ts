@@ -1,10 +1,13 @@
 /**
- * The schema itself: migrations apply, every constraint in 0001 refuses what
- * it exists to refuse, and the indexes are the ones the queries actually use.
+ * The schema itself: migrations apply, every constraint refuses what it exists
+ * to refuse, and the indexes are the ones the queries actually use.
  *
  * These run on the node:sqlite adapter (testDb.ts), which applies the real
- * migration files. That D1 enforces foreign keys like this adapter does is
- * re-checked through the real Worker in Phase 2 (ACCOUNTS.md, P2-2).
+ * migration files. Node's SQLite is NOT D1: it accepted 0001's 251-byte GLOB,
+ * which D1 refuses outright, and that is how 0001 shipped a users table D1
+ * cannot insert into. The schema's behaviour on D1 itself is pinned in
+ * migrations.workers.test.ts; the pattern-length test below is the one guard
+ * against that class of mistake that runs here too.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -18,7 +21,13 @@ import { createTestDb, migrations } from './testDb';
  */
 const FROZEN: Record<string, string> = {
   '0001_identity.sql': '51a24faaf3a3ba1460a062f49b515bcfa79a41081fa8b35df5cfec8336728c84',
+  // Pinned at review, before it has been applied anywhere remote. An edit
+  // during review updates this deliberately; once applied, it never changes.
+  '0002_users_id_check.sql': '0642555e16bc09ad18173990275c633c0192a4d5c7601e57eace6709c22a502b',
 };
+
+/** D1 refuses any LIKE or GLOB pattern longer than this many bytes. */
+const D1_PATTERN_LIMIT = 50;
 
 async function sha256(text: string): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
@@ -77,6 +86,36 @@ describe('the migrations folder', () => {
       { name: 'sessions', strict: 1 },
       { name: 'users', strict: 1 },
     ]);
+  });
+
+  it('leaves exactly the identity tables, as STRICT, once every migration has run', () => {
+    const db = createTestDb();
+    const tables = db.raw
+      .prepare("SELECT name, strict FROM pragma_table_list WHERE schema = 'main' AND name NOT LIKE 'sqlite_%' ORDER BY name")
+      .all();
+    expect(tables).toEqual([
+      { name: 'auth_identities', strict: 1 },
+      { name: 'sessions', strict: 1 },
+      { name: 'users', strict: 1 },
+    ]);
+  });
+
+  it('leaves no LIKE or GLOB pattern longer than D1 accepts anywhere in the schema', () => {
+    // The mistake 0001 made. Checked on the schema as it stands after every
+    // migration (0001's pattern is gone), because that is what D1 evaluates.
+    const db = createTestDb();
+    const patterns = db.raw
+      .prepare("SELECT name, sql FROM sqlite_master WHERE sql IS NOT NULL")
+      .all()
+      .flatMap((r) => [...String(r.sql).matchAll(/\b(?:GLOB|LIKE)\s+'((?:[^']|'')*)'/gi)].map((m) => ({ table: r.name, pattern: m[1] })));
+    expect(patterns.length).toBeGreaterThan(0);
+    for (const { table, pattern } of patterns) {
+      expect(new TextEncoder().encode(pattern).length, `${table}: ${pattern}`).toBeLessThanOrEqual(D1_PATTERN_LIMIT);
+    }
+    // The detector itself: 0001's own id pattern is over the limit.
+    const before = createTestDb({ upTo: '0001_identity.sql' });
+    const old = String(before.raw.prepare("SELECT sql FROM sqlite_master WHERE name = 'users'").get()?.sql);
+    expect(/GLOB '([^']{51,})'/.test(old)).toBe(true);
   });
 
   it('runs with foreign keys enforced', () => {
@@ -219,5 +258,56 @@ describe('indexes serve the queries that need them', () => {
       plan(db, 'SELECT s.user_id, u.status FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.id_hash = ? AND s.idle_expires_at > ?'),
     ).not.toMatch(/SCAN/);
     expect(plan(db, 'DELETE FROM sessions WHERE user_id = ?')).toMatch(/INDEX sessions_by_user/);
+  });
+});
+
+describe('0002_users_id_check.sql', () => {
+  const m0002 = () => migrations().find((m) => m.name === '0002_users_id_check.sql')!.sql;
+  const usersSql = (db: TestDb) => String(db.raw.prepare("SELECT sql FROM sqlite_master WHERE name = 'users'").get()?.sql);
+
+  it('fails, rather than rebuild over them, when the identity tables hold data', () => {
+    // Node's SQLite accepts 0001's CHECK, so here a row can exist under 0001.
+    const db = createTestDb({ upTo: '0001_identity.sql' });
+    const before = usersSql(db);
+    addUser(db);
+
+    expect(() => db.raw.exec(m0002())).toThrow(/CHECK constraint failed: identity_rows = 0/);
+
+    // Nothing the guard protects was touched. `exec` here is NOT one
+    // transaction, the worst case the file is written for: all that is left is
+    // the guard's own table, empty, which a retry reuses.
+    expect(usersSql(db)).toBe(before);
+    expect(db.raw.prepare('SELECT count(*) AS n FROM users').get()).toEqual({ n: 1 });
+    const leftovers = db.raw
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('users_0002', '_0002_guard')")
+      .all();
+    expect(leftovers).toEqual([{ name: '_0002_guard' }]);
+    expect(db.raw.prepare('SELECT count(*) AS n FROM _0002_guard').get()).toEqual({ n: 0 });
+  });
+
+  it('can be retried after that failure once the tables are empty, and then leaves nothing behind', () => {
+    const db = createTestDb({ upTo: '0001_identity.sql' });
+    const id = addUser(db);
+    expect(() => db.raw.exec(m0002())).toThrow(/identity_rows = 0/);
+
+    db.raw.prepare('DELETE FROM users WHERE id = ?').run(id);
+    db.raw.exec(m0002());
+
+    expect(usersSql(db)).not.toMatch(/GLOB '\[0-9a-f\]\[0-9a-f\]/);
+    const tables = db.raw.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").all();
+    expect(tables).toEqual([{ name: 'auth_identities' }, { name: 'sessions' }, { name: 'users' }]);
+  });
+
+  it('keeps the foreign keys, and their cascade, pointing at the rebuilt users', () => {
+    const db = createTestDb();
+    expect(tryExec(db, `INSERT INTO auth_identities VALUES ('google', 's', ?, ?)`, crypto.randomUUID(), NOW)).toMatch(/FOREIGN KEY/);
+    const u = addUser(db);
+    db.raw.prepare(`INSERT INTO auth_identities VALUES ('google', 's', ?, ?)`).run(u, NOW);
+    db.raw
+      .prepare('INSERT INTO sessions (id_hash, user_id, created_at, last_seen_at, idle_expires_at, absolute_expires_at) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(HASH, u, NOW, NOW, NOW + 1, NOW + 2);
+    db.raw.prepare('DELETE FROM users WHERE id = ?').run(u);
+    expect(db.raw.prepare('SELECT (SELECT count(*) FROM sessions) + (SELECT count(*) FROM auth_identities) AS n').get()).toEqual({ n: 0 });
+    expect(db.raw.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
   });
 });
