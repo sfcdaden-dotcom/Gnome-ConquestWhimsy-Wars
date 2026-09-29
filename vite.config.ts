@@ -1,6 +1,6 @@
 // `vitest/config` re-exports Vite's defineConfig with the `test` block typed;
 // Vite itself ignores that block.
-import { defineConfig } from 'vitest/config'
+import { configDefaults, defineConfig } from 'vitest/config'
 import type { Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 
@@ -52,5 +52,8 @@ export default defineConfig({
     // by `npm run test:e2e`; without this they would also match Vitest's
     // default glob and fail on the missing Playwright runner.
     include: ['src/**/*.test.ts'],
+    // *.workers.test.ts run inside the Workers runtime instead, under
+    // vitest.workers.config.ts (`npm run test:workers`).
+    exclude: [...configDefaults.exclude, 'src/**/*.workers.test.ts'],
   },
 })
