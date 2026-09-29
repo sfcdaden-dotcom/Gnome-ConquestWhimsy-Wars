@@ -33,6 +33,8 @@ import {
   TAKEOVER_DIFFICULTY,
 } from './protocol';
 import type { ClientMessage, ServerMessage } from './protocol';
+import { parseClientMessage } from './protocol';
+import { defaultLook } from '../ui/gnomeArt';
 import {
   CONN_BUCKET_CAPACITY,
   CONN_BUCKET_REFILL_PER_SEC,
@@ -1865,5 +1867,118 @@ describe('board views', () => {
     // Every hand is hidden from the screen in the room's own memory, not by
     // the screen declining to draw it.
     expect(view.players.every((p) => p.hand.every((c) => c === HIDDEN_CARD_ID))).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Malformed input (Phase 0.5 hardening — see ACCOUNTS_SPEC_PHASE_0_5.md)
+// ---------------------------------------------------------------------------
+
+/**
+ * Deliver a raw, untrusted payload the way the Durable Object does: through
+ * the boundary validator, then `reject` or `hello` / `handle`. The rest of this
+ * file calls the room with typed messages; these tests are about what happens
+ * BEFORE anything is typed.
+ */
+async function deliver(room: Room, conn: FakeConn, raw: unknown): Promise<void> {
+  const parsed = parseClientMessage(raw);
+  if ('error' in parsed) return room.reject(conn.id, conn, parsed.error, parsed.message);
+  if (parsed.t === 'hello') return room.hello(conn, parsed);
+  return room.handle(conn.id, parsed);
+}
+
+describe('malformed input', () => {
+  it('refuses a non-string name without touching the room', async () => {
+    // The audit's crash: `name: 123` used to throw a TypeError out of hello
+    // AFTER a token had been minted and a seat assigned.
+    const host = makeHost();
+    const room = await Room.open(host, 'ABC123');
+    const c0 = new FakeConn('c0');
+
+    await deliver(room, c0, { t: 'hello', protocol: PROTOCOL_VERSION, name: 123 });
+
+    expect(c0.errors()).toEqual(['PROTOCOL']);
+    expect(c0.last('welcome')).toBeUndefined();
+    expect(host.stored).toBeNull(); // nothing was saved
+    expect(room.snapshot().seats.every((s) => s.connected === false)).toBe(true);
+  });
+
+  it('seats a player whose look is oversized, without the look', async () => {
+    const host = makeHost();
+    const room = await Room.open(host, 'ABC123');
+    const c0 = new FakeConn('c0');
+
+    await deliver(room, c0, {
+      t: 'hello',
+      protocol: PROTOCOL_VERSION,
+      look: { ...defaultLook(), torso: 'x'.repeat(200_000) },
+    });
+
+    expect(c0.last('welcome')?.you.seat).toBe(0);
+    expect(room.snapshot().seats[0].look).toBeUndefined();
+    expect(JSON.stringify(host.stored).length).toBeLessThan(10_000);
+  });
+
+  it('never stores a look with keys a look does not have', async () => {
+    const room = await Room.open(makeHost(), 'ABC123');
+    const c0 = new FakeConn('c0');
+
+    await deliver(room, c0, {
+      t: 'hello',
+      protocol: PROTOCOL_VERSION,
+      look: { ...defaultLook(), anything: { nested: true } },
+    });
+
+    expect(room.snapshot().seats[0].look).toBeUndefined();
+  });
+
+  it('stores a look as a fresh copy even when called directly', async () => {
+    // `hello` is also reached without the boundary (socket re-attachment,
+    // tests); the room re-validates rather than trusting its caller.
+    const room = await Room.open(makeHost(), 'ABC123');
+    const c0 = new FakeConn('c0');
+    const look = { ...defaultLook(), smuggled: 'x' } as unknown as ReturnType<typeof defaultLook>;
+
+    await room.hello(c0, { ...HELLO, look });
+
+    expect(room.snapshot().seats[0].look).toBeUndefined();
+  });
+
+  it('strips bidi and control characters from a name', async () => {
+    const room = await Room.open(makeHost(), 'ABC123');
+    const c0 = new FakeConn('c0');
+
+    await deliver(room, c0, { t: 'hello', protocol: PROTOCOL_VERSION, name: '\u202Eeman\u0000 Ada' });
+
+    expect(room.snapshot().seats[0].name).toBe('eman Ada');
+  });
+
+  it('keeps the seat name when the sent one cleans down to nothing', async () => {
+    const room = await Room.open(makeHost(), 'ABC123');
+    const c0 = new FakeConn('c0');
+
+    await deliver(room, c0, { t: 'hello', protocol: PROTOCOL_VERSION, name: '\u202E\u200B  ' });
+
+    expect(room.snapshot().seats[0].name).toBe('Rose');
+  });
+
+  it('keeps top-level junk on an action out of the stored record', async () => {
+    const { host, room, c0 } = await lobby();
+    await room.handle('c0', { t: 'start' });
+
+    await deliver(room, c0, { t: 'action', action: { type: 'rollOff', player: 0, junk: 'x'.repeat(1000) } });
+
+    expect(host.stored?.actions.at(-1)).toEqual({ type: 'rollOff', player: 0 });
+  });
+
+  it('charges refused messages against the budget, and hangs up on a garbage flood', async () => {
+    const { room, c0 } = await lobby();
+    for (let i = 0; i < CONN_BUCKET_CAPACITY + FLOOD_DISCONNECT_AFTER + 10; i++) {
+      await deliver(room, c0, { t: 'nonsense' });
+    }
+
+    expect(c0.closed?.code).toBe(CLOSE_RATE_LIMITED);
+    // One PROTOCOL per message the budget covered, then a single warning.
+    expect(c0.errors().filter((e) => e === 'RATE_LIMITED')).toHaveLength(1);
   });
 });

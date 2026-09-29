@@ -98,10 +98,13 @@ import {
   FLOOD_DISCONNECT_AFTER,
   MAX_CONNECTIONS,
   MESSAGE_COST,
+  REJECTED_MESSAGE_COST,
   ROOM_BUCKET_CAPACITY,
   ROOM_BUCKET_REFILL_PER_SEC,
   TokenBucket,
 } from './ratelimit';
+import { validateLookWire } from './lookSchema';
+import { sanitizeSeatName } from './names';
 
 // ---------------------------------------------------------------------------
 // Host interface (everything platform-shaped)
@@ -503,6 +506,14 @@ export class Room {
     // through `handle`, so this is the only place it can be charged.
     if (!this.admit(conn.id, conn, 'hello')) return;
 
+    // Worked out before anything is minted or stored, so nothing below can
+    // fail halfway through changing the room. The boundary (parseClientMessage)
+    // has already checked both; they are re-checked here because `hello` is
+    // also called directly — by the Durable Object re-attaching sockets, and by
+    // tests — and the room should not depend on its caller for its own safety.
+    const name = sanitizeSeatName(message.name);
+    const look = message.look === undefined ? null : validateLookWire(message.look);
+
     const token = known ? (message.token as string) : this.mintToken();
 
     // One token, one live connection. A second tab (or a reconnect the room
@@ -543,10 +554,11 @@ export class Room {
     if (seat === null && !spectating) seat = this.claimSeat();
     this.data.tokens[token] = seat;
 
-    if (message.name && seat !== null) this.data.seats[seat].name = message.name.slice(0, 24);
+    if (name !== null && seat !== null) this.data.seats[seat].name = name;
     // A returning player's gnome arrives with every hello, so a reconnect
-    // restores their character along with their seat and their hand.
-    if (message.look && seat !== null) this.data.seats[seat].look = message.look;
+    // restores their character along with their seat and their hand. Stored as
+    // validated — a fresh object of exactly the look's keys, never the caller's.
+    if (look !== null && seat !== null) this.data.seats[seat].look = look;
 
     this.conns.set(conn.id, { conn, token, seat, spectating, announced: null });
     this.settleHost(token, message.hostKey, spectating, seat);
@@ -816,6 +828,22 @@ export class Room {
    * would be the same amplification the limit exists to stop.
    */
   private admit(connId: string, conn: RoomConnection, t: ClientMessage['t']): boolean {
+    return this.admitCost(connId, conn, MESSAGE_COST[t], t === 'hello');
+  }
+
+  /**
+   * A message the boundary refused (see `parseClientMessage`): charged like any
+   * other before it is answered, so a flood of garbage drains the same budget —
+   * and reaches the same hang-up — as a flood of real work. It used to be
+   * answered for free.
+   */
+  reject(connId: string, conn: RoomConnection, code: RoomErrorCode, message: string): void {
+    if (this.isClosed) return;
+    if (!this.admitCost(connId, conn, REJECTED_MESSAGE_COST, false)) return;
+    conn.send({ t: 'error', code, message });
+  }
+
+  private admitCost(connId: string, conn: RoomConnection, cost: number, isHello: boolean): boolean {
     const now = this.host.now();
     let meter = this.meters.get(connId);
     if (!meter) {
@@ -827,7 +855,6 @@ export class Room {
       this.meters.set(connId, meter);
     }
     this.roomBucket ??= new TokenBucket(ROOM_BUCKET_CAPACITY, ROOM_BUCKET_REFILL_PER_SEC, now);
-    const cost = MESSAGE_COST[t];
 
     if (!meter.bucket.take(now, cost)) {
       meter.dropped++;
@@ -855,7 +882,7 @@ export class Room {
     // Object wakes from hibernation, or a table's worth of phones coming back
     // from one flaky access point — looked precisely like an attack, and the
     // room would answer the reconnect it exists to support with "try later".
-    if (t !== 'hello' && !this.roomBucket.take(now, cost)) {
+    if (!isHello && !this.roomBucket.take(now, cost)) {
       this.warn(meter, conn, 'The room is busier than it will serve right now — try again in a moment.');
       return false;
     }
@@ -994,8 +1021,13 @@ export class Room {
     if (!seat) throw new RoomError('BAD_CONFIG', `No seat ${cfg.index}`);
     if (cfg.controller) seat.controller = cfg.controller;
     if (cfg.difficulty) seat.difficulty = cfg.difficulty;
-    if (cfg.name) seat.name = cfg.name.slice(0, 24);
-    if (cfg.look) seat.look = cfg.look;
+    const name = sanitizeSeatName(cfg.name);
+    if (name !== null) seat.name = name;
+    if (cfg.look !== undefined) {
+      const look = validateLookWire(cfg.look);
+      if (!look) throw new RoomError('BAD_CONFIG', `Seat ${cfg.index + 1}: malformed gnome`);
+      seat.look = look;
+    }
   }
 
   /**

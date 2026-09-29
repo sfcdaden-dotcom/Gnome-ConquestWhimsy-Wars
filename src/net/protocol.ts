@@ -21,6 +21,7 @@
 
 import type { Action, AiDifficulty, GameSeal, GardenPreset, PlayerView } from '../engine';
 import type { MatchRecord } from '../engine';
+import { validateLookWire } from './lookSchema';
 
 /** Bumped on any breaking change to the messages below. */
 export const PROTOCOL_VERSION = 3;
@@ -406,19 +407,208 @@ export type RoomErrorCode =
   | 'ILLEGAL_ACTION' // the engine said no
   | 'RATE_LIMITED'; // sending faster than the room will serve (see ratelimit.ts)
 
-/** Narrow an untrusted parsed JSON payload to a ClientMessage. */
-export function parseClientMessage(raw: unknown): ClientMessage | null {
-  if (typeof raw !== 'object' || raw === null) return null;
-  const t = (raw as { t?: unknown }).t;
-  switch (t) {
+// ---------------------------------------------------------------------------
+// Validation at the boundary
+// ---------------------------------------------------------------------------
+
+/**
+ * Why a message was refused before the room saw it. Distinguished from a
+ * `ClientMessage` by its `error` key, which no message has.
+ */
+export interface ClientMessageError {
+  error: RoomErrorCode;
+  message: string;
+}
+
+/** Seat tokens and host keys are 16 random bytes, hex-encoded (see room.ts). */
+const CREDENTIAL = /^[0-9a-f]{32}$/;
+
+/**
+ * A raw name may be longer than a stored one — the room cleans and caps it
+ * (see names.ts) — but not unboundedly so. The real client caps input at 24.
+ */
+const MAX_RAW_NAME = 256;
+
+/** Preset ids are short registry keys; the room checks the id exists. */
+const MAX_PRESET_ID = 64;
+
+/**
+ * The largest action the room will accept, serialised. Real actions are a few
+ * dozen bytes — a card with several targets is still well under a kilobyte —
+ * and every accepted action is stored in the record and later broadcast in
+ * `revealed`, so this bounds what one action can add to both.
+ */
+export const MAX_ACTION_BYTES = 2048;
+
+/** Every top-level key any `Action` has. Anything else is dropped before the record sees it. */
+type AllKeys<T> = T extends unknown ? keyof T : never;
+const ACTION_KEYS = [
+  'type',
+  'player',
+  'sourceKey',
+  'take',
+  'to',
+  'cardId',
+  'targets',
+  'accept',
+  'unitId',
+  'target',
+  'pos',
+  'gardenType',
+  'phraseId',
+] as const satisfies readonly AllKeys<Action>[];
+// The reverse direction: a key added to `Action` must be added above, or this fails to compile.
+type MissingActionKey = Exclude<AllKeys<Action>, (typeof ACTION_KEYS)[number]>;
+const _everyActionKeyListed: [MissingActionKey] extends [never] ? true : never = true;
+void _everyActionKeyListed;
+
+const CONTROLLERS: readonly string[] = ['human', 'cpu'];
+const DIFFICULTIES: readonly string[] = ['easy', 'normal', 'hard'];
+
+function isPlainObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v);
+}
+
+function refuse(error: RoomErrorCode, message: string): ClientMessageError {
+  return { error, message };
+}
+
+/**
+ * Narrow an untrusted parsed JSON payload to a well-formed `ClientMessage`.
+ *
+ * It used to check the `t` field and nothing else, so `{ t: 'hello', name: 123 }`
+ * reached the room and threw inside it, and a `look` of any size or shape was
+ * stored and rebroadcast verbatim. Now every field is checked for type and
+ * bounds, and the message handed on is BUILT here — unknown fields are never
+ * copied, so nothing the room did not ask for can ride into its storage.
+ *
+ * Two things are dropped rather than refused, because refusing would lock a
+ * player out of a room over something that cannot matter:
+ *
+ *  - a `hello.look` that is not a well-formed look: the player sits down with
+ *    no gnome, and everyone's board draws a stand-in;
+ *  - a `token` or `hostKey` that is a string but not a credential's shape: it
+ *    cannot be a credential the room issued, so it means exactly what an
+ *    unknown one means — a fresh seat, no host claim.
+ *
+ * Never throws.
+ */
+export function parseClientMessage(raw: unknown): ClientMessage | ClientMessageError {
+  if (!isPlainObject(raw)) return refuse('PROTOCOL', 'Unreadable message');
+  switch (raw.t) {
     case 'hello':
+      return parseHello(raw);
     case 'configure':
-    case 'start':
-    case 'takeOverRoom':
+      return parseConfigure(raw);
     case 'action':
+      return parseAction(raw);
+    case 'start':
+      return { t: 'start' };
+    case 'takeOverRoom':
+      return { t: 'takeOverRoom' };
     case 'ping':
-      return raw as ClientMessage;
+      return { t: 'ping' };
     default:
-      return null;
+      return refuse('PROTOCOL', 'Unreadable message');
   }
+}
+
+function parseHello(raw: Record<string, unknown>): ClientMessage | ClientMessageError {
+  const { protocol, token, hostKey, name, look, spectate } = raw;
+  if (typeof protocol !== 'number' || !Number.isInteger(protocol)) {
+    return refuse('PROTOCOL', 'hello needs a protocol version');
+  }
+  if (token !== undefined && typeof token !== 'string') return refuse('PROTOCOL', 'Malformed seat token');
+  if (hostKey !== undefined && typeof hostKey !== 'string') return refuse('PROTOCOL', 'Malformed host key');
+  if (name !== undefined && (typeof name !== 'string' || name.length > MAX_RAW_NAME)) {
+    return refuse('PROTOCOL', 'Malformed name');
+  }
+  if (spectate !== undefined && typeof spectate !== 'boolean') return refuse('PROTOCOL', 'Malformed hello');
+
+  const out: Extract<ClientMessage, { t: 'hello' }> = { t: 'hello', protocol };
+  if (typeof token === 'string' && CREDENTIAL.test(token)) out.token = token;
+  if (typeof hostKey === 'string' && CREDENTIAL.test(hostKey)) out.hostKey = hostKey;
+  if (name !== undefined) out.name = name;
+  const validLook = look === undefined ? null : validateLookWire(look);
+  if (validLook) out.look = validLook;
+  if (spectate === true) out.spectate = true;
+  return out;
+}
+
+function parseConfigure(raw: Record<string, unknown>): ClientMessage | ClientMessageError {
+  const { playerCount, boardSize, gardenPreset, seats } = raw;
+  const out: Extract<ClientMessage, { t: 'configure' }> = { t: 'configure' };
+
+  if (playerCount !== undefined) {
+    if (playerCount !== 2 && playerCount !== 4) return refuse('BAD_CONFIG', 'Whimsy Wars seats exactly 2 or 4 players');
+    out.playerCount = playerCount;
+  }
+  if (boardSize !== undefined) {
+    if (typeof boardSize !== 'number' || !Number.isInteger(boardSize)) {
+      return refuse('BAD_CONFIG', 'boardSize must be an odd integer >= 5');
+    }
+    out.boardSize = boardSize;
+  }
+  if (gardenPreset !== undefined) {
+    if (typeof gardenPreset !== 'string' || gardenPreset.length === 0 || gardenPreset.length > MAX_PRESET_ID) {
+      return refuse('BAD_CONFIG', 'Unknown board layout');
+    }
+    out.gardenPreset = gardenPreset;
+  }
+  if (seats !== undefined) {
+    if (!Array.isArray(seats) || seats.length > 4) return refuse('BAD_CONFIG', 'Malformed seat list');
+    const parsed: SeatConfig[] = [];
+    for (const seat of seats) {
+      const one = parseSeatConfig(seat);
+      if ('error' in one) return one;
+      parsed.push(one);
+    }
+    out.seats = parsed;
+  }
+  return out;
+}
+
+function parseSeatConfig(raw: unknown): SeatConfig | ClientMessageError {
+  if (!isPlainObject(raw)) return refuse('BAD_CONFIG', 'Malformed seat');
+  const { index, controller, difficulty, name, look } = raw;
+  if (typeof index !== 'number' || !Number.isInteger(index) || index < 0 || index > 3) {
+    return refuse('BAD_CONFIG', 'Malformed seat index');
+  }
+  const out: SeatConfig = { index };
+  if (controller !== undefined) {
+    if (typeof controller !== 'string' || !CONTROLLERS.includes(controller)) {
+      return refuse('BAD_CONFIG', `Seat ${index + 1}: a seat is either human or cpu`);
+    }
+    out.controller = controller as SeatConfig['controller'];
+  }
+  if (difficulty !== undefined) {
+    if (typeof difficulty !== 'string' || !DIFFICULTIES.includes(difficulty)) {
+      return refuse('BAD_CONFIG', `Seat ${index + 1}: unknown difficulty`);
+    }
+    out.difficulty = difficulty as AiDifficulty;
+  }
+  if (name !== undefined) {
+    if (typeof name !== 'string' || name.length > MAX_RAW_NAME) return refuse('BAD_CONFIG', `Seat ${index + 1}: malformed name`);
+    out.name = name;
+  }
+  if (look !== undefined) {
+    // The host sets a CPU seat's gnome deliberately, so a bad one is an error
+    // to report rather than a cosmetic to drop.
+    const validLook = validateLookWire(look);
+    if (!validLook) return refuse('BAD_CONFIG', `Seat ${index + 1}: malformed gnome`);
+    out.look = validLook;
+  }
+  return out;
+}
+
+function parseAction(raw: Record<string, unknown>): ClientMessage | ClientMessageError {
+  const action = raw.action;
+  if (!isPlainObject(action) || typeof action.type !== 'string' || typeof action.player !== 'number' || !Number.isInteger(action.player)) {
+    return refuse('PROTOCOL', 'Malformed action');
+  }
+  const kept: Record<string, unknown> = {};
+  for (const key of ACTION_KEYS) if (action[key] !== undefined) kept[key] = action[key];
+  if (JSON.stringify(kept).length > MAX_ACTION_BYTES) return refuse('PROTOCOL', 'Malformed action');
+  // The engine validates everything past the shape, exactly as before.
+  return { t: 'action', action: kept as unknown as Action };
 }
