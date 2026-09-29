@@ -1,7 +1,8 @@
 # Accounts, profiles & social — architecture audit and proposal
 
-**Status: architecture approved 2026-09-29. Phase 0.5 approved; Phase 1
-blocked pending schema review. Nothing in this document is
+**Status: architecture approved 2026-09-29. Phase 0.5 implemented. Phase 1's
+repository and testing strategy provisionally approved; final approval waits
+on review of `0001_identity.sql`. Nothing in this document is
 implemented yet.** It audits the repository as of `43ffa51` and describes how
 persistent player accounts will be added without destabilising what already
 works. The product owner's decisions are recorded in
@@ -490,12 +491,47 @@ the `NOT EXISTS` guard cannot interleave with another batch.
 
 ```ts
 // src/worker/auth/session.ts
-authenticate(request, env): Promise<{ user: { id: string } | null }>  // Who is this? (never throws on guests)
-requireUser(auth): { id: string }                                      // 401 if null
+authenticate(request, env): Promise<Auth>   // Who is this? Never throws on guests.
+//   Auth = { kind: 'guest' }
+//        | { kind: 'user'; user: ActiveUser }                        // status === 'active'
+//        | { kind: 'unavailable'; userId: string; status: 'suspended' | 'deleting' }
+
+// The router, once, from each route's declared access level:
+//   access: 'public'    → any Auth
+//   access: 'user'      → 'user' only; guest → 401; unavailable → 403 ACCOUNT_UNAVAILABLE
+//   access: 'self-exit' → 'user' or 'unavailable' (the short allowlist below)
 
 // in each handler: Are they allowed? Checked against the database, never the UI.
 if (profile.user_id !== user.id) return forbidden();
 ```
+
+**Phase 2 requirement P2-1: account status is enforced centrally (recorded
+2026-09-29).** Every authenticated HTTP request is checked for
+`users.status = 'active'` in **one place**, the router, from the status
+`resolveSession` returns with the session. That happens **before** any
+handler runs. Endpoints never check `suspended` or `deleting` themselves,
+and cannot forget to.
+
+- **The type system carries it.** Handlers for `'user'` routes receive an
+  `ActiveUser`, a type only `authenticate` can construct, when the status is
+  `active`. A handler that needs a user cannot be written against a
+  non-active one.
+- **Access is declared per route, in the route table.** There is no
+  per-handler opt-in. The only routes reachable by a non-active account are
+  a fixed `'self-exit'` allowlist: `POST /api/auth/logout`, and a `GET
+  /api/me` that returns the account status and nothing else, so the client
+  can say why. Whether a suspended account may still **export or delete**
+  its data is a policy decision to settle in Phase 8. If yes, those two
+  routes join the allowlist, still declared centrally.
+- **WebSocket upgrades apply the same rule.** A non-active account's socket
+  is treated as a guest: no `user_id` is attributed and no social socket is
+  opened.
+- **Sign-in applies it too.** A `suspended` or `deleting` account completing
+  Google sign-in gets no session.
+- **A test enforces it.** It walks the route table and asserts that every
+  route not in the allowlist answers 403 for a `suspended` user and a
+  `deleting` user, and 401 for a guest. A new route added without a
+  declaration fails the build.
 
 Cross-cutting rules applied at the router:
 
@@ -512,6 +548,23 @@ Cross-cutting rules applied at the router:
 - **Explicit DTOs.** Every response is built field by field from a
   `PublicProfile`, `MeResponse`, etc. type. A database row is never
   serialised.
+
+**Phase 2 requirement P2-2: authentication is tested through the real
+Worker environment (recorded 2026-09-29).** Phase 1's repository and
+constraint tests run on `testDb` (Node's `node:sqlite`, same migrations).
+That is accepted for Phase 1, and stays as the fast inner loop.
+Authentication must additionally be tested through the real Workers runtime
+and real (local) D1: session cookies, the WebSocket-upgrade identity handoff,
+central status enforcement (P2-1), and the `Origin` checks.
+
+- The first Phase 2 PR reviews and picks the mechanism:
+  `@cloudflare/vitest-pool-workers`, whose support for this repo's vitest 4
+  must be confirmed; or requests against `vite preview` / `wrangler dev`
+  from the test runner; or Playwright API tests. The `testDb` adapter's
+  fidelity to D1 is re-checked in the same review.
+- Google itself is never called from tests. A local-only fake identity
+  provider stands in, enabled only by a local flag **and** a localhost host,
+  with a test that it refuses otherwise.
 
 ---
 
@@ -948,7 +1001,9 @@ migration `0001_identity.sql`.
    migrate-then-deploy order, expand/contract discipline, and staging.
 Exit: `npm test`, lint, build and e2e are green. No routes exist yet.
 
-**Phase 2: Authentication.**
+**Phase 2: Authentication.** Carries requirements P2-1 (central `active`
+status enforcement) and P2-2 (tests through the real Worker environment),
+§9.5.
 1. `router.ts`, `http.ts`, `Origin` allowlist, JSON body limits.
 2. Google start/callback, ID-token verification, atomic user upsert, sessions,
    logout, `GET /api/me`. Includes a local-only fake identity provider for
@@ -1016,7 +1071,7 @@ every phase. That is the bar for "done".
 |---|---|
 | 0.5 | Probe cases become real tests. A non-string `name` gets a `PROTOCOL` error with no state change. An oversized or extra-key `look` is refused or stripped. Bidi and control characters are stripped. Bad `controller`/`difficulty` gets `BAD_CONFIG`. A reload keeps the guest's gnome (e2e). Worker route tests: `/host-key` is unreachable from outside. |
 | 1 | Migrations apply cleanly from empty. Constraint tests: duplicate `username_key` (case-insensitive) is rejected; `friendships` rejects `user_a >= user_b`; `friend_requests` allows one row per pair; `blocks` rejects self; the partial unique index gives one seat per user per match; foreign-key cascade and `SET NULL` behave as specified (and D1 enforces foreign keys; verify, do not assume). |
-| 2 | Invalid, expired, wrong-`aud`, wrong-`iss`, wrong-`nonce` and bad-signature ID tokens are rejected. Mismatched `state` is rejected. A non-relative `return` becomes `/`. Concurrent callbacks for one `sub` make one user. Session rotation at login. Logout revokes. An expired session is a guest. Guests get 401 on every protected route. A foreign `Origin` is refused on POST and WS upgrade. A client-supplied identity header is ignored. Room: a `user_id` can only come from the transport; two tabs of one user give one attributed seat; an account seat's name cannot be overridden by `hello`. Every existing online e2e passes as a guest. The fake identity provider refuses non-localhost hosts. |
+| 2 | P2-1: every non-allowlisted route answers 403 for `suspended` and `deleting` accounts and 401 for guests (a route-table walk, so new routes are covered automatically); a non-active account's WebSocket gets no attribution; sign-in issues no session to a non-active account. P2-2: the authentication tests run through the real Workers runtime and local D1, not only `testDb`. Invalid, expired, wrong-`aud`, wrong-`iss`, wrong-`nonce` and bad-signature ID tokens are rejected. Mismatched `state` is rejected. A non-relative `return` becomes `/`. Concurrent callbacks for one `sub` make one user. Session rotation at login. Logout revokes. An expired session is a guest. Guests get 401 on every protected route. A foreign `Origin` is refused on POST and WS upgrade. A client-supplied identity header is ignored. Room: a `user_id` can only come from the transport; two tabs of one user give one attributed seat; an account seat's name cannot be overridden by `hello`. Every existing online e2e passes as a guest. The fake identity provider refuses non-localhost hosts. |
 | 3 | User A cannot edit B's profile (403, not 404-probing). Case-insensitive collisions are rejected; lookalikes are not (by decision). Reserved and denylisted names are rejected. Rename cooldown holds. A released name is held. **Renaming does not break friendships, stats or matches.** The public profile DTO contains exactly its whitelisted keys (snapshot test). |
 | 4 | A cannot modify B's customization. Malformed looks are rejected. A saved look round-trips and renders in all four seats. Unknown but well-formed ids degrade gracefully. |
 | 5 | `summarizeMatch` totals over seeded self-play match the ground truth, including games longer than the 1,000-event window. **A completed match cannot award stats twice** (report called 3 times gives one match). The report survives a D1 outage and a hibernation. Taken-over seats are recorded as such. Guest names never reach D1. A user deleted mid-game does not wedge the retry. Stripping names leaves the replay identical. |
@@ -1101,7 +1156,10 @@ proposal, the relevant section above has been updated.
   first ([spec](ACCOUNTS_SPEC_PHASE_0_5.md)).
 - **Phase 1** follows, but only after its schema
   ([spec](ACCOUNTS_SPEC_PHASE_1.md)) has been reviewed.
-- **Phase 2** (authentication) waits for explicit approval.
+- **Phase 2** (authentication) waits for explicit approval. It carries
+  requirements **P2-1** (central enforcement of `status = 'active'`) and
+  **P2-2** (authentication tested through the real Worker and D1
+  environment), both in §9.5.
 
 ### Still open: policy items for legal/product review
 
