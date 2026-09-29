@@ -1,7 +1,8 @@
 # Phase 2 — Google sign-in (implementation spec, for review)
 
-**Status: draft for review, revision 2 (2026-09-29). Nothing here is
-implemented, and implementation is not yet approved.** Phase 1 is complete:
+**Status: revision 3 (2026-09-29). Revision 2 was approved, and PR 2-A
+(test harness and dependencies) is authorised. PRs 2-B to 2-F each need
+their own approval.** Phase 1 is complete:
 `0001_identity.sql` is applied to staging and production, and is now
 production history.
 
@@ -14,6 +15,14 @@ lands:
 | R2 | "Single-use transaction" was overstated: clearing a cookie stops no copy already in flight | What actually prevents duplicates is stated, a backstop is added that needs no table, and replay is tested (§5.4) |
 | R3 | "Frozen at start" and "reconnects as a guest" conflicted | Split into **live authentication** (per connection, Phase 2) and **frozen match attribution** (Phase 5); the room persists nothing about accounts (§8) |
 | R4 | A suspension landing between the status check and the session insert still got a session | Session creation is guarded by the current status in the same batch, and the cookie follows that batch's answer (§6.3) |
+
+**Revision 3** records the second review's notes for the later PRs:
+
+| # | Review note | Resolution |
+|---|---|---|
+| N1 | "Earliest-arrived connection" must stay deterministic when sockets are rebuilt after hibernation | The order is the numeric connection id, which is kept in each socket's attachment. Making it trustworthy needs a fix to an existing bug the check turned up: ids can repeat after an eviction (§8.2 rule 3). Plus a regression test that a wake does not change which connection counts. |
+| N2 | Stale socket authentication must be resolved before Phase 3 shows or grants anything through it | Now an explicit entry condition for Phase 3 (§8.3) |
+| N3 | The one-hour `exp` ceiling was an unsubstantiated assumption about Google | It is replaced by a 24-hour **sanity bound** that assumes nothing about Google's lifetime and still refuses a milliseconds `exp`. Required claims and timestamp validation are unchanged (§5.2 step 4). |
 
 This is the document to review before Google sign-in is built. It turns
 ACCOUNTS.md §9 (authentication and sessions), §10 (guests and accounts) and
@@ -291,11 +300,18 @@ ends with a `302` to `<returnPath>?signin=<outcome>`, or to
      `requiredClaims`, `jose` checks `exp` only when a token has one, and a
      token with no `exp` verifies (§12, check 6). A timestamp that is not a
      number is refused by `jose` itself.
-   - **`exp` is bounded above:** `exp - iat` must be at most 3,600 seconds
-     plus the 60-second tolerance. Google issues ID tokens for one hour.
-     `jose` alone accepts an `exp` written in milliseconds, because it reads
-     as a date far in the future (§12, check 6); this bound refuses it.
-     `maxTokenAge` does the same for a stale `iat`.
+   - **`exp` is bounded above, as a sanity check (revision 3, N3):**
+     `exp - iat` must be at most 86,400 seconds (24 hours).
+     - This is not a claim about how long Google's ID tokens last. It is set
+       far above any lifetime a real token would carry, so that no change on
+       Google's side can trip it.
+     - Its job is catching unit errors. `jose` alone accepts an `exp`
+       written in milliseconds, because it reads as a date thousands of
+       years away (§12, check 6). Such an `exp` exceeds `iat` by about 1.7
+       trillion seconds, so any sane ceiling refuses it.
+     - `maxTokenAge` does the same job for a stale `iat`.
+     - PR 2-D records the `exp - iat` of a real staging sign-in in its
+       description, as a check on the bound, not as a basis for it.
    - `nonce` must equal the transaction's nonce.
    - If `azp` is present, it must equal `GOOGLE_CLIENT_ID`.
    - `sub` must be a string of 1 to 255 characters (the schema checks this
@@ -627,6 +643,28 @@ on the connection's in-memory `ConnState`, and nowhere else.
      stored.
    - When the counting connection closes, or gives up its seat, the next
      one counts.
+   - **"Earliest-arrived" means the lowest numeric connection id** (revision
+     3, N1). The id is allocated at the upgrade and kept in the socket's
+     attachment. The order is never taken from `Map` insertion order or
+     from `ctx.getWebSockets()`. After a wake, both follow whatever order
+     re-attachment happened in, and nothing promises that is arrival order.
+   - **Prerequisite, an existing bug found by this check:**
+     `RoomDurableObject.fetch` allocates the new socket's id *before*
+     `roomFor()` has re-attached the surviving sockets and advanced
+     `nextConnId`. So after an eviction, a new connection can be given an id
+     a hibernated socket still holds. The room keys connections by that id,
+     so the newcomer's `hello` replaces the other socket's state:
+     - that player stops receiving frames;
+     - their messages are checked against the newcomer's seat.
+
+     This is wrong today, accounts or not. The fix is to allocate the id
+     after `roomFor()`, and it ships ahead of PR 2-E (it is not part of
+     2-A), with a regression test.
+   - **Regression test:** with two connections of one account, hibernate
+     and wake the room (rebuild it from storage and re-attach its sockets
+     in a shuffled order). The same connection, and so the same seat, still
+     counts. A new connection arriving after the wake gets an id above every
+     surviving one.
 4. **Board views** (`spectate: true`) never count. A TV is not a player.
 5. **It never leaves the room.** It is not in `RoomSnapshot`, `SeatInfo`,
    `GameConfig`, `MatchRecord` or any `ServerMessage` (R5, R8). A test
@@ -645,9 +683,10 @@ when that socket closes and its successor upgrades, not before.
 
 - **In Phase 2 this has no effect.** Live authentication grants and shows
   nothing yet (D1).
-- **Requirement on later phases, recorded here:** before live
-  authentication grants or displays anything (Phase 3's badge and name,
-  Phase 7's invites), that phase must bound this staleness. Two candidate
+- **Entry condition for Phase 3 (revision 3, N2):** Phase 3 must not add
+  the badge, server-set names, or anything else shown or allowed through
+  live authentication until this staleness is bounded and tested. The same
+  holds for every later phase (Phase 7's invites). Two candidate
   mechanisms, to be chosen in that phase:
   - keep the session hash in the attachment, and re-resolve it on wake and
     on a timer;
@@ -754,7 +793,7 @@ Every row of ACCOUNTS.md §18 "Phase 2" appears below.
 | The purge removes only expired rows when the cron fires | workers | 2-C |
 | `ACCOUNTS_ENABLED` off: every auth route and `/api/me` answers 404 | workers | 2-C |
 | Invalid, expired, wrong-`aud`, wrong-`iss`, wrong-`nonce`, bad-signature and wrong-`azp` ID tokens are rejected | workers | 2-D |
-| **R1:** ID tokens missing `exp`, `iat`, `sub` or `nonce` are rejected; a non-numeric `exp` or `iat` is rejected; an `exp` in milliseconds and a stale `iat` are rejected; a transaction cookie without `exp` gives `expired` | workers | 2-D |
+| **R1:** ID tokens missing `exp`, `iat`, `sub` or `nonce` are rejected; a non-numeric `exp` or `iat` is rejected; an `exp` in milliseconds, an `exp` more than 24 hours after `iat`, and a stale `iat` are rejected; a transaction cookie without `exp` gives `expired` | workers | 2-D |
 | **R1:** no `/ 1000` or `* 1000` under `src/worker/auth/` outside `time.ts` (source scan) | node | 2-D |
 | **R2:** replaying one callback against the strict fake IdP gives `failed` and one session row | workers | 2-D |
 | **R2:** two concurrent, then two sequential, callbacks for one transaction against the lenient fake IdP leave exactly one session row and set one cookie value | workers | 2-D |
@@ -768,6 +807,7 @@ Every row of ACCOUNTS.md §18 "Phase 2" appears below.
 | The fake IdP refuses non-loopback hosts, and `FAKE_IDP` is absent from `wrangler.jsonc` | node + workers | 2-D |
 | Room: a user id can come only from the transport | node | 2-E |
 | Room: two tabs of one account give one counting connection; when it closes, the other one counts | node | 2-E |
+| **N1:** a wake (sockets re-attached in shuffled order) does not change which connection counts; a connection arriving after a wake gets an id above every surviving one | node + workers | the id fix (before 2-E), then 2-E |
 | **R3:** hibernation restores only a socket's own handshake: a guest socket stays a guest after a wake, and a closed socket's account is not inherited by anyone | node | 2-E |
 | **R3:** a reconnect is a new socket; one reconnecting without a valid session (signed out, suspended, revoked) is a guest, mid-game included | node + workers | 2-E |
 | **R3:** nothing about accounts is written to room storage (the persisted room is byte-identical with and without signed-in players) | node | 2-E |
@@ -798,6 +838,7 @@ from them is in the repo.
 | 4 | Cross-site sign-in shape: the game on `localhost` → `/login` sets an old `Strict` session and the `Lax` transaction cookie → a page on `127.0.0.1` (another site), **where the user clicks** → `/callback` sets the new session → `/landing` | The **callback received only the `Lax` cookie**, not the old session (A1). The **landing document received no session cookie**; the page's `fetch('/api/me')` did send the new one (A2). |
 | 5 | The same, but with the other site answering a plain `302` instead of a page | The callback **did** receive the old `Strict` cookie. A fake IdP made of redirects would hide what check 4 found, hence §10. |
 | 6 | `jose@6.2.12` `jwtVerify` with and without `requiredClaims`, over tokens with missing and malformed timestamps (revision 2) | Without `requiredClaims`, a token with **no `exp` was accepted**. With `requiredClaims`, a missing `exp` or `iat` was rejected. A string `exp` was rejected ("must be a number"). An `iat` in milliseconds was rejected (it reads as the future), as was an `iat` an hour old under `maxTokenAge: '10m'`. **An `exp` in milliseconds was accepted**, which is why §5.2 bounds `exp - iat`. |
+| 7 | Reading `RoomDurableObject.fetch` for the hibernation ordering (revision 3) | The connection id is allocated (`String(this.nextConnId++)`) one line **before** `await this.roomFor(code)`, which is what re-attaches surviving sockets and advances `nextConnId`. After an eviction the ids can therefore repeat (§8.2 rule 3). Found by reading the code; the regression test that proves it is part of the fix. |
 
 Limits of these checks:
 
@@ -850,6 +891,11 @@ Safe to deploy to production. For real browsers, nothing changes.
   milliseconds converter, §5.5).
 - `src/worker/auth/fakeIdp.ts`.
 - Every §11 row marked 2-D.
+
+**Before 2-E — Fix connection-id reuse after eviction (§8.2 rule 3).**
+- This is an existing bug, not Phase 2 work.
+- Allocate the id after `roomFor()`, with the regression test.
+- It needs its own approval, and can land any time before 2-E.
 
 **PR 2-E — The room handoff (live authentication only).**
 - `room-do.ts`: the attachment, `hello` with the third argument, and the
