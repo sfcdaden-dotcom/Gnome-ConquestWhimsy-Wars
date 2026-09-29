@@ -44,7 +44,52 @@ assets).
 3. Durable Objects are the only paid-tier requirement; everything else fits
    the free tier.
 
-### Cloudflare Pages / Netlify (single-device play only)
+### The accounts database (D1) and staging
+
+Accounts (ACCOUNTS.md) add one Cloudflare D1 database per environment. Its
+schema is the `migrations/` folder: numbered SQL files, applied in order and
+recorded by wrangler in the database's `d1_migrations` table.
+
+**One-time setup (a person with the Cloudflare account):**
+
+1. `npx wrangler d1 create gnomeconquest` and
+   `npx wrangler d1 create gnomeconquest-staging`.
+2. Paste each printed `database_id` into its `d1_databases` entry in
+   `wrangler.jsonc`: the top level for production, `env.staging` for staging.
+   Until that is done, local work is unaffected, but a remote deploy could
+   provision or pick up a database by name, which is not what you want.
+
+**Every release that includes a migration, in this order:**
+
+1. `npm run db:migrate:staging`, then `npm run deploy:staging`, then check
+   staging.
+2. `npm run db:migrate:prod`, then `npm run deploy`.
+3. After deploying, `GET /api/health` should answer `200`. A `503` means the
+   code expects a migration the database does not have.
+
+**Rules:**
+
+- **Migrate first, then deploy.** The code being replaced must keep working
+  against the new schema, and the new code against the old one for the few
+  minutes in between. So a migration only ever *adds* (expand); removing
+  anything the old code used waits for a later release (contract).
+- **A migration applied to production is never edited.** Every change is a
+  new, higher-numbered file. `migrations/0001_identity.sql` is frozen, and a
+  unit test pins its hash.
+- **Nothing automated touches a remote database.** Unit tests use an
+  in-memory SQLite that runs the same migrations
+  (`src/worker/db/testDb.ts`). Local runs and the Playwright suite use
+  miniflare's local D1 under `.wrangler/` (git-ignored), migrated by
+  `npm run db:migrate:local`. Production data is never copied to staging or
+  to a developer machine.
+- The `db:*` scripts pass `-c wrangler.jsonc` explicitly, so they always read
+  the source config, never the last build's output.
+
+`npm run deploy:staging` builds with `CLOUDFLARE_ENV=staging` (POSIX shells),
+so the staging Worker, its database and its Durable Object namespace are
+separate from production's. Staging rooms and production rooms never meet.
+
+
 1. Create the account and a new project (drag-and-drop the `dist/` folder, or
    connect a git repository).
 2. If connecting git: build command `npm run build`, output directory `dist`.

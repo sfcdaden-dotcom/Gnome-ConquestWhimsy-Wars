@@ -50,6 +50,11 @@ interface WorkerEnv {
    */
   ROOM_CREATE_LIMIT?: RateLimit;
   ROOM_JOIN_LIMIT?: RateLimit;
+  /**
+   * The accounts database (ACCOUNTS.md, migrations/). Every SQL statement
+   * lives in src/worker/db/; nothing else touches this binding directly.
+   */
+  DB: D1Database;
 }
 
 const ROOM_PATH = /^\/api\/rooms\/([A-Za-z0-9]+)(\/ws)?$/;

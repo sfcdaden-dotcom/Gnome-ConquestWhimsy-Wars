@@ -54,7 +54,65 @@
       "simple": { "limit": 60, "period": 60 }
     }
   ],
+  // Accounts (ACCOUNTS.md). One D1 database per environment; the schema is
+  // the migrations/ folder, applied with `npm run db:migrate:*` BEFORE the code
+  // that needs it is deployed (DEPLOYMENT.md).
+  //
+  // No database_id yet, deliberately: local runs (wrangler dev, vite preview,
+  // the e2e suite) key their local database off the binding and need none.
+  // Before the first production deploy, run `wrangler d1 create gnomeconquest`
+  // and pin the id it prints here, so a deploy can never provision or pick up
+  // a different database by name.
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "gnomeconquest",
+      "migrations_dir": "migrations"
+    }
+  ],
   "compatibility_flags": [
     "nodejs_compat"
-  ]
+  ],
+  // Staging: its own Worker, its own D1 database, its own Durable Object
+  // namespace (so staging rooms and production rooms never meet) and, from
+  // Phase 2, its own Google OAuth client and secrets. Bindings are not
+  // inherited by an environment, so each is restated here. Built with
+  // CLOUDFLARE_ENV=staging (`npm run deploy:staging`).
+  //
+  // Production data is never copied here, and nothing automated ever points at
+  // a remote database: tests use an in-memory SQLite (src/worker/db/testDb.ts)
+  // and local runs use miniflare's local D1 under .wrangler/.
+  "env": {
+    "staging": {
+      "name": "gnomeconquest-staging",
+      "durable_objects": {
+        "bindings": [
+          {
+            "name": "ROOMS",
+            "class_name": "RoomDurableObject"
+          }
+        ]
+      },
+      "ratelimits": [
+        {
+          "name": "ROOM_CREATE_LIMIT",
+          "namespace_id": "2001",
+          "simple": { "limit": 10, "period": 60 }
+        },
+        {
+          "name": "ROOM_JOIN_LIMIT",
+          "namespace_id": "2002",
+          "simple": { "limit": 60, "period": 60 }
+        }
+      ],
+      // Pin the id from `wrangler d1 create gnomeconquest-staging` here too.
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "gnomeconquest-staging",
+          "migrations_dir": "migrations"
+        }
+      ]
+    }
+  }
 }
