@@ -1,8 +1,19 @@
 # Phase 2 — Google sign-in (implementation spec, for review)
 
-**Status: draft for review, 2026-09-29. Nothing here is implemented.** Phase 1
-is complete: `0001_identity.sql` is applied to staging and production, and is
-now production history.
+**Status: draft for review, revision 2 (2026-09-29). Nothing here is
+implemented, and implementation is not yet approved.** Phase 1 is complete:
+`0001_identity.sql` is applied to staging and production, and is now
+production history.
+
+**Revision 2** answers the first review. Each change is marked where it
+lands:
+
+| # | Review point | Resolution |
+|---|---|---|
+| R1 | Token expiry was checked only if present, and time units were unstated | `exp`, `iat` and the other claims are **required**; `exp` is bounded above; units are stated (§5.2 step 4, §5.5) |
+| R2 | "Single-use transaction" was overstated: clearing a cookie stops no copy already in flight | What actually prevents duplicates is stated, a backstop is added that needs no table, and replay is tested (§5.4) |
+| R3 | "Frozen at start" and "reconnects as a guest" conflicted | Split into **live authentication** (per connection, Phase 2) and **frozen match attribution** (Phase 5); the room persists nothing about accounts (§8) |
+| R4 | A suspension landing between the status check and the session insert still got a session | Session creation is guarded by the current status in the same batch, and the cookie follows that batch's answer (§6.3) |
 
 This is the document to review before Google sign-in is built. It turns
 ACCOUNTS.md §9 (authentication and sessions), §10 (guests and accounts) and
@@ -23,7 +34,7 @@ listed first so review can start with them.
 |---|---|---|---|
 | A1 | At sign-in, delete "any session id the browser already presented" (§9.4) | Record the old session's hash at `/start`, and revoke it at the callback | When Google starts the navigation back to the callback, the browser does not send a `SameSite=Strict` cookie with it. The callback cannot see the old session. `/start` can (§12, check 4). |
 | A2 | (not stated) | The page learns it is signed in from a `signin=ok` marker plus `GET /api/me`, never from the page load itself | The first page load after sign-in does not carry the new session cookie either. The page's own `fetch` does (§12, check 4). |
-| A3 | Phase 2 exit: "a signed-in player's seat shows the badge"; account seats get server-set names (§10 rule 4) | Phase 2 attributes seats internally but shows **no badge and no server-set name**. Both ship in Phase 3. | Usernames arrive in Phase 3. In Phase 2 an account seat still has a name the client typed, and a badge next to it would vouch for nothing. **Decision D1.** |
+| A3 | Phase 2 exit: "a signed-in player's seat shows the badge"; account seats get server-set names (§10 rule 4) | Phase 2 tracks which connections are signed in, but shows **no badge and no server-set name**. Both ship in Phase 3. | Usernames arrive in Phase 3. In Phase 2 an account seat still has a name the client typed, and a badge next to it would vouch for nothing. **Decision D1.** |
 | A4 | An `Origin` allowlist (§9.5), from an `ALLOWED_ORIGINS` var (§15) | `Origin` must equal the request's own origin | This blocks the cross-site WebSocket hijacking in R6 without a list to keep in step with every host and port (§7.2). **Decision D5.** |
 | A5 | The first Phase 2 PR picks the test mechanism for P2-2 (§9.5) | `@cloudflare/vitest-pool-workers` 0.22.0 | It was tried against this repo and works (§12, checks 1–2). **Decision D4.** |
 
@@ -40,8 +51,8 @@ listed first so review can start with them.
 - a local-only fake identity provider, so tests and local development never
   call Google;
 - the WebSocket identity handoff: the Worker tells the room which account a
-  socket belongs to, and the room keeps at most one attributed seat per
-  account;
+  connection is signed in as, and the room counts at most one live connection
+  per account;
 - the sign-in link and a small account strip on the home screen;
 - tests through the real Workers runtime and local D1 (P2-2).
 
@@ -58,8 +69,8 @@ seat names (Phase 3), saved gnomes (Phase 4), stats (Phase 5), friends
 - the sign-in transaction lives in an encrypted cookie, not a table
   (decision D3);
 - rate limits are Cloudflare bindings;
-- room attribution lives in the room's own Durable Object storage, never in
-  D1.
+- live authentication lives only in each socket's attachment. Phase 2
+  writes nothing about accounts to room storage or to D1 (§8).
 
 `LATEST_MIGRATION` stays `0001_identity.sql`, so `/api/health` keeps
 answering 200 across the Phase 2 deploys.
@@ -77,8 +88,8 @@ Each has a recommendation. Nothing in the PR list assumes a different answer
 without saying so.
 
 **D1. No lobby badge or server-set name until Phase 3.** *(Recommended.)*
-Phase 2 builds and tests the whole handoff (§8), but `SeatInfo` does not
-change, so nothing about accounts is visible at the table. Phase 3 then adds
+Phase 2 builds and tests the live half of the handoff (§8), but `SeatInfo`
+does not change, so nothing about accounts is visible at the table. Phase 3 then adds
 `SeatInfo.account` and the server-set username together.
 
 - *Alternative:* bring the username picker, and its migration, forward into
@@ -181,7 +192,7 @@ exactly; they only move into the table.
 |---|---|---|---|---|
 | POST | `/api/rooms` | public | `ROOM_CREATE_LIMIT` | unchanged; now `Origin`-checked |
 | GET | `/api/rooms/:code` | public | `ROOM_JOIN_LIMIT` | unchanged; the internal identity header is stripped |
-| GET | `/api/rooms/:code/ws` | public, identity optional | `ROOM_JOIN_LIMIT` | `Origin`-checked; attributes an **active** account only (§8) |
+| GET | `/api/rooms/:code/ws` | public, identity optional | `ROOM_JOIN_LIMIT` | `Origin`-checked; authenticates an **active** account only (§8) |
 | GET | `/api/health` | public | `HEALTH_LIMIT` | unchanged |
 | GET | `/api/auth/google/start` | public | `AUTH_LIMIT` | 404 while `ACCOUNTS_ENABLED` is off |
 | GET | `/api/auth/google/callback` | public | `AUTH_LIMIT` | 404 while off |
@@ -224,12 +235,16 @@ own namespace id per environment:
 2. **The browser's current session (A1).** A same-site navigation from the
    game carries the `Strict` session cookie. If there is one, its SHA-256 is
    recorded, whether or not the session is still valid.
-3. **Fresh randomness.** Mint a 32-byte `state`, a 32-byte `nonce` and a
-   PKCE verifier (43 characters of base64url). The challenge is
+3. **Fresh randomness.** Mint a 32-byte `state`, a 32-byte `nonce`, a PKCE
+   verifier (43 characters of base64url) and **the session token this
+   transaction will issue** (32 bytes, base64url; §5.4). The challenge is
    `BASE64URL(SHA-256(verifier))`.
 4. **The transaction cookie (D3).** Seal
-   `{ state, nonce, verifier, returnPath, priorSessionHash, provider, exp: now + 10 min }`
-   into `__Host-gw_oauth=<JWE>; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=600`.
+   `{ state, nonce, verifier, sessionToken, returnPath, priorSessionHash, provider }`
+   with a JWT `exp` of now + 600 seconds, into
+   `__Host-gw_oauth=<JWE>; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=600`.
+   The session token is never sent anywhere else until step 8 of the
+   callback, and only its hash is ever stored.
    It has to be `Lax`, because the callback arrives as a cross-site top-level
    GET.
 5. **Redirect.** `302` to `https://accounts.google.com/o/oauth2/v2/auth` with:
@@ -249,17 +264,19 @@ path.
 
 ### 5.2 `GET /api/auth/google/callback?code&state` (or `?error`)
 
-The transaction cookie is cleared on **every** outcome, success or failure,
-so a transaction is single-use. Each step either continues or ends with a
-`302` to `<returnPath>?signin=<outcome>`, or to `/?signin=<outcome>` when
-there is no readable transaction.
+The transaction cookie is cleared on every outcome, success or failure. That
+is hygiene, **not** single-use: clearing a cookie does nothing to a copy
+already attached to another request in flight. What stops a transaction
+producing more than one session is in §5.4. Each step either continues or
+ends with a `302` to `<returnPath>?signin=<outcome>`, or to
+`/?signin=<outcome>` when there is no readable transaction.
 
 1. **Google reported an error**, for example `access_denied` when the person
    cancels. The outcome is `cancelled`.
 2. **Open the transaction cookie.** It must be present, decrypt and
-   authenticate under `OAUTH_COOKIE_KEY`, and not be past its `exp`. Its
-   `state` must equal the query's `state`. Otherwise the outcome is
-   `expired`. This is the login-CSRF defence.
+   authenticate under `OAUTH_COOKIE_KEY`, and carry an `exp` (required) that
+   has not passed. Its `state` must equal the query's `state`. Otherwise the
+   outcome is `expired`. This is the login-CSRF defence.
 3. **Exchange the code.** `POST https://oauth2.googleapis.com/token`
    (form-encoded) with `code`, `client_id`, `client_secret`, `redirect_uri`,
    `grant_type=authorization_code` and `code_verifier`, under a 10-second
@@ -267,10 +284,18 @@ there is no readable transaction.
    `failed`. The response body is never logged. Everything else in the
    response (the access token included) is discarded unread.
 4. **Verify the ID token** with `jose` (decision 14):
-   - `jwtVerify(idToken, googleJwks, { algorithms: ['RS256'], issuer: ['https://accounts.google.com', 'accounts.google.com'], audience: GOOGLE_CLIENT_ID, clockTolerance: 60 })`.
-     This checks the signature against Google's keys, plus `iss`, `aud`,
-     `exp` and `nbf`.
-   - `iat` must be present.
+   - `jwtVerify(idToken, googleJwks, { algorithms: ['RS256'], issuer: ['https://accounts.google.com', 'accounts.google.com'], audience: GOOGLE_CLIENT_ID, requiredClaims: ['iss', 'aud', 'exp', 'iat', 'sub', 'nonce'], maxTokenAge: '10m', clockTolerance: 60 })`.
+     This checks the signature against Google's keys, and `iss`, `aud`,
+     `exp`, `iat` and `nbf`.
+   - **The claims are required, not merely checked if present.** Without
+     `requiredClaims`, `jose` checks `exp` only when a token has one, and a
+     token with no `exp` verifies (§12, check 6). A timestamp that is not a
+     number is refused by `jose` itself.
+   - **`exp` is bounded above:** `exp - iat` must be at most 3,600 seconds
+     plus the 60-second tolerance. Google issues ID tokens for one hour.
+     `jose` alone accepts an `exp` written in milliseconds, because it reads
+     as a date far in the future (§12, check 6); this bound refuses it.
+     `maxTokenAge` does the same for a stale `iat`.
    - `nonce` must equal the transaction's nonce.
    - If `azp` is present, it must equal `GOOGLE_CLIENT_ID`.
    - `sub` must be a string of 1 to 255 characters (the schema checks this
@@ -283,14 +308,20 @@ there is no readable transaction.
    names an unknown `kid`, which covers key rotation.
 5. **Upsert the account.** `upsertGoogleUser(db, sub, now)`, the Phase 1
    batch, unchanged.
-6. **Refuse non-active accounts.** If the status is not `active`, no session
-   is created and the outcome is `unavailable` (P2-1: "sign-in applies it
-   too").
-7. **Rotate the session.** Mint 32 random bytes as the new session token
-   (base64url, 43 characters). Then run `rotateSession(db, userId, newHash, priorSessionHash, now)`
-   (§6.3): one batch that deletes the prior session, if any, and creates the
-   new one.
-8. **Respond.** `Set-Cookie: __Host-gw_session=<token>; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=7776000`
+6. **Refuse non-active accounts.** If the status the upsert returned is not
+   `active`, no session is created and the outcome is `unavailable` (P2-1:
+   "sign-in applies it too"). This is the early answer, not the guarantee:
+   the account could be suspended between this step and the next, which is
+   why step 7 checks again.
+7. **Create the session, guarded.** Run
+   `issueSession(db, userId, hash(sessionToken), priorSessionHash, now)`
+   (§6.3), using the session token sealed in the transaction. It is one
+   batch that deletes the prior session, inserts the new one **only if the
+   account is `active` at that moment**, and reads back whether the session
+   now exists. If it does not, no cookie is set and the outcome is
+   `unavailable`.
+8. **Respond.** Only when step 7 confirmed the session:
+   `Set-Cookie: __Host-gw_session=<sessionToken>; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=7776000`
    (90 days, D6). The outcome is `ok`.
 
 Every response from these routes carries `Cache-Control: no-store`. The
@@ -314,6 +345,66 @@ value. None of them says why verification failed.
 **Logging.** Auth code logs one outcome word per attempt, and nothing else.
 Cookies, codes, tokens, `sub` and user ids are never logged (Phase 1 §4,
 Worker logs).
+
+### 5.4 Replay and duplicate callbacks (revision 2, R2)
+
+The case to handle: the same callback, with the same transaction cookie,
+arriving twice. That can be a double-click, a browser retry, two tabs
+restoring the same page, or someone replaying a captured request. The
+requirement is **at most one session per transaction**, whatever the timing.
+Two things provide it, and neither needs a table.
+
+1. **The authorization code is single-use at Google.** RFC 6749 §4.1.2
+   requires it, and Google's token endpoint answers `invalid_grant` to a
+   code that has already been redeemed. PKCE binds the code to the verifier,
+   which exists only inside this transaction's encrypted cookie. So a
+   replayed callback normally fails at step 3 and creates nothing.
+2. **The backstop, which does not depend on Google:** the session token is
+   minted at `/start` and sealed in the transaction (§5.1). Every callback
+   that carries one transaction therefore computes the **same** `id_hash`.
+   `sessions.id_hash` is the primary key, and the insert is
+   `ON CONFLICT (id_hash) DO NOTHING`. Two callbacks for one transaction,
+   concurrent or one after the other, can produce one row at most. Both set
+   the same cookie value.
+
+What this does not claim:
+
+- **The transaction cookie is not revoked by being cleared.** A copy
+  captured together with a fresh callback URL is still valid for its 10
+  minutes. Replaying it gets past our checks, and then fails at Google
+  (point 1).
+- **Point 2 has one residual case.** If a session is logged out within the
+  same 10 minutes, and the provider also redeemed the code a second time,
+  a replay could re-create that one session. Point 1 rules this out for
+  Google. The replay would also need the `HttpOnly` transaction cookie,
+  which only the browser that started the sign-in holds.
+
+Tests (§11):
+
+- **Replay against a strict provider.** The fake IdP redeems each code once,
+  as Google does. A second, identical callback gives `failed`, and there is
+  one `sessions` row.
+- **Replay against a lenient provider.** The fake IdP's lenient mode accepts
+  a code twice, standing in for a provider that does not enforce it. Two
+  concurrent callbacks, and then two sequential ones, each leave exactly one
+  `sessions` row for the transaction, and every response carries the same
+  cookie value.
+
+### 5.5 Time units (revision 2, R1)
+
+- **JWT claims are in seconds.** `exp`, `iat` and `nbf` are NumericDate
+  values (RFC 7519 §2), for Google's ID tokens and for our own transaction
+  cookie alike. `jose` compares them in seconds. The only place auth code
+  touches one directly is the `exp - iat` bound in §5.2, which is in
+  seconds.
+- **Everything else is in milliseconds.** That covers the database
+  (`created_at`, `idle_expires_at` and the rest, per Phase 1 §2), the
+  repository functions' `now`, and `Date.now()`.
+- **Cookie `Max-Age` is in seconds**, per HTTP. `7776000` is 90 days.
+- **One converter crosses the line.** Conversion happens only in
+  `src/worker/auth/time.ts` (`toJwtSeconds(ms)`, `fromJwtSeconds(s)`), and a
+  source scan fails if `/ 1000` or `* 1000` appears elsewhere under
+  `src/worker/auth/`.
 
 ## 6. Sessions
 
@@ -344,17 +435,69 @@ throws on guests.
 only for `active` (ACCOUNTS.md §9.5). A `user`-level handler receives one, so
 it cannot be written against a non-active account.
 
-### 6.3 Repository addition (code, not schema)
+### 6.3 Repository addition: guarded session creation (code, not schema; revision 2, R4)
 
 Added to `src/worker/db/sessions.ts`:
 
 ```ts
-// One batch: delete the browser's previous session, if any, then create the
-// new one. The prior session is deleted by hash alone, whoever it belonged
-// to. The browser proved it held that cookie at /start, and it is about to be
-// overwritten either way.
-rotateSession(db, userId, newHash, priorHash: string | null, now): Promise<void>
+// True only if, when the batch finished, the session exists for this user and
+// the user is active. The callback sets a cookie only on true.
+issueSession(db, userId, newHash, priorHash: string | null, now): Promise<boolean>
 ```
+
+It is one `db.batch([...])`:
+
+```sql
+-- I1: the browser's previous session goes, whoever it belonged to. The
+--     browser proved it held that cookie at /start, and it is about to be
+--     overwritten either way.
+DELETE FROM sessions WHERE ?prior IS NOT NULL AND id_hash = ?prior AND id_hash <> ?new;
+-- I2: the new session, only while the account is active. ON CONFLICT is the
+--     replay backstop of §5.4: one transaction, one row.
+INSERT INTO sessions (id_hash, user_id, created_at, last_seen_at, idle_expires_at, absolute_expires_at)
+  SELECT ?new, ?user, ?now, ?now, ?now + ?idle, ?now + ?absolute
+  WHERE EXISTS (SELECT 1 FROM users WHERE id = ?user AND status = 'active')
+  ON CONFLICT (id_hash) DO NOTHING;
+-- I3: the answer. Whether I2 inserted or a concurrent twin did, a row
+--     is returned only if the session exists for this user AND the user is
+--     active now.
+SELECT 1 AS ok FROM sessions s JOIN users u ON u.id = s.user_id
+  WHERE s.id_hash = ?new AND s.user_id = ?user AND u.status = 'active';
+```
+
+**Why this closes the race.** D1 runs each batch as one transaction and
+serialises batches against each other (Phase 1 §5.2.1, layer 1). Any change
+of status, suspension or deletion, is a batch too. So either:
+
+- the status change lands **before** `issueSession`: I2 inserts nothing,
+  I3 returns nothing, and **no cookie is set**; or
+- it lands **after**: the session exists, but the status-change batch must
+  delete that user's sessions itself.
+
+That second case sets a requirement on later phases, recorded here so they
+cannot miss it: **every statement that moves `users.status` away from
+`active` runs in the same batch as `DELETE FROM sessions WHERE user_id = ?`.**
+It is the same rule as Phase 1 §4 step 1 for deletion. P2-1's central check
+still refuses a non-active account's session on every request regardless, so
+the rule bounds cleanup, not access.
+
+The existing `createSession` stays for tests and is not used by the callback.
+`resolveSession`, `touchSession`, `revokeSession` and `purgeExpiredSessions`
+are used unchanged.
+
+**Tests (§11):**
+
+- **Repository, on real D1.** Suspend the user, then call `issueSession`:
+  it returns false, and there is no row.
+- **Callback, the exact sequence.** The upsert reports `active`, the account
+  is suspended, and only then does session creation run. The response has
+  outcome `unavailable`, **no `Set-Cookie` for `__Host-gw_session`**, and no
+  `sessions` row exists.
+
+  To make that sequence testable, the callback handler takes its repository
+  functions as a parameter, as `Room` takes `RoomHost`. The test wraps
+  `upsertGoogleUser` so that it suspends the account after returning.
+- The same two tests are repeated for `deleting`.
 
 The existing `createSession`, `resolveSession`, `touchSession`,
 `revokeSession` and `purgeExpiredSessions` are used unchanged.
@@ -364,8 +507,8 @@ The existing `createSession`, `resolveSession`, `touchSession`,
 The route is self-exit and `Origin`-checked, and takes no body. It revokes
 the row (`revokeSession`) and answers `204` with the cookie expired. Seats
 held by seat tokens are untouched, because the token is the seat
-(ACCOUNTS.md §9.4). A room attribution made during the lobby lasts until
-that socket next says hello (§8.2).
+(ACCOUNTS.md §9.4). An already-open room socket keeps the authentication it
+connected with until it closes; the next socket is a guest (§8.3).
 
 ### 6.5 `GET /api/me`
 
@@ -414,14 +557,31 @@ actually connected to.
   - if `Origin` is present and not equal to `requestOrigin`, the answer is
     403;
   - if it is absent (a non-browser client), the upgrade proceeds but is
-    **never attributed**. A client that sends no `Origin` is not a browser
+    **always a guest**. A client that sends no `Origin` is not a browser
     being ridden, and it carries only its own cookie, so it is simply
     treated as a guest.
 - **GET routes** are not `Origin`-checked. They change nothing, and a
   cross-origin page cannot read their responses: no CORS headers are ever
   sent.
 
-## 8. The WebSocket identity handoff
+## 8. The WebSocket identity handoff (revised, R3)
+
+Two different things were described as one "attribution" in revision 1. They
+have different lifetimes and different jobs, and must never be derived from
+each other:
+
+| | **Live authentication** | **Frozen match attribution** |
+|---|---|---|
+| Answers | Is this connection signed in, right now, as which account? | Which account started the match in this seat? |
+| Established | At each WebSocket upgrade, by the Worker, from that request's cookie | Once, at `start()`, from the live authentication of each seat's connection |
+| Lives | In that socket's attachment, for that socket's lifetime | In the room record, for the room's lifetime |
+| Changed by sign-out, suspension, reconnection | Yes: the next socket re-authenticates, and a revoked account becomes a guest | **Never**: it is history, not permission |
+| Used for | Display and permissions (Phase 3 badge and name; Phase 7 invites) | Stats only (Phase 5) |
+| Built in | **Phase 2** | **Phase 5** (ACCOUNTS.md §17), not in this phase |
+
+A suspended player who reconnects mid-game is therefore, at the same time,
+unauthenticated (their new socket is a guest) and still recorded as having
+started the match in their seat. Both are true, and nothing conflicts.
 
 ### 8.1 Worker → Durable Object
 
@@ -434,50 +594,78 @@ Worker's stub, so the header can be trusted there and nowhere else.
 
 In `room-do.ts`:
 
-- `fetch` reads the header at accept time and stores it in the socket
-  attachment:
-  `{ connId, token, spectate?, account?: { userId } }`.
-  It survives hibernation exactly as the seat token does.
+- `fetch` reads the header **at accept time**, and stores it in that
+  socket's attachment: `{ connId, token, spectate?, account?: { userId } }`.
+  This is the only place live authentication is ever written.
 - `webSocketMessage` passes it as the trusted third argument:
   `room.hello(conn, parsed, at.account)`.
-- `reattachSockets` replays it the same way.
+- **Hibernation restores nothing.** After a wake, `reattachSockets` replays
+  each surviving socket's own attachment. It is the same connection, with the
+  same handshake, so no authentication is renewed, gained or borrowed:
+  - a socket that was a guest at its upgrade stays a guest;
+  - a socket that closed took its attachment with it;
+  - a reconnect is a new socket, which gets a new attachment from its own
+    upgrade and its own cookie.
 - **`ClientMessage` never gains a user id.** `parseClientMessage` builds
   every message field by field (Phase 0.5, extended to actions in PR #60), so
   a `userId` field sent by a client is simply dropped.
 
-### 8.2 In the room (`src/net/room.ts`)
+### 8.2 In the room (`src/net/room.ts`): live authentication only
 
-`hello(conn, message, account?: { userId: string })`.
-`PersistedRoom` gains `accounts?: Record<token, userId>`. It is optional, so
-rooms stored before this change load unchanged.
+`hello(conn, message, account?: { userId: string })`. The account is kept
+on the connection's in-memory `ConnState`, and nowhere else.
 
-1. **Attribution comes only from the third argument.**
-2. **One attributed token per account per room.** If another token in this
-   room already holds the `userId`, this token plays unattributed, as a guest
-   (decision 7).
-3. **Attribution can change only in the lobby.** In the lobby:
-   - a hello with an account attributes the token;
-   - a hello without one clears the token's attribution (the player signed
-     out);
-   - a hello with a different account re-attributes it.
+1. **It comes only from the third argument.**
+2. **It is never persisted.** `PersistedRoom` does not change in Phase 2.
+   Nothing about accounts is written to room storage, and nothing in
+   storage can ever restore it.
+3. **At most one live connection counts per account (decision 7).** For each
+   account, the connection that counts is the earliest-arrived open
+   connection that holds a seat and is not a board view. Every other
+   connection of that account plays as a guest.
+   - This is computed from the open connections whenever it is needed, not
+     stored.
+   - When the counting connection closes, or gives up its seat, the next
+     one counts.
+4. **Board views** (`spectate: true`) never count. A TV is not a player.
+5. **It never leaves the room.** It is not in `RoomSnapshot`, `SeatInfo`,
+   `GameConfig`, `MatchRecord` or any `ServerMessage` (R5, R8). A test
+   captures every frame the room sends through a full game and asserts that
+   no user id appears in any of them.
 
-   From `start()` on, `accounts` is frozen. That is ACCOUNTS.md §10 rule 2,
-   so Phase 5 only has to snapshot it.
-4. **Board views** (`spectate: true`) are never attributed. A TV is not a
-   player.
-5. **`accounts` never leaves the room.** It is not in `RoomSnapshot`,
-   `SeatInfo`, `GameConfig`, `MatchRecord` or any `ServerMessage` (R5, R8).
-   A test captures every frame the room sends through a full game and
-   asserts that no user id appears in any of them.
-6. **`close()` wipes `accounts` together with `tokens`.**
+Under D1, nothing reads live authentication yet in Phase 2: there is no
+badge, no server-set name and no stats. Phase 3 reads it for the badge and
+the username.
 
-Under D1 nothing in the room reads `accounts` yet. Phase 3 reads it to set
-the username and the badge; Phase 5 reads it to attribute stats.
+### 8.3 How stale live authentication can be
 
-**Accepted limitation:** a socket keeps the attribution it connected with.
-If an account is suspended mid-game, its open socket stays attributed until
-it next reconnects, when it becomes a guest. Phase 8's "sign out everywhere"
-closes this gap for revocation.
+A socket's live authentication reflects its own upgrade. A logout,
+suspension or session expiry that happens while the socket is open is seen
+when that socket closes and its successor upgrades, not before.
+
+- **In Phase 2 this has no effect.** Live authentication grants and shows
+  nothing yet (D1).
+- **Requirement on later phases, recorded here:** before live
+  authentication grants or displays anything (Phase 3's badge and name,
+  Phase 7's invites), that phase must bound this staleness. Two candidate
+  mechanisms, to be chosen in that phase:
+  - keep the session hash in the attachment, and re-resolve it on wake and
+    on a timer;
+  - have revocation close that account's room sockets.
+
+### 8.4 Frozen match attribution (Phase 5, specified here only for the boundary)
+
+When Phase 5 builds it:
+
+- at `start()`, `seatAccounts[seat]` is the user id of the connection that
+  counts (§8.2) for that seat at that moment, or `null`;
+- it is stored in the room record and wiped by `close()`;
+- nothing ever updates it: not a sign-out, a suspension, a reconnection, a
+  hibernation or a takeover;
+- it authorizes nothing, and it never leaves the room except as the Phase 5
+  stats write.
+
+Phase 2 builds none of this, and adds no field for it.
 
 `PROTOCOL_VERSION` does not change: nothing on the wire changes in Phase 2.
 
@@ -557,7 +745,7 @@ Every row of ACCOUNTS.md §18 "Phase 2" appears below.
 |---|---|---|
 | Phase 1's repository suites also pass against real local D1: the fidelity re-check P2-2 asks for | workers | 2-A |
 | **P2-1:** every route has a declared access level; the self-exit list is exactly logout + `/api/me`; a synthetic `user` route answers 401 to a guest and 403 to suspended and deleting accounts (a walk over the real table covers Phase 3's routes automatically) | node + workers | 2-B |
-| A foreign `Origin` is refused on POST and on the WS upgrade; a missing `Origin` on an upgrade is allowed, unattributed | workers | 2-B |
+| A foreign `Origin` is refused on POST and on the WS upgrade; a missing `Origin` on an upgrade is allowed, as a guest | workers | 2-B |
 | A client-supplied `x-gw-account` header is removed on both forwarded paths | workers | 2-B |
 | No module other than `session.ts` reads the session cookie (source scan) | node | 2-C |
 | An expired or unknown session is a guest, and its cookie is cleared; a guest request with no cookie reads no D1 | workers | 2-C |
@@ -566,6 +754,12 @@ Every row of ACCOUNTS.md §18 "Phase 2" appears below.
 | The purge removes only expired rows when the cron fires | workers | 2-C |
 | `ACCOUNTS_ENABLED` off: every auth route and `/api/me` answers 404 | workers | 2-C |
 | Invalid, expired, wrong-`aud`, wrong-`iss`, wrong-`nonce`, bad-signature and wrong-`azp` ID tokens are rejected | workers | 2-D |
+| **R1:** ID tokens missing `exp`, `iat`, `sub` or `nonce` are rejected; a non-numeric `exp` or `iat` is rejected; an `exp` in milliseconds and a stale `iat` are rejected; a transaction cookie without `exp` gives `expired` | workers | 2-D |
+| **R1:** no `/ 1000` or `* 1000` under `src/worker/auth/` outside `time.ts` (source scan) | node | 2-D |
+| **R2:** replaying one callback against the strict fake IdP gives `failed` and one session row | workers | 2-D |
+| **R2:** two concurrent, then two sequential, callbacks for one transaction against the lenient fake IdP leave exactly one session row and set one cookie value | workers | 2-D |
+| **R4:** `issueSession` for a suspended or deleting user returns false and writes no row | workers | 2-C |
+| **R4:** a suspension landing between the upsert and session creation gives `unavailable`, no `Set-Cookie`, and no row (and the same for `deleting`) | workers | 2-D |
 | A mismatched `state`, a missing transaction cookie, and a tampered one each give `expired` | workers | 2-D |
 | A non-relative `return` becomes `/`, including `//evil`, `/\evil`, `https://evil`, and an over-long value | node | 2-D |
 | Concurrent callbacks for one `sub` make one user | workers | 2-D (Phase 1's 252-interleaving proof stands; this runs two real batches on D1) |
@@ -573,12 +767,13 @@ Every row of ACCOUNTS.md §18 "Phase 2" appears below.
 | A suspended or deleting account completing sign-in gets no session | workers | 2-D |
 | The fake IdP refuses non-loopback hosts, and `FAKE_IDP` is absent from `wrangler.jsonc` | node + workers | 2-D |
 | Room: a user id can come only from the transport | node | 2-E |
-| Room: two tabs of one account give one attributed token | node | 2-E |
-| Room: attribution survives hibernation (attachment replay) | node | 2-E |
-| Room: attribution is frozen from `start()` | node | 2-E |
-| Room: board views are never attributed | node | 2-E |
+| Room: two tabs of one account give one counting connection; when it closes, the other one counts | node | 2-E |
+| **R3:** hibernation restores only a socket's own handshake: a guest socket stays a guest after a wake, and a closed socket's account is not inherited by anyone | node | 2-E |
+| **R3:** a reconnect is a new socket; one reconnecting without a valid session (signed out, suspended, revoked) is a guest, mid-game included | node + workers | 2-E |
+| **R3:** nothing about accounts is written to room storage (the persisted room is byte-identical with and without signed-in players) | node | 2-E |
+| Room: board views never count | node | 2-E |
 | Room: no user id appears in any frame of a full game | node | 2-E |
-| A non-active account's socket is unattributed | workers | 2-E |
+| A non-active account's socket is a guest | workers | 2-E |
 | Sign in and out through the UI with the fake IdP; the page learns it through `/api/me` (A2) | e2e | 2-F |
 | Signing in from a lobby returns to the same seat | e2e | 2-F |
 | **Every existing online e2e passes unchanged as a guest** | e2e | every PR |
@@ -602,6 +797,7 @@ from them is in the repo.
 | 3 | Chromium through Playwright, over `http://localhost`: set `__Host-gw_session` (`Strict`) and `__Host-gw_oauth` (`Lax`), both `Secure` | Both were stored and sent back on the next page load and on the page's `fetch`. `__Host-` and `Secure` cookies work on plain-HTTP localhost, so e2e needs no TLS. |
 | 4 | Cross-site sign-in shape: the game on `localhost` → `/login` sets an old `Strict` session and the `Lax` transaction cookie → a page on `127.0.0.1` (another site), **where the user clicks** → `/callback` sets the new session → `/landing` | The **callback received only the `Lax` cookie**, not the old session (A1). The **landing document received no session cookie**; the page's `fetch('/api/me')` did send the new one (A2). |
 | 5 | The same, but with the other site answering a plain `302` instead of a page | The callback **did** receive the old `Strict` cookie. A fake IdP made of redirects would hide what check 4 found, hence §10. |
+| 6 | `jose@6.2.12` `jwtVerify` with and without `requiredClaims`, over tokens with missing and malformed timestamps (revision 2) | Without `requiredClaims`, a token with **no `exp` was accepted**. With `requiredClaims`, a missing `exp` or `iat` was rejected. A string `exp` was rejected ("must be a number"). An `iat` in milliseconds was rejected (it reads as the future), as was an `iat` an hour old under `maxTokenAge: '10m'`. **An `exp` in milliseconds was accepted**, which is why §5.2 bounds `exp - iat`. |
 
 Limits of these checks:
 
@@ -641,23 +837,26 @@ No behaviour change.
 Safe to deploy to production. For real browsers, nothing changes.
 
 **PR 2-C — Sessions, `/api/me`, logout.**
-- `src/worker/auth/session.ts`, `rotateSession`, the `/api/me` DTO, logout,
-  and the purge cron.
+- `src/worker/auth/session.ts`, `issueSession` (§6.3), the `/api/me` DTO,
+  logout, and the purge cron.
 - The config typing and fail-closed rules (§3), the `ACCOUNTS_ENABLED` gate,
   and the new rate-limit bindings.
 - `wrangler.jsonc` vars per environment, and `.dev.vars.example` updated
   (names only).
 
 **PR 2-D — The Google flow and the fake IdP.**
-- `src/worker/auth/google.ts` (start, callback, verification) and
-  `transaction.ts` (the sealed cookie).
+- `src/worker/auth/google.ts` (start, callback, verification),
+  `transaction.ts` (the sealed cookie) and `time.ts` (the seconds and
+  milliseconds converter, §5.5).
 - `src/worker/auth/fakeIdp.ts`.
 - Every §11 row marked 2-D.
 
-**PR 2-E — The room handoff.**
-- `room-do.ts` (attachment, `hello` with the third argument, replay) and
-  `room.ts` (`accounts`, the rules in §8.2).
-- No wire change.
+**PR 2-E — The room handoff (live authentication only).**
+- `room-do.ts`: the attachment, `hello` with the third argument, and the
+  replay.
+- `room.ts`: the account on `ConnState`, and the counting rule in §8.2.
+- No wire change, no change to `PersistedRoom`, and no frozen attribution.
+  That last one is Phase 5 (§8.4).
 
 **PR 2-F — UI, e2e and docs.**
 - The account client, the home strip, toasts, and the `ACCOUNTS_UI` flag.
