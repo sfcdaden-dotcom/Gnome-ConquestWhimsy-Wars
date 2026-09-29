@@ -5,7 +5,7 @@
  * `useNetGame` stays readable.
  */
 
-import type { ClientMessage, ServerMessage } from '../net/protocol';
+import type { ClientMessage, GnomeLookWire, ServerMessage } from '../net/protocol';
 import { ROOM_CODE_LENGTH } from '../net/protocol';
 
 /** Same-origin WebSocket URL for a room. `loc` is injectable for tests. */
@@ -308,6 +308,37 @@ export function browserSeatStores(): SeatStores {
 
 /** The player's display name, shared across rooms and tabs. */
 export const NAME_KEY = 'ww:name';
+
+/**
+ * The player's online gnome, shared across rooms and tabs — the look's twin of
+ * `NAME_KEY`, and in `localStorage` for the same reason: a preference, not a
+ * credential.
+ *
+ * Without it the look lived in React state alone, so reloading the page inside
+ * a room sent the DEFAULT gnome on `hello` and the room dutifully replaced the
+ * player's chosen one mid-game.
+ *
+ * This module stays React- and art-free, so `load` hands back whatever JSON is
+ * stored, unvalidated; the caller runs it through `sanitizeLook`, which is what
+ * every look arriving from anywhere goes through anyway.
+ */
+export const LOOK_KEY = 'ww:look';
+
+export const savedLook = {
+  /** The stored look, parsed but not validated; undefined when absent or unreadable. */
+  load(local: Slot): unknown {
+    const raw = local.getItem(LOOK_KEY);
+    if (!raw) return undefined;
+    try {
+      return JSON.parse(raw) as unknown;
+    } catch {
+      return undefined;
+    }
+  },
+  save(local: Slot, look: GnomeLookWire): void {
+    local.setItem(LOOK_KEY, JSON.stringify(look));
+  },
+};
 
 /**
  * Reconnect backoff: quick first retry (most drops are a blip), then doubling

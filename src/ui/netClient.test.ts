@@ -1,9 +1,11 @@
 /** The plain-data half of the WebSocket client (netClient.ts). */
 
 import { describe, expect, it } from 'vitest';
+import { defaultLook, randomLook, sanitizeLook } from './gnomeArt';
 import {
   CLAIM_STALE_MS,
   encodeClientMessage,
+  LOOK_KEY,
   NAME_KEY,
   parseServerMessage,
   recentRoom,
@@ -12,6 +14,7 @@ import {
   roomCodeFromSearch,
   roomHref,
   roomSocketUrl,
+  savedLook,
   tabId,
   tokenStore,
   type SeatStores,
@@ -278,5 +281,41 @@ describe('the way back into a room you were recently in', () => {
     const local = slot();
     local.setItem('ww:room:recent', 'not json');
     expect(recentRoom.load(local, 1000)).toBeNull();
+  });
+});
+
+describe('the saved online gnome', () => {
+  function slot(): Slot & { data: Map<string, string> } {
+    const data = new Map<string, string>();
+    return {
+      data,
+      getItem: (k) => data.get(k) ?? null,
+      setItem: (k, v) => void data.set(k, v),
+      removeItem: (k) => void data.delete(k),
+    };
+  }
+
+  it('round-trips a look', () => {
+    const local = slot();
+    const look = randomLook(() => 0.42);
+    savedLook.save(local, look);
+    expect(sanitizeLook(savedLook.load(local))).toEqual(look);
+  });
+
+  it('reads as absent when nothing, or nothing readable, is stored', () => {
+    const local = slot();
+    expect(savedLook.load(local)).toBeUndefined();
+    local.setItem(LOOK_KEY, '{not json');
+    expect(savedLook.load(local)).toBeUndefined();
+  });
+
+  it('keeps the valid fields of a damaged look and defaults the rest', () => {
+    // What OnlineScreen does with whatever load() returns.
+    const local = slot();
+    local.setItem(LOOK_KEY, JSON.stringify({ cap: 'wide-cap', skin: 99, torso: 'no-such-torso' }));
+    const look = sanitizeLook(savedLook.load(local));
+    expect(look.cap).toBe('wide-cap');
+    expect(look.skin).toBe(defaultLook().skin);
+    expect(look.torso).toBe(defaultLook().torso);
   });
 });
