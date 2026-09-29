@@ -1,10 +1,22 @@
 # Accounts, profiles & social — architecture audit and proposal
 
-**Status: Phase 0 proposal, awaiting review. Nothing in this document is
-implemented.** It audits the repository as of `43ffa51` and proposes how
-persistent player accounts should be added without destabilising what already
-works. Decisions that belong to the product owner are collected in
-[§19](#19-decisions-needed-before-implementation).
+**Status: architecture approved 2026-09-29. Nothing in this document is
+implemented yet.** It audits the repository as of `43ffa51` and describes how
+persistent player accounts will be added without destabilising what already
+works. The product owner's decisions are recorded in
+[§19](#19-decisions-approved-2026-09-29). They take precedence over anything
+earlier in this document that reads as a proposal.
+
+Detailed specs for the next two phases:
+
+- [ACCOUNTS_SPEC_PHASE_0_5.md](ACCOUNTS_SPEC_PHASE_0_5.md): multiplayer
+  hardening, independent of accounts.
+- [ACCOUNTS_SPEC_PHASE_1.md](ACCOUNTS_SPEC_PHASE_1.md): the persistence
+  foundation and **the full proposed D1 schema, for review before any
+  migration is applied**.
+
+Phase 2 (authentication) does not start until the Phase 1 schema is
+approved.
 
 The codebase and its docs call the game **Whimsy Wars** (the Worker is named
 `gnomeconquest`); this document uses **Gnome Wars**, as the brief does.
@@ -267,174 +279,64 @@ table(s), so an API can never "accidentally" serialise one while returning
 another. Every table references `users(id)` with an explicit deletion
 behaviour.
 
-```sql
--- migrations/0001_accounts.sql  (sketch; exact types settled in Phase 1)
+The table-by-table schema (columns, constraints, indexes, foreign-key
+actions, and deletion behaviour) is maintained in
+[ACCOUNTS_SPEC_PHASE_1.md §3](ACCOUNTS_SPEC_PHASE_1.md#3-the-schema). It is
+split into migrations applied by the phase that needs them, and it
+supersedes the sketch that was here. The tables are:
 
-CREATE TABLE users (                        -- private; never serialised directly
-  id            TEXT PRIMARY KEY,           -- crypto.randomUUID()
-  status        TEXT NOT NULL DEFAULT 'active'
-                CHECK (status IN ('active', 'suspended', 'deleting')),
-  created_at    INTEGER NOT NULL,           -- epoch ms, like the rest of the codebase
-  updated_at    INTEGER NOT NULL,
-  last_login_at INTEGER
-);
+| Area | Tables | Migration / phase |
+|---|---|---|
+| Identity | `users`, `auth_identities` (no email), `sessions` | 0001 / Phase 1 |
+| Public profile | `profiles`, `username_holds`, `username_rules`, `username_removals` | 0002 / Phase 3 |
+| Customization | `customizations` | 0003 / Phase 4 |
+| Gameplay | `matches`, `match_players` | 0004 / Phase 5 |
+| Social | `friendships`, `friend_requests`, `blocks` | 0005 / Phase 6 |
+| Privacy | `privacy_settings` | 0006 / Phase 7 |
 
-CREATE TABLE auth_identities (              -- authentication identity; private
-  provider   TEXT NOT NULL CHECK (provider IN ('google')),
-  subject    TEXT NOT NULL,                 -- Google's stable `sub` claim
-  user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  email      TEXT,                          -- NULL unless the email scope is approved (§19)
-  created_at INTEGER NOT NULL,
-  PRIMARY KEY (provider, subject),
-  UNIQUE (user_id, provider)                -- one Google account per user
-);
-
-CREATE TABLE sessions (
-  id_hash      TEXT PRIMARY KEY,            -- SHA-256(cookie value); the raw value is never stored
-  user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  created_at   INTEGER NOT NULL,
-  last_seen_at INTEGER NOT NULL,            -- touched at most once a day, not per request
-  expires_at   INTEGER NOT NULL
-);
-CREATE INDEX sessions_by_user ON sessions(user_id);
-
-CREATE TABLE profiles (                     -- the public profile; every field here is public
-  user_id             TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-  username            TEXT NOT NULL,        -- as chosen, case preserved: "MushroomKing42"
-  username_key        TEXT NOT NULL UNIQUE, -- canonical lowercase: "mushroomking42"
-  username_skeleton   TEXT NOT NULL UNIQUE, -- confusable-folded, blocks lookalikes (§8.1)
-  username_changed_at INTEGER NOT NULL,
-  created_at          INTEGER NOT NULL,
-  updated_at          INTEGER NOT NULL
-);
-
-CREATE TABLE username_holds (               -- released names in quarantine (§8.1)
-  username_skeleton TEXT PRIMARY KEY,
-  previous_owner    TEXT REFERENCES users(id) ON DELETE SET NULL,  -- redirects old /player/ URLs
-  hold_until        INTEGER NOT NULL
-);
-
-CREATE TABLE customizations (               -- exactly GnomeLookWire (§8.2)
-  user_id        TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-  look_json      TEXT NOT NULL,
-  schema_version INTEGER NOT NULL,
-  updated_at     INTEGER NOT NULL
-);
-
-CREATE TABLE privacy_settings (             -- private
-  user_id          TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-  presence_visible INTEGER NOT NULL DEFAULT 1 CHECK (presence_visible IN (0, 1)),
-  updated_at       INTEGER NOT NULL
-);
-
-CREATE TABLE matches (                      -- written once, by the room, at game over
-  id             TEXT PRIMARY KEY,          -- minted by the room at start(); the idempotency key
-  started_at     INTEGER NOT NULL,
-  finished_at    INTEGER NOT NULL,
-  player_count   INTEGER NOT NULL CHECK (player_count IN (2, 4)),
-  board_size     INTEGER NOT NULL,
-  garden_preset  TEXT NOT NULL,
-  end_reason     TEXT NOT NULL CHECK (end_reason IN ('lastStanding', 'draw')),
-  turns          INTEGER NOT NULL,
-  action_count   INTEGER NOT NULL,
-  record_schema  INTEGER NOT NULL           -- MATCH_RECORD_SCHEMA at the time
-);
-
-CREATE TABLE match_players (
-  match_id         TEXT NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
-  seat             INTEGER NOT NULL CHECK (seat BETWEEN 0 AND 3),
-  user_id          TEXT REFERENCES users(id) ON DELETE SET NULL,  -- NULL: guest, CPU, or deleted account
-  seat_kind        TEXT NOT NULL CHECK (seat_kind IN ('account', 'guest', 'cpu')),
-  cpu_difficulty   TEXT,
-  result           TEXT NOT NULL CHECK (result IN ('win', 'loss', 'draw')),
-  taken_over       INTEGER NOT NULL DEFAULT 0,  -- the shot clock handed this seat to a CPU
-  eliminated_by    TEXT,                        -- EliminationReason, or NULL
-  gnomes_spawned   INTEGER NOT NULL,
-  gnomes_lost      INTEGER NOT NULL,
-  gardens_planted  INTEGER NOT NULL,
-  gardens_upgraded INTEGER NOT NULL,
-  wishes_spent     INTEGER NOT NULL,
-  cards_played     INTEGER NOT NULL,
-  planted_by_type  TEXT NOT NULL,               -- JSON {dandelion: 3, …}; "favourite garden" derives from it
-  PRIMARY KEY (match_id, seat)
-);
-CREATE UNIQUE INDEX match_players_one_seat_per_user
-  ON match_players(match_id, user_id) WHERE user_id IS NOT NULL;
-CREATE INDEX match_players_by_user ON match_players(user_id, match_id);
-
-CREATE TABLE friendships (                  -- one row per pair, stored canonically
-  user_a     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  user_b     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  created_at INTEGER NOT NULL,
-  PRIMARY KEY (user_a, user_b),
-  CHECK (user_a < user_b)                   -- no self-friendship, and no (B, A) duplicate of (A, B)
-);
-CREATE INDEX friendships_by_b ON friendships(user_b);
-
-CREATE TABLE friend_requests (              -- AT MOST ONE pending request per pair, either direction
-  user_a     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  user_b     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  requester  TEXT NOT NULL,
-  created_at INTEGER NOT NULL,
-  PRIMARY KEY (user_a, user_b),
-  CHECK (user_a < user_b),
-  CHECK (requester IN (user_a, user_b))
-);
-CREATE INDEX friend_requests_by_b ON friend_requests(user_b);
-
-CREATE TABLE blocks (                       -- private to the blocker; never revealed to the blocked
-  blocker    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  blocked    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  created_at INTEGER NOT NULL,
-  PRIMARY KEY (blocker, blocked),
-  CHECK (blocker <> blocked)
-);
-CREATE INDEX blocks_by_blocked ON blocks(blocked);
-```
-
-Deliberately **absent**: real names, birthdays, location, avatars as images, a
-Google display name or picture, a bio, a free-text display name separate from
-the username (§19), and any messaging tables.
+Deliberately **absent**: email addresses (decision 1), real names,
+birthdays (decision 2), location, avatars as images, a Google display name or
+picture, a bio, a free-text display name separate from the username
+(decision 3), and any messaging tables.
 
 **Invites are not in D1.** They are ephemeral, short-lived and useless once the
 room closes, so they live in the recipient's UserHub DO (§13).
 
-### 8.1 Usernames
+### 8.1 Usernames (decision 4)
 
-- **Charset:** ASCII letters, digits and `_`, 3–20 characters, for launch.
-  Unicode is where impersonation lives (Cyrillic `а` vs Latin `a`). The probe
-  in §14 shows how easily lookalikes pass through today. Unicode can be
-  widened later; narrowing it later would break existing names.
-- **Normalisation:** input is NFKC-normalised and trimmed, then validated. The
-  displayed form preserves the case the player typed.
-- **Uniqueness, twice:**
-  - `username_key` is lowercase. `MushroomKing42` and `mushroomking42` are
-    the same name.
-  - `username_skeleton` folds confusables (`0→o`, `1/l/i→l`, `5→s`, `rn→m`,
-    …). `MushroomKing42` and `MushroomKinq42` then cannot both exist. Both
-    columns are `UNIQUE`, so the database enforces this under concurrency.
-- **Reserved:** `admin`, `mod`, `moderator`, `support`, `staff`, `system`,
-  `gnomewars`, `whimsywars`, `gnomeconquest`, `cpu`, `guest`, `deleted`,
-  `host`, `null`, `undefined`, plus the default seat names (`Rose`, `Thistle`,
-  `Marigold`, `Bramble`), because a user with one of those names would look
-  like an unclaimed default seat. The list is matched on the skeleton.
-- **Offensive names:** checked against a denylist on the skeleton, with care
-  about the Scunthorpe problem. The source of that list, and the appeal and
-  report path, are policy decisions (§19).
-- **Changes:** allowed with a cooldown (proposed: 30 days). The old skeleton
-  goes into `username_holds` for a quarantine period (proposed: 90 days). No
-  one can grab a name that was just given up and impersonate its old owner,
-  and `/player/OldName` can redirect to the new name while the hold lasts.
-- **Stability:** friendships, stats, matches and ownership all key on
-  `user_id`, so renaming touches exactly one row in `profiles`. That is a
-  test (§18).
+- **One public identifier:** the username, displayed with the case the
+  player chose. There is no separate display name. `user_id` is the identity,
+  and nothing depends on the username.
+- **ASCII only** (`A–Z a–z 0–9 _`, 3–20 characters). Input is NFKC-normalised
+  and trimmed, then validated. The database re-checks the character set in a
+  `CHECK`, so a regression in application code cannot store a non-ASCII name.
+- **Case-insensitive uniqueness:** `username_key = lower(username)`, with a
+  `UNIQUE` constraint. A confusable-folded `username_skeleton` (blocks
+  `MushroomKinq42` when `MushroomKing42` exists) is proposed on top. It is
+  marked for review in the Phase 1 spec.
+- **Changes:** at most once every 30 days. A name given up stays **reserved to
+  its previous owner for 90 days** (`username_holds`). They can take it back,
+  and nobody else can claim it.
+- **Reserved and offensive names are data, not code** (`username_rules`:
+  exact or contains, category system / offensive / removed). The migration
+  seeds the system/admin terms. An operator can update the offensive list
+  without a code change or redeploy. There is no attempt to catch every
+  offensive name automatically.
+- **Administrative removal** without touching identity: a removed name sets
+  `profiles.username_state = 'removed'` and clears the name columns. The
+  account keeps its `user_id`, friends, stats and history. It is shown with a
+  generic placeholder and must choose a new name before using public or
+  social features. The removed name goes into `username_rules` so it cannot
+  simply be re-registered. A minimal `username_removals` row records it for
+  later review. There is no reporting platform in this project.
 - **First sign-in suggests names** from the pools `src/ui/gnomeNames.ts`
-  already has (`FIRST_NAMES`, for example "Mossbottom27"). The Google name is
-  never used, because it is usually a real name.
+  already has (`FIRST_NAMES`, for example "Mossbottom27"). There is no Google
+  name to suggest, because none is requested.
+- **Stability:** friendships, stats, matches and ownership key on `user_id`,
+  so a rename touches one `profiles` row. That is a Phase 3 test.
 - **Enumeration:** usernames are public by design, so a rate-limited
-  availability check leaks nothing that is not already public. What must not
-  be enumerable, whether a given Google account or email is registered, has no
-  oracle at all, because Google is the only way in.
+  availability check leaks nothing new. Whether a given Google account is
+  registered has no oracle, because Google is the only way in.
 
 ### 8.2 Customization: the real shape, not an invented one
 
@@ -524,9 +426,9 @@ self-hosted so the CSP still holds.
 
 ### 9.2 Verification details
 
-- **Scope `openid` only.** It returns `sub` and nothing else about the person:
-  no email, no name, no picture. `sub` is all that identity needs. Adding the
-  `email` scope later is non-breaking (§19).
+- **Scope `openid` only** (decision 1). It returns `sub` and nothing else
+  about the person: no email, no name, no picture. `sub` is the only thing
+  stored about the Google identity.
 - **Checks on the ID token:** `iss ∈ {https://accounts.google.com,
   accounts.google.com}`, `aud == GOOGLE_CLIENT_ID`, `exp` in the future (with
   small skew), and `nonce` equal to the one in the transaction cookie. Also
@@ -538,9 +440,9 @@ self-hosted so the CSP still holds.
   top-level GET. **Code interception** is prevented by PKCE (S256). **Open
   redirects** are prevented by accepting only a same-origin relative return
   path. Anything else becomes `/`.
-- **JWT library:** `jose` (Workers-compatible, widely audited) instead of
-  hand-rolled WebCrypto. This would be the project's third runtime dependency,
-  so it is flagged in §19.
+- **JWT library:** `jose` (decision 14), subject to confirming the pinned
+  version runs on the Workers runtime and passes `npm audit` and a
+  dependency review in Phase 2. Cryptographic verification is not hand-rolled.
 
 ### 9.3 Atomic, idempotent account creation
 
@@ -575,7 +477,7 @@ the `NOT EXISTS` guard cannot interleave with another batch.
   account deletion all need server-side revocation. A signed stateless cookie
   cannot be revoked. The cost is one indexed D1 read per HTTP request and
   **one per WebSocket connection**, not per message.
-- **Lifetime** (proposed, §19): 30 days sliding, 90 days absolute.
+- **Lifetime** (decision 12): 30 days sliding inactivity, 90 days absolute.
   `last_seen_at` is written at most once a day.
 - **Fixation:** a fresh id is minted at every sign-in, and any session id the
   browser already presented is deleted.
@@ -660,13 +562,9 @@ changes message meaning. Every bump forces open tabs into the "reload" screen.
 Stay inside the existing screen machine. There is no router library to add,
 and adding one would cut across `App.tsx`'s deliberate URL handling.
 
-- **Addressing.** The bundle is built with `base: './'` (for subpath hosts),
-  which is why the app is addressed by query parameters and not paths: under
-  `/player/X`, `./assets/…` would resolve one directory too deep. Profiles
-  therefore follow the `?room=` precedent: **`?player=MushroomKing42`**. The
-  Worker also answers `GET /player/:name` with a 302 to `/?player=:name`, so
-  the pretty URL from the brief works on the Cloudflare deploy without
-  touching `base`.
+- **Addressing.** `/player/MushroomKing42` is the canonical, user-facing
+  profile URL (decision 16). How that works without changing `base`, and what
+  first-class routes would take later, is in §11.1.
 - **Screens.** `Screen` grows from `home | local | online | rules` to include
   `profile | friends | customize`. The home card gets the brief's layout:
   PLAY (Local, Online, vs CPU) above an account strip. Signed out, the strip
@@ -683,12 +581,90 @@ and adding one would cut across `App.tsx`'s deliberate URL handling.
 - **Lobby.** Account seats get a small verified leaf badge. Friends get an
   "Invite" affordance (Phase 7).
 - **Profile page.** `GnomePortrait`, username, member-since, and headline
-  stats. `GnomePortrait` needs a `seatId` for the garment hue, so the profile
-  renders in seat 1's colour unless a "profile colour" is approved as a new
-  field (§19).
+  stats, split into Human multiplayer and VS CPU. `GnomePortrait` needs a
+  `seatId` for the garment hue, and the profile uses seat 1's presentation
+  (decision 10). There is no new colour field.
+- **Quick Play** (decision 8) starts a VS CPU game immediately with the
+  default setup. It is a shortcut into the existing local path, not
+  matchmaking.
 - **Tone.** Game-y copy, gnome art everywhere, no settings-page greys. Account
   management (privacy toggle, data export, sign out, delete) sits in one
   plain-spoken section of the profile, not an enterprise console.
+
+### 11.1 Clean profile URLs and the relative base (decision 16)
+
+**1. What depends on relative, subpath hosting today.** `vite.config.ts` sets
+`base: './'`. A production build confirms what that does:
+
+- `index.html` loads its script, stylesheet, favicons and manifest as `./…`,
+  relative to the **document's** URL.
+- `manifest.webmanifest` uses `start_url` and `scope` of `./`.
+- Assets referenced from code resolve against `import.meta.url` (for example
+  `new URL('poof-blob-….png', import.meta.url)`), and CSS `url()`s resolve
+  against the stylesheet. Neither depends on the page's address.
+
+The only reason for the relative base is static hosting under a subpath
+(GitHub Pages `/repo/`), and those deploys serve **local play only**. Online
+play already assumes the site root: `fetch('/api/rooms')`, the socket URL
+`/api/rooms/…/ws`, and the Worker's routes are all root-absolute. Every
+account feature needs the Worker, so it lives on the root deploy by
+necessity. Local dev (`vite`) and `vite preview` also serve at the root.
+
+**2. Can clean URLs coexist with it? Yes, on the Worker deploy, without
+touching `base`.** Serving `index.html` directly at `/player/X` would break,
+because `./assets/…` would resolve to `/player/assets/…`. A `<base href="/">`
+cannot rescue it either, because the CSP says `base-uri 'none'`. So:
+
+1. The Worker answers `GET /player/:name` with a 302 to `/?player=:name`.
+   This is the one place the query form appears.
+2. The app loads at the root, so every relative reference resolves correctly.
+   It reads `?player=`, opens the profile, and immediately calls
+   `history.replaceState` to put `/player/:name` back in the address bar.
+3. Profile links the app renders or copies are always `/player/:name`. A
+   reload or a shared link re-enters through step 1.
+
+The app records its root path once, at startup, before any `replaceState`.
+Leaving the profile screen restores that root path. That matters because
+`roomHref` and `boardViewHref` build invite links from `location.pathname`,
+and an invite must never come out as `/player/X?room=…`. Back and forward get
+a small `popstate` handler in `App.tsx`. There is no routing library.
+
+Static subpath hosts are unaffected. They have no Worker, so they have no
+profiles, and nothing they do today changes.
+
+**3. Is the redirect an implementation detail?** Yes. `/player/:name` is the
+canonical URL, the one players see, copy and share. `?player=` is internal
+compatibility plumbing, never generated for display or sharing. The Worker
+also sends `X-Robots-Tag: noindex` on `/player/*`. Given the child-safety
+posture, profiles should not be search-indexed unless that is decided
+otherwise.
+
+**4. What first-class routes (`/player/:username`, `/friends`, `/customize`,
+`/settings`, `/match/:id`) would eventually take.** It is one contained
+change, done after accounts:
+
+- **Build.** Either give up subpath hosting and set `base: '/'`, or produce
+  two builds from one config: root-absolute for the Worker deploy, relative
+  for static hosts. The dual build is a few lines in `vite.config.ts` keyed on
+  an env var, and the CSP is unaffected either way. The manifest's
+  `start_url` and `scope` follow the base.
+- **Worker.** Nothing new is needed.
+  `not_found_handling: "single-page-application"` already serves
+  `index.html` for unknown paths, and with an absolute base, assets resolve
+  from any depth. The 302s are kept for a while as compatibility redirects,
+  then removed.
+- **App.** `App.tsx`'s `useState` screen machine becomes a small path
+  matcher (`pathname → Screen`) plus `pushState` / `popstate`. `?room=` and
+  `?view=board` keep working unchanged. Six routes do not justify a routing
+  library.
+- **`/match/:id`** also needs a product decision on who may view a match.
+  `matches.id` is a random UUID, so ids are not guessable, but visibility is
+  still a policy question.
+
+Until then, `/friends`, `/customize` and `/settings` are screens reached in
+the app. If shareable links to them are wanted sooner, the Worker's 302
+mechanism can map a short allowlist of clean paths to `?screen=…` the same
+way.
 
 ## 12. Statistics from authoritative matches
 
@@ -758,8 +734,12 @@ reviewed engine PR, checked against the replay and fingerprint tests.
   (hard)". Other accounts are resolved to their *current* username at read
   time; a deleted account shows as "a deleted gnome".
 - **A seat taken over by the shot clock** is recorded with `taken_over = 1`,
-  and its result counts as a loss even if the CPU wins, since the player was
-  not there (§19).
+  and its result is a loss even if the CPU wins (decision 6). The database
+  enforces the pairing with a `CHECK`.
+- **Categories** (decision 6): every match is `human` (two or more seats
+  played by people, account or guest) or `cpu` (one person against CPUs).
+  Statistics are always reported per category. Games involving guests count,
+  provided they completed normally.
 
 **Farming caveat.** Rooms are private and anyone can open a second tab as a
 guest, so wins against guests or one's own second account are inherently
@@ -848,12 +828,15 @@ fake host, the way `room.test.ts` tests rooms.
 - An invite tells the recipient the room code. That is the room's existing
   trust model (whoever has the code can sit down); it does not change it.
 
-**Blocking and rooms:** v1 blocks govern social features (requests, invites,
-presence) only. They do not keep a blocked user out of a room whose code they
-have: a room cannot reliably check blocks against guests, and the blocked user
-could simply sign out. Room admission controls (host kick, friends-only rooms)
-are a separate decision (§19). If matchmaking ever exists, blocks should
-exclude pairings. That is noted here, not built.
+**Blocking and rooms** (decision 9): v1 blocks govern friend requests,
+invitations, presence and any future account-based social interaction. They
+do not keep someone out of a room whose code they have, and no host-kick is
+built for it. The architecture leaves that door open. `blocks` is a generic
+user-to-user table with no feature-specific columns, and rooms already learn
+each seat's verified `user_id` at the upgrade. A later "enforce blocks at
+private-room admission" rule is therefore a check in `Room.hello` plus a
+`RoomHost` lookup, with no schema change. If matchmaking ever exists, blocks
+should exclude pairings.
 
 ---
 
@@ -945,7 +928,8 @@ test support:
 Each phase is one or more PRs that leave `main` shippable, with all existing
 unit and e2e tests green. Nothing user-visible appears until Phase 2.
 
-**Phase 0.5: Room input hardening. No accounts; can land now.**
+**Phase 0.5: Room input hardening. No accounts.** Detailed in
+[ACCOUNTS_SPEC_PHASE_0_5.md](ACCOUNTS_SPEC_PHASE_0_5.md).
 Validate every `ClientMessage` field's type and bounds. Add the structural
 `look` validator (`src/platform/lookSchema.ts`) and apply it to `hello` and
 `configure`. Sanitise names (NFKC, strip control and bidi characters, trim).
@@ -953,7 +937,9 @@ Enum-check `controller`, `difficulty` and `gardenPreset`. Persist the guest's
 online look beside `ww:name` (R4). Add Worker-level tests for the existing
 routes, including that `/host-key` is unreachable publicly.
 
-**Phase 1: Persistence foundation.**
+**Phase 1: Persistence foundation.** Detailed, with the schema for review,
+in [ACCOUNTS_SPEC_PHASE_1.md](ACCOUNTS_SPEC_PHASE_1.md). Phase 1 applies only
+migration `0001_identity.sql`.
 1. D1 binding, `migrations/0001_accounts.sql` (the §8 tables), `cf-typegen`,
    `.dev.vars.example`, env-var plumbing and a typed `Env`.
 2. The `node:sqlite` test adapter plus repository layer and constraint tests.
@@ -1001,20 +987,17 @@ Presence toggle; `GET /api/me/export` (JSON of account, profile, look,
 friends by username, blocks, own matches); `DELETE /api/me`, per the table
 below; "sign out everywhere".
 
-| On deletion | What happens |
-|---|---|
-| Sessions, Google identity link, privacy settings | Deleted (cascade). A later Google sign-in makes a brand-new account. |
-| Profile | Deleted. The username skeleton goes to `username_holds` for the quarantine period. |
-| Customization | Deleted. |
-| Friendships, friend requests, blocks (both directions) | Deleted (cascade). |
-| Pending invites | Purged from both hubs. |
-| Own stats | Gone with the rows below. Stats are computed on read, so there is nothing else to clean. |
-| `match_players` rows for this user | `user_id` becomes `NULL` (`ON DELETE SET NULL`); `seat_kind` stays `account` and renders as "a deleted gnome". |
-| Other players' matches involving the user | Intact: the match and their rows are untouched. |
-| Live rooms | Attribution already frozen; the report inserts `NULL` for a missing user (§12). |
+The authoritative table-by-table account-deletion behaviour is
+[ACCOUNTS_SPEC_PHASE_1.md §4](ACCOUNTS_SPEC_PHASE_1.md#4-what-deletion-does-table-by-table).
+It classifies every record as **deleted**, **anonymised**, or **needs a
+policy decision**, and marks what affects other users or historical matches.
+In short:
 
-Whether anything is retained for abuse or legal reasons, such as a hash of the
-Google `sub` for ban enforcement, is a policy decision (§19).
+- identity, sessions, profile, customization, privacy settings and social
+  rows are deleted;
+- the user's `match_players` rows are anonymised (`user_id` NULL), so other
+  players' histories stay intact;
+- no identifier is retained for bans without explicit approval (decision 11).
 
 **Phase 9: Hardening.**
 Security review against the brief's security requirements (sessions, CSRF,
@@ -1043,73 +1026,105 @@ every phase. That is the bar for "done".
 
 ---
 
-## 19. Decisions needed before implementation
+## 19. Decisions (approved 2026-09-29)
 
-Recommendations are in **bold**; each is a real fork where the answer changes
-what gets built.
+Recorded as given by the product owner. Where a decision changed the
+proposal, the relevant section above has been updated.
 
-**Product & policy (yours to decide; flagged for legal/privacy review where noted)**
+**Product**
 
-1. **Collect email?** **Recommend no: `openid` scope only at launch.** Add
-   `email` only if support or legal needs a contact channel. It can be added
-   later with a re-consent at next sign-in. *(privacy review)*
-2. **Age posture.** Google accounts can belong to under-13s via Family Link.
-   Will Gnome Wars be positioned for children, and is any age screen needed?
-   **Recommend no birthdate collection, and no age gate without legal input.**
-   The design already avoids free text beyond usernames, messaging, real
-   names and location. *(legal review)*
-3. **Separate display name?** **Recommend username only** (case-preserved)
-   for launch. A second free-text public field doubles the moderation
-   surface.
-4. **Username policy:** ASCII-only at launch; cooldown (30 days?); quarantine
-   (90 days?); source of the offensive-name list; what happens when a name is
-   reported.
-5. **Presence default:** visible to friends by default with a toggle, or
-   hidden by default? **Recommend visible to friends, one-tap hide**, unless
-   the age decision says otherwise.
-6. **Stats policy:** count games against guests? Separate vs-CPU and
-   vs-human records? Taken-over seat = loss even if the CPU wins?
-   **Recommend: yes, yes, yes.**
-7. **Two tabs, one account:** the second seat plays as an unattributed guest
-   (**recommended**, keeps "test a room alone"), or is refused?
-8. **"Quick Play"** in the brief implies matchmaking, which does not exist and
-   is out of scope. **Recommend it means "start vs CPU instantly with
-   defaults"** for now.
-9. **Blocks and room admission:** accept that v1 blocks don't keep someone out
-   of a room whose code they have (**recommended**), or scope a host-kick
-   feature?
-10. **Profile colour:** render profile gnomes in seat 1's colour
-    (**recommended**, no new field), or add a new "favourite seat colour"
-    customization field?
-11. **Retention on deletion:** keep anything (for example a hashed Google
-    `sub` to enforce bans)? For how long? *(legal review)*
-12. **Session lifetime:** 30 days sliding / 90 days absolute?
+1. **Email:** not collected or stored. Google's `sub` links the Google
+   identity to the internal account. Scope `openid` only.
+2. **Age:** no birthdates and no age verification in this project.
+   Child-safety and age questions are flagged for legal/product review (see
+   below) rather than solved by collecting more data.
+3. **Public identity:** one unique username. No separate display name.
+   `user_id` is the permanent identity and never depends on the username.
+4. **Usernames:**
+   - ASCII only, with case-insensitive uniqueness.
+   - A change at most every 30 days. Old names are reserved to their previous
+     owner for 90 days.
+   - A reserved list for system and admin terms.
+   - The offensive list is data, updatable without code changes, and there is
+     no attempt at exhaustive automatic filtering.
+   - Schema and API support later review and forced renames without touching
+     identity. A removed name leaves the account in a safe placeholder state
+     until a new name is chosen.
+   - No reporting platform in this project.
+5. **Presence:** visible to friends by default, with a simple toggle to hide
+   it. Hidden presence reads as offline to others.
+6. **Statistics:**
+   - Separated at least into Human multiplayer and VS CPU.
+   - Games with guests count if authoritative and completed normally.
+   - A seat taken over by a CPU is a loss for that player whatever the
+     outcome, and the takeover is recorded separately.
+   - No statistic that cannot be derived reliably.
+7. **Multiple tabs, one account:** allowed. Extra seats play as unattributed
+   guests. One match never attributes more than one seat to the same account.
+8. **Quick Play:** starts a VS CPU game immediately with default settings. No
+   matchmaking in this project.
+9. **Blocking:** prevents friend requests, invitations, presence visibility
+   and future account-based social interactions. A room code may still admit
+   a blocked user in v1, and no host-kick is built for this. Nothing may
+   preclude enforcing blocks at room admission later.
+10. **Profile gnome:** seat 1 / default presentation. No new colour field.
+11. **Deletion and retention:** no assumed retention for bans or moderation.
+    No indefinite hashed Google identifier without explicit approval. The
+    schema keeps deletion and anonymisation policy changeable, and every
+    record is classified (Phase 1 spec §4).
+12. **Sessions:** 30-day sliding inactivity, 90-day absolute, always
+    revocable. Logout and deletion invalidate sessions.
 
-**Technical (my recommendation stands unless you object)**
+**Technical**
 
-13. **Redirect OIDC flow instead of the GIS button** (§9.1). If you
-    specifically want One Tap, the CSP and COOP must be relaxed and every
-    page view loads Google's script.
-14. **Add `jose`** as the third runtime dependency for ID-token verification,
-    or hand-roll it with WebCrypto.
-15. **D1 plus a per-user DO** (§7, §13), accepting D1's batch-only
-    transactions.
-16. **Profile URLs as `?player=`, with a Worker 302 from `/player/:name`**,
-    keeping the relative `base`. The alternative is switching `base` to `/`,
-    which drops subpath hosting. That hosting only ever supported local play
-    anyway.
-17. **Environments:** add a `staging` Worker with its own D1 database and its
-    own Google OAuth client?
+13. **Sign-in:** redirect-based OpenID Connect. No GIS button and no One Tap.
+    The security-header posture is preserved.
+14. **ID-token verification:** `jose`, subject to Workers compatibility and
+    dependency/security review. Nothing hand-rolled.
+15. **Storage:** D1 for persistent account, social and game data. A per-user
+    Durable Object for ephemeral presence and coordination. Presence is never
+    persisted.
+16. **Profile URLs:** `/player/:name` is canonical and user-facing. The
+    Worker 302 to `?player=` is an internal compatibility mechanism. `base`
+    is not changed and no routing library is added (§11.1).
+17. **Environments:** a separate staging Worker, D1 database, OAuth client and
+    secrets. Production data is never used casually for development or
+    automated testing, and local development keeps working.
 
-**Human setup steps (cannot be done from the repo)**
+**Sequencing**
 
-- Create a Google Cloud project and OAuth consent screen (app name, support
-  contact, **privacy policy URL**, homepage) and a Web OAuth client, with
-  authorised redirect URIs for production, staging and `localhost`.
-  `openid`-only is a non-sensitive scope, which avoids Google's
-  sensitive-scope verification.
-- `wrangler d1 create` (production and staging),
-  `wrangler secret put GOOGLE_CLIENT_SECRET` and `OAUTH_COOKIE_KEY`.
+- **Phase 0.5** (multiplayer hardening, no account infrastructure) comes
+  first ([spec](ACCOUNTS_SPEC_PHASE_0_5.md)).
+- **Phase 1** follows, but only after its schema
+  ([spec](ACCOUNTS_SPEC_PHASE_1.md)) has been reviewed.
+- **Phase 2** (authentication) waits for explicit approval.
+
+### Still open: policy items for legal/product review
+
+- Positioning towards children, and whether any age screen is ever needed
+  (decision 2 defers this).
+- Whether a deleted account's username gets a quarantine. Today it becomes
+  claimable immediately (Phase 1 spec §4).
+- Whether `username_removals` rows are kept after the account is deleted.
+- Whether per-seat counts in a deleted user's anonymised match rows are
+  zeroed or kept.
+- Whether blocks should survive a blocked user re-registering (this would
+  need a retained identifier; see decision 11).
+- Worker log content and retention.
+- Who may view a match once `/match/:id` exists.
+- Whether profiles may be search-indexed. The proposal is `noindex`.
+
+### Human setup steps (cannot be done from the repo)
+
+- **Before Phase 1:** `wrangler d1 create gnomeconquest` and
+  `wrangler d1 create gnomeconquest-staging`.
+- **Before Phase 2:**
+  - Google Cloud project and OAuth consent screen (app name, support
+    contact, **privacy policy URL**, homepage).
+  - Separate production and staging Web OAuth clients, with authorised
+    redirect URIs for production, staging and `localhost`.
+  - `wrangler secret put GOOGLE_CLIENT_SECRET` and `OAUTH_COOKIE_KEY`, per
+    environment.
 - A privacy policy that matches what is actually collected. This document
   describes technical controls only and does not claim compliance with COPPA,
   GDPR, CCPA, TDPSA or any other regime.
