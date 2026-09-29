@@ -112,6 +112,15 @@ handful of things anyone actually needs to do.
 
 ### P3
 
+- **The e2e suite sits exactly at the room-create rate limit.** `wrangler.jsonc`
+  allows 10 `POST /api/rooms` per minute per IP, the local runtime enforces it,
+  and every Playwright test shares localhost's address. `e2e/online.spec.ts`
+  opens 10 rooms; an 11th (found adding the reload-keeps-your-gnome check in
+  Phase 0.5) makes whichever test runs last fail with a 429. The check was
+  folded into an existing test instead. Fix before the suite grows: give local
+  runs their own limit (an env-specific binding, or a test-only override that
+  cannot reach production), rather than raising the production one.
+
 - **Rate limiting has two ends and nothing in between (Milestone 11).** Shipped
   2026-08-03: per-IP limits at the Worker's door and per-connection/per-room
   token buckets inside (see MULTIPLAYER.md, "Rate limiting"). What is left is
@@ -305,6 +314,32 @@ handful of things anyone actually needs to do.
 ## Resolved
 
 Newest first. Kept for the reasoning, not as a to-do list.
+
+### 2026-09-29 — Multiplayer input hardening (accounts Phase 0.5)
+
+Found by the accounts architecture audit (ACCOUNTS.md §14, R1–R4, R9, R10);
+spec in ACCOUNTS_SPEC_PHASE_0_5.md.
+
+- **Client message fields were type-unchecked.** `parseClientMessage` checked
+  only `t`, so `{ t: 'hello', name: 123 }` threw a `TypeError` out of
+  `Room.hello` after a token had been minted and a seat assigned. Every field
+  is now checked and the message rebuilt at the boundary; refusals are metered.
+- **Looks were stored and rebroadcast verbatim** — a 200 KB look with extra
+  keys was accepted into storage and every snapshot. Now shape-checked
+  (`lookSchema.ts`), never catalogue-checked.
+- **Action objects were stored verbatim too**: the engine ignores unknown
+  keys, so junk rode into the record and the `revealed` broadcast. Actions now
+  keep only `Action` keys (compile-time checked) and are capped at 2 KB.
+- **Names were only length-capped**, and by UTF-16 unit (splitting emoji).
+  Now cleaned of control/bidi/invisible characters and capped by code point.
+- **`configure` half-applied** a message whose later seat was bad, and stored
+  unknown layouts to fail at start. Now validated whole first.
+- **A reload inside a room reset your gnome** (the look lived in React state
+  only). Now kept in `localStorage['ww:look']`.
+- **The Worker entry had no tests.** `src/worker/index.test.ts` pins its
+  routing, including that `/host-key` is unreachable from outside.
+- Found on the way, not fixed: the e2e suite opens exactly as many rooms per
+  minute as the local per-IP create limit (10) allows — see P3 below.
 
 ### 2026-08-25 — Quality-of-life pass
 

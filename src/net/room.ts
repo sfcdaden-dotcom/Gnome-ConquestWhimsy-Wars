@@ -219,10 +219,10 @@ export interface PersistedSeat {
   controller: 'human' | 'cpu';
   difficulty: AiDifficulty;
   /**
-   * The gnome this seat plays, as its client sent it. Stored verbatim and
-   * never read by the room — appearance is the clients' business, and a room
-   * that tried to validate hat ids would need updating every time somebody
-   * drew a new hat.
+   * The gnome this seat plays. Shape-checked (`validateLookWire`) and stored
+   * as a fresh copy, but never interpreted — appearance is the clients'
+   * business, and a room that validated hat ids against the catalogue would
+   * need updating every time somebody drew a new hat.
    */
   look?: GnomeLookWire;
   /** The room took this seat over for inactivity (not a lobby CPU seat). */

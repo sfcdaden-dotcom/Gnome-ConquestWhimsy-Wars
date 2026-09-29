@@ -191,11 +191,16 @@ are two people at the table — which is how anyone tries a room out alone.
 **A player's gnome travels with their name.** Both are set on the online menu,
 before the room knows which seat you get, and both reach the room the same way:
 on `hello`, on every dial, so a reconnect restores the character along with the
-seat and the hand. The room stores the look verbatim and republishes it on the
-seat — it never interprets one, because appearance is the clients' business and
-a room that validated hat ids would need redeploying every time somebody drew a
-hat. Validation is the receiver's job instead (`sanitizeLook`), so an unknown
-variant from a stranger's build cannot leave a hole in your board. A look
+seat and the hand. The room checks a look's SHAPE and nothing more
+(`src/net/lookSchema.ts`): exactly the look's keys, ids shaped like the
+filenames they come from, small palette indices — so a look is a few hundred
+bytes by construction and nothing else can ride along into storage or every
+snapshot. It never checks ids against the catalogue, because appearance is the
+clients' business and a room that validated hat ids would need redeploying
+every time somebody drew a hat. Validation of *meaning* is the receiver's job
+(`sanitizeLook`), so an unknown variant from a stranger's build cannot leave a
+hole in your board. A malformed look on `hello` is dropped (the player still
+sits down, gnomeless); one sent by the host for a CPU seat is refused. A look
 carries palette *indices* rather than colours, which is what lets it render in
 whichever seat's colour you end up sitting in. Adding it took the protocol from
 1 to 2.
@@ -406,6 +411,24 @@ how a client tells them apart from CPU seats the host set up in the lobby. It is
 also the only way a client *can* tell: `state.players[].controller` is fixed
 when the game is created, and editing it afterwards would stop the match record
 replaying. So the takeover travels beside the state, never inside it.
+
+## What the room accepts
+
+Every client message is checked field by field at the boundary
+(`parseClientMessage`) before the room sees it, and the message the room gets
+is rebuilt from the checked fields — unknown fields are never copied. Actions
+keep only keys some engine `Action` has and are capped at 2 KB, since every
+accepted action is stored in the record and later broadcast in `revealed`.
+Refused messages are metered like any other (`REJECTED_MESSAGE_COST`), so a
+flood of garbage reaches the same hang-up as a flood of real work.
+
+Seat names are cleaned (`src/net/names.ts`): NFKC-normalised, stripped of
+control, bidi and invisible format characters, capped at 24 code points. Any
+script and emoji are kept — these are guest names, not account usernames.
+
+Lobby settings are validated as a whole before any of them apply: the layout
+must be a registered preset, the board big enough for it, controllers and
+difficulties real values. A refused `configure` changes nothing.
 
 ## Rate limiting
 

@@ -1,6 +1,9 @@
 # Phase 0.5 — Multiplayer hardening (implementation spec)
 
-**Status: spec, awaiting approval. Nothing here is implemented.**
+**Status: implemented 2026-09-29** (approved the same day), as six commits
+titled "Room hardening 1/6" through "6/6". Where the build differs from the
+text below, [the last section](#as-built-deviations-from-this-spec) says how
+and why.
 
 Part of the accounts plan ([ACCOUNTS.md](ACCOUNTS.md), §14 findings R1–R4,
 R9, R10). The work is deliberately **independent of accounts**: no D1, no
@@ -252,3 +255,35 @@ This needs no new test runner, which matches how `room.test.ts` drives
   apart from any test that encoded the old verbatim-look behaviour, which is
   updated deliberately.
 - No new dependencies, bindings, env vars or protocol version.
+
+## As built: deviations from this spec
+
+1. **Actions are canonicalised too** (PR 3). An `action` object was appended
+   to the stored record exactly as sent, and later broadcast in `revealed`.
+   The engine ignores unknown keys, so junk was persisted exactly as looks
+   were. Actions now keep only top-level keys that exist in the engine's
+   `Action` union, checked at compile time in both directions so a new action
+   field cannot be silently dropped. They are also capped at 2 KB serialised.
+2. **Malformed credentials are dropped, not refused** (PR 3). A `token` or
+   `hostKey` that is a string but not 32 lowercase hex characters is treated
+   as absent, not rejected with `PROTOCOL`. It cannot be a credential the room
+   issued, so it means exactly what an unknown one means. Refusing it could
+   strand a client with a corrupted stored token on "connecting" forever. A
+   credential of the wrong *type* is still refused.
+3. **Legacy seat values are normalised on open, not refused** (PR 4). A room
+   persisted before the checks, with a nonsense `controller` or
+   `difficulty`, is settled to `cpu` / `normal` when loaded. Refusing its
+   host's later edits instead would lock them out of their own lobby.
+4. **The reload e2e check lives inside an existing test** (PR 5). The suite
+   already opens exactly as many rooms per minute as the local per-IP create
+   limit allows, and an extra test made the last one fail with a 429. It
+   passes against the Phase 0.5 code and fails with the fix reverted. The
+   underlying suite fragility is logged in TECH_DEBT.md (P3).
+5. **`Room.reject` does the metering** for boundary refusals and for
+   unexpected exceptions caught in the Durable Object, as the spec suggested.
+   Exceptions are logged with the message type and error name only, never
+   message contents.
+
+Verification at the end of Phase 0.5: 2,936 unit tests (62 new), lint,
+`tsc -b` and the production build are clean, and all 76 Playwright tests pass
+against the real Worker and Durable Object in miniflare.

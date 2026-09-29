@@ -194,11 +194,12 @@ export interface ShotClock {
 /**
  * A player's gnome, as it travels between clients.
  *
- * The room never interprets one — it stores whatever a client sent and hands
- * it back out with the rest of the seat, exactly as it does with a name. The
- * receiving client validates it (`sanitizeLook` in src/ui/gnomeArt.ts) before
- * drawing anything, because an unknown hat id from a stranger's build must not
- * be able to leave a hole in your board.
+ * The room checks its shape only (`validateLookWire` in ./lookSchema.ts —
+ * exact keys, filename-shaped ids, small indices) and never its meaning, then
+ * hands it back out with the rest of the seat. The receiving client validates
+ * the meaning (`sanitizeLook` in src/ui/gnomeArt.ts) before drawing anything,
+ * because an unknown hat id from a stranger's build must not be able to leave a
+ * hole in your board.
  *
  * The shape is declared here rather than imported from the UI so the wire
  * format stays owned by the wire; `src/ui/gnomeLook.ts` asserts that its own
