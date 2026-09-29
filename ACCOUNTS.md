@@ -1,6 +1,7 @@
 # Accounts, profiles & social — architecture audit and proposal
 
-**Status: architecture approved 2026-09-29. Nothing in this document is
+**Status: architecture approved 2026-09-29. Phase 0.5 approved; Phase 1
+blocked pending schema review. Nothing in this document is
 implemented yet.** It audits the repository as of `43ffa51` and describes how
 persistent player accounts will be added without destabilising what already
 works. The product owner's decisions are recorded in
@@ -311,9 +312,9 @@ room closes, so they live in the recipient's UserHub DO (§13).
   and trimmed, then validated. The database re-checks the character set in a
   `CHECK`, so a regression in application code cannot store a non-ASCII name.
 - **Case-insensitive uniqueness:** `username_key = lower(username)`, with a
-  `UNIQUE` constraint. A confusable-folded `username_skeleton` (blocks
-  `MushroomKinq42` when `MushroomKing42` exists) is proposed on top. It is
-  marked for review in the Phase 1 spec.
+  `UNIQUE` constraint. **No lookalike/confusable folding in v1** (confirmed
+  2026-09-29). Impersonation is a moderation matter: forced rename, and the
+  removed name added to `username_rules`.
 - **Changes:** at most once every 30 days. A name given up stays **reserved to
   its previous owner for 90 days** (`username_holds`). They can take it back,
   and nobody else can claim it.
@@ -892,7 +893,7 @@ migrations/                       D1 migrations (wrangler's default dir): 0001_a
 .dev.vars.example                 GOOGLE_CLIENT_SECRET=…, OAUTH_COOKIE_KEY=… (placeholders only)
 
 src/platform/                     pure, platform-free, unit-tested (like src/net/room.ts)
-  usernames.ts                    normalise, validate, skeleton, reserved/deny lists
+  usernames.ts                    normalise, validate, reserved/deny lists
   lookSchema.ts                   structural GnomeLookWire validation (shared by room + API)
   apiTypes.ts                     DTOs shared by client and Worker: PublicProfile, MeResponse, …
 
@@ -1014,9 +1015,9 @@ every phase. That is the bar for "done".
 | Phase | Must add |
 |---|---|
 | 0.5 | Probe cases become real tests. A non-string `name` gets a `PROTOCOL` error with no state change. An oversized or extra-key `look` is refused or stripped. Bidi and control characters are stripped. Bad `controller`/`difficulty` gets `BAD_CONFIG`. A reload keeps the guest's gnome (e2e). Worker route tests: `/host-key` is unreachable from outside. |
-| 1 | Migrations apply cleanly from empty. Constraint tests: duplicate `username_key` or `username_skeleton` is rejected; `friendships` rejects `user_a >= user_b`; `friend_requests` allows one row per pair; `blocks` rejects self; the partial unique index gives one seat per user per match; foreign-key cascade and `SET NULL` behave as specified (and D1 enforces foreign keys; verify, do not assume). |
+| 1 | Migrations apply cleanly from empty. Constraint tests: duplicate `username_key` (case-insensitive) is rejected; `friendships` rejects `user_a >= user_b`; `friend_requests` allows one row per pair; `blocks` rejects self; the partial unique index gives one seat per user per match; foreign-key cascade and `SET NULL` behave as specified (and D1 enforces foreign keys; verify, do not assume). |
 | 2 | Invalid, expired, wrong-`aud`, wrong-`iss`, wrong-`nonce` and bad-signature ID tokens are rejected. Mismatched `state` is rejected. A non-relative `return` becomes `/`. Concurrent callbacks for one `sub` make one user. Session rotation at login. Logout revokes. An expired session is a guest. Guests get 401 on every protected route. A foreign `Origin` is refused on POST and WS upgrade. A client-supplied identity header is ignored. Room: a `user_id` can only come from the transport; two tabs of one user give one attributed seat; an account seat's name cannot be overridden by `hello`. Every existing online e2e passes as a guest. The fake identity provider refuses non-localhost hosts. |
-| 3 | User A cannot edit B's profile (403, not 404-probing). Case and lookalike collisions are rejected. Reserved and denylisted names are rejected. Rename cooldown holds. A released name is held. **Renaming does not break friendships, stats or matches.** The public profile DTO contains exactly its whitelisted keys (snapshot test). |
+| 3 | User A cannot edit B's profile (403, not 404-probing). Case-insensitive collisions are rejected; lookalikes are not (by decision). Reserved and denylisted names are rejected. Rename cooldown holds. A released name is held. **Renaming does not break friendships, stats or matches.** The public profile DTO contains exactly its whitelisted keys (snapshot test). |
 | 4 | A cannot modify B's customization. Malformed looks are rejected. A saved look round-trips and renders in all four seats. Unknown but well-formed ids degrade gracefully. |
 | 5 | `summarizeMatch` totals over seeded self-play match the ground truth, including games longer than the 1,000-event window. **A completed match cannot award stats twice** (report called 3 times gives one match). The report survives a D1 outage and a hibernation. Taken-over seats are recorded as such. Guest names never reach D1. A user deleted mid-game does not wedge the retry. Stripping names leaves the replay identical. |
 | 6 | No self-friending. No duplicate requests. Crossing requests become one friendship. Requesting an existing friend is refused. **Blocked users cannot send requests or invites, and get the same response as success.** Block removes the friendship and pending requests atomically. Caller-scoped deletes refuse other users' rows (IDOR). Rate limits and caps apply. |
@@ -1051,6 +1052,9 @@ proposal, the relevant section above has been updated.
      identity. A removed name leaves the account in a safe placeholder state
      until a new name is chosen.
    - No reporting platform in this project.
+   - No lookalike/confusable uniqueness in v1 (confirmed 2026-09-29).
+   - Profiles are served with `X-Robots-Tag: noindex` (confirmed
+     2026-09-29).
 5. **Presence:** visible to friends by default, with a simple toggle to hide
    it. Hidden presence reads as offline to others.
 6. **Statistics:**
@@ -1112,7 +1116,6 @@ proposal, the relevant section above has been updated.
   need a retained identifier; see decision 11).
 - Worker log content and retention.
 - Who may view a match once `/match/:id` exists.
-- Whether profiles may be search-indexed. The proposal is `noindex`.
 
 ### Human setup steps (cannot be done from the repo)
 

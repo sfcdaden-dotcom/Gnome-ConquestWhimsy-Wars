@@ -117,7 +117,6 @@ CREATE TABLE profiles (
   user_id             TEXT    PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
   username            TEXT,               -- as chosen, case preserved; NULL only while 'removed'
   username_key        TEXT    UNIQUE,     -- lowercase; the uniqueness key (decision 4)
-  username_skeleton   TEXT    UNIQUE,     -- confusable-folded; see REVIEW NOTE below
   username_state      TEXT    NOT NULL DEFAULT 'active'
                               CHECK (username_state IN ('active', 'removed')),
   username_changed_at INTEGER NOT NULL,
@@ -125,19 +124,19 @@ CREATE TABLE profiles (
   updated_at          INTEGER NOT NULL,
   CHECK (
     (username_state = 'active'
-       AND username IS NOT NULL AND username_key IS NOT NULL AND username_skeleton IS NOT NULL
+       AND username IS NOT NULL AND username_key IS NOT NULL
        AND username_key = lower(username)
        AND length(username) BETWEEN 3 AND 20
        AND username NOT GLOB '*[^A-Za-z0-9_]*')
     OR
     (username_state = 'removed'
-       AND username IS NULL AND username_key IS NULL AND username_skeleton IS NULL)
+       AND username IS NULL AND username_key IS NULL)
   )
 );
 -- The row exists once a username has first been chosen. A signed-in user without a row
 -- is "needs a username" and cannot use public/social functions.
 --
--- Administrative removal (decision 4) sets username_state = 'removed' and NULLs the three
+-- Administrative removal (decision 4) sets username_state = 'removed' and NULLs both
 -- name columns in one statement. The user_id, friendships, stats and matches are untouched.
 -- The UI shows a generic placeholder ("a gnome awaiting a new name"), and social/public
 -- functions are refused until a new name is chosen. SQLite UNIQUE permits many NULLs, so
@@ -147,23 +146,19 @@ CREATE TABLE profiles (
 -- or wrong-case key even if application validation regresses. The GLOB is an ASCII
 -- character-class test.
 --
--- REVIEW NOTE, username_skeleton: decision 4 requires case-insensitive uniqueness, which
--- username_key provides. The skeleton is an additional proposal. It folds lookalikes
--- (0→o, 1/i/l→l, 5→s, 8→b, rn→m, vv→w, "_" removed), so "MushroomKing42" blocks
--- "MushroomKinq42" and "Mushroom_King42". It is cheap now and very hard to add after names
--- exist, because existing collisions would have to be resolved by hand. Drop the column
--- if you would rather not.
+-- Uniqueness is case-insensitive ASCII only (decision 4, confirmed 2026-09-29). There is
+-- deliberately no lookalike/confusable folding in v1: "MushroomKinq42" can coexist with
+-- "MushroomKing42". Impersonation is handled by moderation (username_rules 'removed',
+-- forced rename), not by the uniqueness key.
 
 -- Previously owned names, reserved to their previous owner for 90 days (decision 4).
 CREATE TABLE username_holds (
   username_key      TEXT    PRIMARY KEY,
-  username_skeleton TEXT    NOT NULL,
   user_id           TEXT    NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   hold_until        INTEGER NOT NULL
 );
-CREATE INDEX username_holds_by_skeleton ON username_holds(username_skeleton);
 CREATE INDEX username_holds_by_expiry   ON username_holds(hold_until);
--- A claim of a name is refused while a hold exists for its key or skeleton, owned by someone
+-- A claim of a name is refused while a hold exists for its key, owned by someone
 -- else, with hold_until > now. The previous owner may reclaim it. Enforced by a conditional
 -- statement in the claim batch (§5.2), since a UNIQUE cannot span two tables. Expired holds
 -- are ignored by that condition, and purged opportunistically.
@@ -171,7 +166,7 @@ CREATE INDEX username_holds_by_expiry   ON username_holds(hold_until);
 
 -- Name rules, as data, so they can change without a code change or redeploy (decision 4).
 CREATE TABLE username_rules (
-  term       TEXT    NOT NULL,            -- compared against the skeleton
+  term       TEXT    NOT NULL,            -- lowercase; compared against username_key
   match_kind TEXT    NOT NULL CHECK (match_kind IN ('exact', 'contains')),
   category   TEXT    NOT NULL CHECK (category IN ('system', 'offensive', 'removed')),
   created_at INTEGER NOT NULL,
@@ -443,10 +438,9 @@ SELECT user_id, (user_id = ?1) AS created FROM auth_identities
 
 Username claim (Phase 3, shown so the pattern is reviewed with the schema).
 One conditional `INSERT … ON CONFLICT(user_id) DO UPDATE` that succeeds only
-if all of the following hold, with `UNIQUE(username_key)` and
-`UNIQUE(username_skeleton)` catching a simultaneous claim by someone else:
+if all of the following hold, with `UNIQUE(username_key)` catching a simultaneous claim by someone else:
 
-- no unexpired hold on the key or skeleton belongs to another user;
+- no unexpired hold on the key belongs to another user;
 - no `username_rules` entry matches;
 - the 30-day cooldown has passed, or this is the first name;
 
