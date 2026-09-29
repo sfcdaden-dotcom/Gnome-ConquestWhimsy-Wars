@@ -158,6 +158,12 @@ test('a refresh keeps your seat and your hand', async ({ page }) => {
  * whether your friend has turned up. It used to drop you on the home screen
  * with no way back but retyping the code, and it moved the start button to the
  * guest on the way out.
+ *
+ * The host's gnome has to survive it as well. It used to live in React state
+ * alone, so a reload sent the DEFAULT gnome on hello and the room replaced the
+ * chosen one — the seat came back, the character did not. (Checked here rather
+ * than in a test of its own: the suite already opens as many rooms a minute as
+ * the per-IP create limit allows, and one more tips the last test into a 429.)
  */
 test('a host can reload the lobby while waiting, and still be the host', async ({ browser }) => {
   const hostCtx = await browser.newContext();
@@ -168,6 +174,19 @@ test('a host can reload the lobby while waiting, and still be the host', async (
   await host.goto('/');
   await host.getByTestId('home-online').click();
   await host.getByTestId('online-name').fill('Ada');
+
+  // A gnome of the host's own, not the stock one.
+  const chip = host.locator('[data-testid="online-gnome"] img.gnome-portrait');
+  await expect(chip).toHaveAttribute('src', /^data:image\/png/, { timeout: 10_000 });
+  const stock = await chip.getAttribute('src');
+  await host.getByTestId('online-gnome').click();
+  const capBefore = await host.getByTestId('gnome-cap-value').textContent();
+  await host.getByTestId('gnome-cap-next').click();
+  await expect(host.getByTestId('gnome-cap-value')).not.toHaveText(capBefore ?? '');
+  await host.getByTestId('gnome-save').click();
+  await expect(chip).not.toHaveAttribute('src', stock ?? '');
+  const chosen = (await chip.getAttribute('src')) ?? '';
+
   await host.getByTestId('online-host').click();
   await expect(host.getByTestId('room-lobby')).toBeVisible();
   const code = (await host.getByTestId('lobby-code').textContent())!.trim();
@@ -177,6 +196,11 @@ test('a host can reload the lobby while waiting, and still be the host', async (
   await expect(guest.getByTestId('room-lobby')).toBeVisible();
 
   await host.reload();
+
+  // Still the host's own gnome on seat 1, on both screens.
+  const hostSeatGnome = (page: typeof host) => page.locator('[data-testid="lobby-seat-0"] img.custom-gnome');
+  await expect(hostSeatGnome(host)).toHaveAttribute('src', chosen, { timeout: 10_000 });
+  await expect(hostSeatGnome(guest)).toHaveAttribute('src', chosen, { timeout: 10_000 });
 
   // Same room, no retyping — and the start button did not emigrate.
   await expect(host.getByTestId('room-lobby')).toBeVisible();

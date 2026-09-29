@@ -24,9 +24,13 @@ export default defineConfig({
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   // Test the production bundle: closest to what players get, and it fails the
-  // run if the build itself is broken.
+  // run if the build itself is broken. The local D1 database is migrated first
+  // (idempotent), and e2e/schema.spec.ts proves the Worker this serves reads
+  // that same database. No --env on either step: both must resolve the same
+  // top-level database binding.
   webServer: {
-    command: 'npm run build && npx vite preview --port 4173 --strictPort --host localhost',
+    command:
+      'npm run db:migrate:local && npm run build && npx vite preview --port 4173 --strictPort --host localhost',
     url: 'http://localhost:4173',
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,

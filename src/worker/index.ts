@@ -5,6 +5,7 @@
  *   POST /api/rooms            → { code } for a fresh private room
  *   GET  /api/rooms/:code      → the room's public snapshot (does it exist?)
  *   GET  /api/rooms/:code/ws   → WebSocket upgrade into the room
+ *   GET  /api/health           → 200 when the database has the schema this code expects, else 503
  *   everything else            → the SPA assets, exactly as before
  *
  * Rooms are private by construction: there is no list endpoint and no lobby.
@@ -35,6 +36,8 @@
 
 import { ROOM_CODE_LENGTH } from '../net/protocol';
 import { generateRoomCode } from '../net/room';
+import { fromD1 } from './db/db';
+import { schemaIsCurrent } from './db/schema';
 
 export { RoomDurableObject } from './room-do';
 
@@ -50,6 +53,12 @@ interface WorkerEnv {
    */
   ROOM_CREATE_LIMIT?: RateLimit;
   ROOM_JOIN_LIMIT?: RateLimit;
+  HEALTH_LIMIT?: RateLimit;
+  /**
+   * The accounts database (ACCOUNTS.md, migrations/). Every SQL statement
+   * lives in src/worker/db/; nothing else touches this binding directly.
+   */
+  DB: D1Database;
 }
 
 const ROOM_PATH = /^\/api\/rooms\/([A-Za-z0-9]+)(\/ws)?$/;
@@ -120,6 +129,16 @@ export default {
       const forwarded = new URL(request.url);
       forwarded.searchParams.set('code', code);
       return stub.fetch(new Request(forwarded, request));
+    }
+
+    // Is the database migrated to what this code expects? 200 or 503, and
+    // nothing else — no migration names, no counts. The post-deploy check in
+    // DEPLOYMENT.md, and the e2e proof that the suite's Worker reads the
+    // database the suite migrated. Metered because every call reads D1.
+    if (url.pathname === '/api/health' && request.method === 'GET') {
+      if (await overLimit(env.HEALTH_LIMIT, callerKey(request))) return tooManyRequests();
+      const ok = await schemaIsCurrent(fromD1(env.DB));
+      return json({ ok }, ok ? 200 : 503);
     }
 
     if (url.pathname.startsWith('/api/')) return json({ error: 'Not found' }, 404);

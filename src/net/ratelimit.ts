@@ -123,6 +123,14 @@ export const MESSAGE_COST: Record<ClientMessage['t'], number> = {
 };
 
 /**
+ * What a message the boundary refused costs (see `parseClientMessage`). Priced
+ * like `configure`: it is a parse plus an error frame, and garbage must drain a
+ * sender's budget at least as fast as honest work does, or malformed messages
+ * would be the cheap way to keep a room busy.
+ */
+export const REJECTED_MESSAGE_COST = 4;
+
+/**
  * One connection's burst and sustained budget.
  *
  * 60 tokens is 30 actions back to back; 10/s is 5 actions per second forever.

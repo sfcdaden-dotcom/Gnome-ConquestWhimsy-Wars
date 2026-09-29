@@ -1,0 +1,11 @@
+# Local secrets for `wrangler dev` / `vite preview`. Copy to .dev.vars (which
+# is git-ignored) and fill in. Names only here; never commit a value.
+#
+# Nothing is needed yet: Phase 1 (the database foundation) uses no secrets.
+# Phase 2 (Google sign-in) will add, per environment:
+#
+# GOOGLE_CLIENT_SECRET=
+# OAUTH_COOKIE_KEY=
+#
+# Staging and production get theirs with `wrangler secret put <NAME>`
+# (add `--env staging` for staging) and each has its own values.

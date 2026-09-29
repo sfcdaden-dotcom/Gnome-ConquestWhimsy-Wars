@@ -21,7 +21,7 @@
 import { createSeal } from '../net/commitment';
 import type { PersistedRoom, RoomConnection, RoomStore } from '../net/room';
 import { Room } from '../net/room';
-import type { ClientMessage, ServerMessage } from '../net/protocol';
+import type { ServerMessage } from '../net/protocol';
 import { PROTOCOL_VERSION, parseClientMessage } from '../net/protocol';
 
 /** What a hibernating socket remembers about itself. */
@@ -196,31 +196,46 @@ export class RoomDurableObject implements DurableObject {
     const room = await this.roomFor('');
     const conn = this.connection(ws, at.connId);
 
-    let parsed: ClientMessage | null = null;
+    let raw: unknown;
     try {
-      parsed = parseClientMessage(JSON.parse(typeof data === 'string' ? data : new TextDecoder().decode(data)));
+      raw = JSON.parse(typeof data === 'string' ? data : new TextDecoder().decode(data));
     } catch {
-      parsed = null;
+      raw = undefined;
     }
-    if (!parsed) {
-      conn.send({ t: 'error', code: 'PROTOCOL', message: 'Unreadable message' });
+    // Every field is checked here, before the room sees the message; see
+    // `parseClientMessage`. A refusal is metered like any other message.
+    const parsed = parseClientMessage(raw);
+    if ('error' in parsed) {
+      room.reject(at.connId, conn, parsed.error, parsed.message);
       return;
     }
 
-    if (parsed.t === 'hello') {
-      await room.hello(conn, parsed);
-      // Remember who this socket is, so hibernation cannot lose the seat.
-      const token = room.tokenFor(at.connId);
-      if (token) {
-        ws.serializeAttachment({
-          connId: at.connId,
-          token,
-          ...(parsed.spectate ? { spectate: true } : {}),
-        } satisfies SocketAttachment);
+    try {
+      if (parsed.t === 'hello') {
+        await room.hello(conn, parsed);
+        // Remember who this socket is, so hibernation cannot lose the seat.
+        const token = room.tokenFor(at.connId);
+        if (token) {
+          ws.serializeAttachment({
+            connId: at.connId,
+            token,
+            ...(parsed.spectate ? { spectate: true } : {}),
+          } satisfies SocketAttachment);
+        }
+        return;
       }
-      return;
+      await room.handle(at.connId, parsed);
+    } catch (err) {
+      // The room answers everything it expects with an error frame of its own,
+      // so reaching here is a bug. Log what kind of message tripped it, never
+      // its contents (names and gnomes are player data), and keep the socket:
+      // one bad message must not cost somebody their seat.
+      console.error('room: unexpected error handling a message', {
+        t: parsed.t,
+        error: err instanceof Error ? err.name : typeof err,
+      });
+      room.reject(at.connId, conn, 'PROTOCOL', 'The room could not process that message');
     }
-    await room.handle(at.connId, parsed);
   }
 
   async webSocketClose(ws: WebSocket): Promise<void> {

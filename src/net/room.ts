@@ -57,6 +57,7 @@ import {
   finishFlyGames,
   trainedFlyBrain,
   createGame,
+  findGardenPreset,
   getPlayerToAct,
   getTimeoutAction,
   isGameOver,
@@ -76,6 +77,7 @@ import type {
   ShotClock,
 } from './protocol';
 import {
+  AI_DIFFICULTIES,
   CLOSE_PROTOCOL,
   CLOSE_RATE_LIMITED,
   CLOSE_ROOM_CLOSED,
@@ -98,10 +100,13 @@ import {
   FLOOD_DISCONNECT_AFTER,
   MAX_CONNECTIONS,
   MESSAGE_COST,
+  REJECTED_MESSAGE_COST,
   ROOM_BUCKET_CAPACITY,
   ROOM_BUCKET_REFILL_PER_SEC,
   TokenBucket,
 } from './ratelimit';
+import { validateLookWire } from './lookSchema';
+import { sanitizeSeatName } from './names';
 
 // ---------------------------------------------------------------------------
 // Host interface (everything platform-shaped)
@@ -215,10 +220,10 @@ export interface PersistedSeat {
   controller: 'human' | 'cpu';
   difficulty: AiDifficulty;
   /**
-   * The gnome this seat plays, as its client sent it. Stored verbatim and
-   * never read by the room — appearance is the clients' business, and a room
-   * that tried to validate hat ids would need updating every time somebody
-   * drew a new hat.
+   * The gnome this seat plays. Shape-checked (`validateLookWire`) and stored
+   * as a fresh copy, but never interpreted — appearance is the clients'
+   * business, and a room that validated hat ids against the catalogue would
+   * need updating every time somebody drew a new hat.
    */
   look?: GnomeLookWire;
   /** The room took this seat over for inactivity (not a lobby CPU seat). */
@@ -297,6 +302,14 @@ function defaultSeats(count: 2 | 4): PersistedSeat[] {
     controller: 'human' as const,
     difficulty: 'normal' as AiDifficulty,
   }));
+}
+
+function isController(v: unknown): v is PersistedSeat['controller'] {
+  return v === 'human' || v === 'cpu';
+}
+
+function isDifficulty(v: unknown): v is AiDifficulty {
+  return (AI_DIFFICULTIES as readonly unknown[]).includes(v);
 }
 
 class RoomError extends Error {
@@ -429,6 +442,14 @@ export class Room {
     room.data.clock ??= null;
     room.data.graceUntil ??= null;
     room.data.reapAt ??= null;
+    // Before the boundary checked lobby settings, a host could store any
+    // controller or difficulty string. Such a room is at most a few hours old;
+    // settle it to values the room and the engine understand rather than
+    // refusing its host every future edit.
+    for (const seat of room.data.seats) {
+      if (!isController(seat.controller)) seat.controller = 'cpu';
+      if (!isDifficulty(seat.difficulty)) seat.difficulty = 'normal';
+    }
     if (stored && stored.config && stored.seed !== null) room.hydrate();
     return room;
   }
@@ -503,6 +524,14 @@ export class Room {
     // through `handle`, so this is the only place it can be charged.
     if (!this.admit(conn.id, conn, 'hello')) return;
 
+    // Worked out before anything is minted or stored, so nothing below can
+    // fail halfway through changing the room. The boundary (parseClientMessage)
+    // has already checked both; they are re-checked here because `hello` is
+    // also called directly — by the Durable Object re-attaching sockets, and by
+    // tests — and the room should not depend on its caller for its own safety.
+    const name = sanitizeSeatName(message.name);
+    const look = message.look === undefined ? null : validateLookWire(message.look);
+
     const token = known ? (message.token as string) : this.mintToken();
 
     // One token, one live connection. A second tab (or a reconnect the room
@@ -543,10 +572,11 @@ export class Room {
     if (seat === null && !spectating) seat = this.claimSeat();
     this.data.tokens[token] = seat;
 
-    if (message.name && seat !== null) this.data.seats[seat].name = message.name.slice(0, 24);
+    if (name !== null && seat !== null) this.data.seats[seat].name = name;
     // A returning player's gnome arrives with every hello, so a reconnect
-    // restores their character along with their seat and their hand.
-    if (message.look && seat !== null) this.data.seats[seat].look = message.look;
+    // restores their character along with their seat and their hand. Stored as
+    // validated — a fresh object of exactly the look's keys, never the caller's.
+    if (look !== null && seat !== null) this.data.seats[seat].look = look;
 
     this.conns.set(conn.id, { conn, token, seat, spectating, announced: null });
     this.settleHost(token, message.hostKey, spectating, seat);
@@ -816,6 +846,22 @@ export class Room {
    * would be the same amplification the limit exists to stop.
    */
   private admit(connId: string, conn: RoomConnection, t: ClientMessage['t']): boolean {
+    return this.admitCost(connId, conn, MESSAGE_COST[t], t === 'hello');
+  }
+
+  /**
+   * A message the boundary refused (see `parseClientMessage`): charged like any
+   * other before it is answered, so a flood of garbage drains the same budget —
+   * and reaches the same hang-up — as a flood of real work. It used to be
+   * answered for free.
+   */
+  reject(connId: string, conn: RoomConnection, code: RoomErrorCode, message: string): void {
+    if (this.isClosed) return;
+    if (!this.admitCost(connId, conn, REJECTED_MESSAGE_COST, false)) return;
+    conn.send({ t: 'error', code, message });
+  }
+
+  private admitCost(connId: string, conn: RoomConnection, cost: number, isHello: boolean): boolean {
     const now = this.host.now();
     let meter = this.meters.get(connId);
     if (!meter) {
@@ -827,7 +873,6 @@ export class Room {
       this.meters.set(connId, meter);
     }
     this.roomBucket ??= new TokenBucket(ROOM_BUCKET_CAPACITY, ROOM_BUCKET_REFILL_PER_SEC, now);
-    const cost = MESSAGE_COST[t];
 
     if (!meter.bucket.take(now, cost)) {
       meter.dropped++;
@@ -855,7 +900,7 @@ export class Room {
     // Object wakes from hibernation, or a table's worth of phones coming back
     // from one flaky access point — looked precisely like an attack, and the
     // room would answer the reconnect it exists to support with "try later".
-    if (t !== 'hello' && !this.roomBucket.take(now, cost)) {
+    if (!isHello && !this.roomBucket.take(now, cost)) {
       this.warn(meter, conn, 'The room is busier than it will serve right now — try again in a moment.');
       return false;
     }
@@ -949,21 +994,48 @@ export class Room {
       throw new RoomError('WRONG_PHASE', 'The game has already started');
     }
 
+    // Everything is worked out on copies and checked BEFORE any of it is
+    // applied. It used to be applied field by field, so a message whose third
+    // seat was bad had already changed the first two by the time it was
+    // refused — a refusal that nonetheless changed the table.
+    let seats = this.data.seats.map((s) => ({ ...s }));
     if (message.playerCount !== undefined) {
       if (message.playerCount !== 2 && message.playerCount !== 4) {
         throw new RoomError('BAD_CONFIG', 'Whimsy Wars seats exactly 2 or 4 players');
       }
-      this.data.seats = this.resizeSeats(message.playerCount);
+      seats = this.resizeSeats(seats, message.playerCount);
     }
+    let boardSize = this.data.boardSize;
     if (message.boardSize !== undefined) {
       const n = message.boardSize;
       if (!Number.isInteger(n) || n < 5 || n % 2 === 0) {
         throw new RoomError('BAD_CONFIG', 'boardSize must be an odd integer >= 5');
       }
-      this.data.boardSize = n;
+      boardSize = n;
     }
-    if (message.gardenPreset !== undefined) this.data.gardenPreset = message.gardenPreset;
-    for (const seat of message.seats ?? []) this.applySeatConfig(seat);
+    let gardenPreset = this.data.gardenPreset;
+    if (message.gardenPreset !== undefined) {
+      // Only layouts the room can actually deal. Anything else used to be
+      // stored as-is and fail later, at start, as somebody else's problem.
+      if (!findGardenPreset(message.gardenPreset)) {
+        throw new RoomError('BAD_CONFIG', 'Unknown board layout');
+      }
+      gardenPreset = message.gardenPreset;
+    }
+    if (message.boardSize !== undefined || message.gardenPreset !== undefined) {
+      const layout = findGardenPreset(gardenPreset);
+      if (layout && boardSize < layout.minBoardSize) {
+        throw new RoomError(
+          'BAD_CONFIG',
+          `${layout.label} needs a board of at least ${layout.minBoardSize}×${layout.minBoardSize}`,
+        );
+      }
+    }
+    for (const seat of message.seats ?? []) this.applySeatConfig(seats, seat);
+
+    this.data.seats = seats;
+    this.data.boardSize = boardSize;
+    this.data.gardenPreset = gardenPreset;
 
     // Nobody is left holding a seat the host just turned into a CPU (or a seat
     // that a shrink to two players removed).
@@ -983,19 +1055,30 @@ export class Room {
     this.broadcastRoom();
   }
 
-  private resizeSeats(count: 2 | 4): PersistedSeat[] {
+  private resizeSeats(current: PersistedSeat[], count: 2 | 4): PersistedSeat[] {
     const next = defaultSeats(count);
-    for (let i = 0; i < next.length && i < this.data.seats.length; i++) next[i] = this.data.seats[i];
+    for (let i = 0; i < next.length && i < current.length; i++) next[i] = current[i];
     return next;
   }
 
-  private applySeatConfig(cfg: SeatConfig): void {
-    const seat = this.data.seats[cfg.index];
-    if (!seat) throw new RoomError('BAD_CONFIG', `No seat ${cfg.index}`);
+  /** Apply one seat edit to `seats` (a working copy). Throws, applying nothing, on a bad one. */
+  private applySeatConfig(seats: PersistedSeat[], cfg: SeatConfig): void {
+    const seat = seats[cfg.index];
+    if (!seat) throw new RoomError('BAD_CONFIG', `No seat ${cfg.index + 1}`);
+    if (cfg.controller !== undefined && !isController(cfg.controller)) {
+      throw new RoomError('BAD_CONFIG', `Seat ${cfg.index + 1}: a seat is either human or cpu`);
+    }
+    if (cfg.difficulty !== undefined && !isDifficulty(cfg.difficulty)) {
+      throw new RoomError('BAD_CONFIG', `Seat ${cfg.index + 1}: unknown difficulty`);
+    }
+    const look = cfg.look === undefined ? undefined : validateLookWire(cfg.look);
+    if (look === null) throw new RoomError('BAD_CONFIG', `Seat ${cfg.index + 1}: malformed gnome`);
+
     if (cfg.controller) seat.controller = cfg.controller;
     if (cfg.difficulty) seat.difficulty = cfg.difficulty;
-    if (cfg.name) seat.name = cfg.name.slice(0, 24);
-    if (cfg.look) seat.look = cfg.look;
+    const name = sanitizeSeatName(cfg.name);
+    if (name !== null) seat.name = name;
+    if (look) seat.look = look;
   }
 
   /**

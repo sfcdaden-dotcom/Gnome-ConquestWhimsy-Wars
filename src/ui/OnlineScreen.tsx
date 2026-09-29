@@ -41,6 +41,7 @@ import {
   recentRoom,
   roomCodeFromSearch,
   roomHref,
+  savedLook,
 } from './netClient';
 import { HOST_GRACE_MS, ROOM_CODE_LENGTH } from '../net/protocol';
 import type { RoomClosedReason } from '../net/protocol';
@@ -66,7 +67,12 @@ export function OnlineScreen({ onBack }: { onBack: () => void }) {
   // learns either of them on `hello`. A look stores palette INDICES rather
   // than colours, so it simply re-renders in whichever seat's colour you land
   // in — see gnomeLook.ts.
-  const [look, setLook] = useState<GnomeLook>(defaultLook);
+  const [look, setLook] = useState<GnomeLook>(() => {
+    // Kept across reloads (see LOOK_KEY): a page reload inside a room sends
+    // this on `hello`, so a default here would overwrite the seat's gnome.
+    const stored = savedLook.load(localStorage);
+    return stored === undefined ? defaultLook() : sanitizeLook(stored);
+  });
 
   useEffect(() => {
     syncUrl(code);
@@ -90,7 +96,10 @@ export function OnlineScreen({ onBack }: { onBack: () => void }) {
         localStorage.setItem(NAME_KEY, n);
       }}
       look={look}
-      setLook={setLook}
+      setLook={(l) => {
+        setLook(l);
+        savedLook.save(localStorage, l);
+      }}
       onEnter={setCode}
       onBack={onBack}
     />
