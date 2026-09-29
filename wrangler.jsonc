@@ -52,6 +52,13 @@
       "name": "ROOM_JOIN_LIMIT",
       "namespace_id": "1002",
       "simple": { "limit": 60, "period": 60 }
+    },
+    {
+      // GET /api/health reads D1 on every call. A monitor checks it once a
+      // minute; thirty is generous for people and stingy for a flood.
+      "name": "HEALTH_LIMIT",
+      "namespace_id": "1003",
+      "simple": { "limit": 30, "period": 60 }
     }
   ],
   // Accounts (ACCOUNTS.md). One D1 database per environment; the schema is
@@ -103,6 +110,11 @@
           "name": "ROOM_JOIN_LIMIT",
           "namespace_id": "2002",
           "simple": { "limit": 60, "period": 60 }
+        },
+        {
+          "name": "HEALTH_LIMIT",
+          "namespace_id": "2003",
+          "simple": { "limit": 30, "period": 60 }
         }
       ],
       // Pin the id from `wrangler d1 create gnomeconquest-staging` here too.

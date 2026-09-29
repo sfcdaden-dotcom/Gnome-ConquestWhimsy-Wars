@@ -1,8 +1,22 @@
 # Phase 1 — Persistence foundation (implementation spec + schema for review)
 
-**Status: approved 2026-09-29. `0001_identity.sql` is frozen (§3), and
-Phase 1 is being implemented as PRs 1-A to 1-D. Nothing has been applied to
-staging or production.**
+**Status: implemented 2026-09-29** as four commits titled "Phase 1 (1/4)"
+through "(4/4)". `0001_identity.sql` is frozen (§3). It has been applied only
+to local and test databases. **Not yet applied to staging or production**:
+that needs the human steps in DEPLOYMENT.md first (`wrangler d1 create`,
+pinning the ids).
+
+As built, relative to §6:
+- The Room DO does not take `env` yet. Nothing needs it before Phase 5, and
+  an unused parameter fails this repo's lint settings.
+- `LATEST_MIGRATION` in `src/worker/db/schema.ts` is a constant, kept in step
+  with the folder by a unit test, not derived at build time.
+
+Verification: 2,984 unit tests, lint, `tsc -b` and the build are clean. All
+77 Playwright tests pass from an empty local state, including
+`e2e/schema.spec.ts`. A manual negative control confirmed `/api/health`
+answers 503 on an unmigrated local database and 200 after
+`npm run db:migrate:local`.
 
 This is the document to review before a persistent database becomes part of
 the application. It contains:

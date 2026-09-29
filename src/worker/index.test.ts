@@ -10,6 +10,8 @@
 
 import { describe, expect, it } from 'vitest';
 import worker from './index';
+import type { TestDb } from './db/testDb';
+import { createTestDb, migrations, recordApplied } from './db/testDb';
 
 interface Forwarded {
   room: string;
@@ -18,7 +20,7 @@ interface Forwarded {
 }
 
 /** A fake env: rooms that record what reaches them, assets, and limiters. */
-function makeEnv(opts: { createAllowed?: boolean; joinAllowed?: boolean } = {}) {
+function makeEnv(opts: { createAllowed?: boolean; joinAllowed?: boolean; healthAllowed?: boolean; db?: TestDb } = {}) {
   const forwarded: Forwarded[] = [];
   const limited: Array<{ limiter: string; key: string }> = [];
   const limiter = (name: string, allowed: boolean) => ({
@@ -42,6 +44,8 @@ function makeEnv(opts: { createAllowed?: boolean; joinAllowed?: boolean } = {}) 
     ASSETS: { fetch: async () => new Response('the bundle', { status: 200 }) },
     ROOM_CREATE_LIMIT: limiter('create', opts.createAllowed ?? true),
     ROOM_JOIN_LIMIT: limiter('join', opts.joinAllowed ?? true),
+    HEALTH_LIMIT: limiter('health', opts.healthAllowed ?? true),
+    DB: opts.db ?? createTestDb(),
   };
   return { env, forwarded, limited };
 }
@@ -126,6 +130,35 @@ describe('/api/rooms/:code', () => {
       }
     }
     expect(forwarded).toHaveLength(0);
+  });
+});
+
+describe('GET /api/health', () => {
+  it('answers 200 when the database has the schema the code expects', async () => {
+    const db = createTestDb();
+    recordApplied(db, ...migrations().map((m) => m.name));
+    const res = await call(makeEnv({ db }).env, '/api/health');
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true });
+    expect(res.headers.get('cache-control')).toBe('no-store');
+  });
+
+  it('answers 503, and says nothing more, when it does not', async () => {
+    const res = await call(makeEnv().env, '/api/health');
+    expect(res.status).toBe(503);
+    expect(await res.json()).toEqual({ ok: false });
+  });
+
+  it('is metered per caller', async () => {
+    const { env, limited } = makeEnv({ healthAllowed: false });
+    const res = await call(env, '/api/health');
+    expect(res.status).toBe(429);
+    expect(limited).toEqual([{ limiter: 'health', key: '203.0.113.7' }]);
+  });
+
+  it('only answers GET', async () => {
+    const res = await call(makeEnv().env, '/api/health', { method: 'POST' });
+    expect(res.status).toBe(404);
   });
 });
 

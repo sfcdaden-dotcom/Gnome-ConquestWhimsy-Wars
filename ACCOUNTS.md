@@ -1,8 +1,8 @@
 # Accounts, profiles & social — architecture audit and proposal
 
-**Status: architecture approved 2026-09-29. Phase 0.5 implemented. Phase 1's
-repository and testing strategy provisionally approved; final approval waits
-on review of `0001_identity.sql`. Nothing in this document is
+**Status: architecture approved 2026-09-29. Phase 0.5 implemented. Phase 1
+implemented, with `0001_identity.sql` frozen; it has not been applied to
+staging or production yet. Phase 2 has not started. Nothing in this document is
 implemented yet.** It audits the repository as of `43ffa51` and describes how
 persistent player accounts will be added without destabilising what already
 works. The product owner's decisions are recorded in

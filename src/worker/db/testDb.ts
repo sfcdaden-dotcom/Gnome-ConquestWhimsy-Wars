@@ -120,3 +120,14 @@ export function createTestDb(options: { upTo?: string } = {}): TestDb {
     },
   };
 }
+
+/**
+ * Record migrations as applied, the way wrangler does in `d1_migrations` —
+ * for testing code that asks whether the schema is current.
+ */
+export function recordApplied(db: TestDb, ...names: string[]): void {
+  db.raw.exec(
+    'CREATE TABLE IF NOT EXISTS d1_migrations (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE, applied_at TEXT)',
+  );
+  for (const name of names) db.raw.prepare('INSERT INTO d1_migrations (name) VALUES (?)').run(name);
+}
