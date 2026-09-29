@@ -78,6 +78,7 @@ import type {
 } from './protocol';
 import {
   AI_DIFFICULTIES,
+  BOARD_SIZE_RULE,
   CLOSE_PROTOCOL,
   CLOSE_RATE_LIMITED,
   CLOSE_ROOM_CLOSED,
@@ -86,6 +87,7 @@ import {
   CONTROL_BUDGET_MS,
   EMPTY_ROOM_REAP_MS,
   HOST_GRACE_MS,
+  isSupportedBoardSize,
   TOMBSTONE_TTL_MS,
   PROTOCOL_VERSION,
   ROOM_CODE_ALPHABET,
@@ -1008,9 +1010,7 @@ export class Room {
     let boardSize = this.data.boardSize;
     if (message.boardSize !== undefined) {
       const n = message.boardSize;
-      if (!Number.isInteger(n) || n < 5 || n % 2 === 0) {
-        throw new RoomError('BAD_CONFIG', 'boardSize must be an odd integer >= 5');
-      }
+      if (!isSupportedBoardSize(n)) throw new RoomError('BAD_CONFIG', BOARD_SIZE_RULE);
       boardSize = n;
     }
     let gardenPreset = this.data.gardenPreset;

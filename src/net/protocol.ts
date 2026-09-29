@@ -19,12 +19,45 @@
  * client afterwards.
  */
 
-import type { Action, AiDifficulty, GameSeal, GardenPreset, PlayerView } from '../engine';
+import type {
+  Action,
+  ActionType,
+  AiDifficulty,
+  CardTarget,
+  CardTargets,
+  GameSeal,
+  GardenPreset,
+  HomeHarvestChoice,
+  PlantableGardenType,
+  PlayerId,
+  PlayerView,
+  Pos,
+  QuickChatTarget,
+} from '../engine';
 import type { MatchRecord } from '../engine';
+import { PLANTABLE_GARDEN_TYPES } from '../engine';
 import { validateLookWire } from './lookSchema';
 
 /** Bumped on any breaking change to the messages below. */
 export const PROTOCOL_VERSION = 3;
+
+/**
+ * The board sizes a room will deal: odd, and between these two inclusive.
+ *
+ * The engine itself has no ceiling, but every client renders `boardSize²`
+ * cells, so a host who could pick any odd number could freeze every browser at
+ * the table with one `configure`. The top is the largest size the setup screen
+ * offers (`BOARD_SIZES` in src/ui/advancedSettings.ts, whose test holds the two
+ * together).
+ */
+export const MIN_BOARD_SIZE = 5;
+export const MAX_BOARD_SIZE = 13;
+
+export function isSupportedBoardSize(n: unknown): n is number {
+  return typeof n === 'number' && Number.isInteger(n) && n % 2 === 1 && n >= MIN_BOARD_SIZE && n <= MAX_BOARD_SIZE;
+}
+
+export const BOARD_SIZE_RULE = `boardSize must be an odd integer from ${MIN_BOARD_SIZE} to ${MAX_BOARD_SIZE}`;
 
 /** Room codes: 6 chars, no vowels (no accidental words) and no 0/O/1/I/L. */
 export const ROOM_CODE_ALPHABET = 'BCDFGHJKMNPQRSTVWXYZ23456789';
@@ -441,27 +474,20 @@ const MAX_PRESET_ID = 64;
  */
 export const MAX_ACTION_BYTES = 2048;
 
-/** Every top-level key any `Action` has. Anything else is dropped before the record sees it. */
-type AllKeys<T> = T extends unknown ? keyof T : never;
-const ACTION_KEYS = [
-  'type',
-  'player',
-  'sourceKey',
-  'take',
-  'to',
-  'cardId',
-  'targets',
-  'accept',
-  'unitId',
-  'target',
-  'pos',
-  'gardenType',
-  'phraseId',
-] as const satisfies readonly AllKeys<Action>[];
-// The reverse direction: a key added to `Action` must be added above, or this fails to compile.
-type MissingActionKey = Exclude<AllKeys<Action>, (typeof ACTION_KEYS)[number]>;
-const _everyActionKeyListed: [MissingActionKey] extends [never] ? true : never = true;
-void _everyActionKeyListed;
+/**
+ * The largest frame the room will decode, in bytes for a binary frame and in
+ * UTF-16 code units for a text one (never more than its UTF-8 byte count).
+ *
+ * Checked BEFORE the frame is decoded or parsed: the per-field caps below only
+ * run once `JSON.parse` has already paid for the whole payload, and the rate
+ * limiter only sees a message after that. The biggest honest message is a
+ * four-seat `configure` with every name at `MAX_RAW_NAME` — under 9 KiB even
+ * if every character were escaped — so this is headroom, not a squeeze.
+ */
+export const MAX_FRAME_BYTES = 16 * 1024;
+
+/** Card, unit, phrase and harvest-source ids are short slugs; the longest today is 24. */
+const MAX_ID = 64;
 
 const CONTROLLERS: readonly string[] = ['human', 'cpu'];
 /**
@@ -556,9 +582,7 @@ function parseConfigure(raw: Record<string, unknown>): ClientMessage | ClientMes
     out.playerCount = playerCount;
   }
   if (boardSize !== undefined) {
-    if (typeof boardSize !== 'number' || !Number.isInteger(boardSize)) {
-      return refuse('BAD_CONFIG', 'boardSize must be an odd integer >= 5');
-    }
+    if (!isSupportedBoardSize(boardSize)) return refuse('BAD_CONFIG', BOARD_SIZE_RULE);
     out.boardSize = boardSize;
   }
   if (gardenPreset !== undefined) {
@@ -613,14 +637,237 @@ function parseSeatConfig(raw: unknown): SeatConfig | ClientMessageError {
   return out;
 }
 
+/**
+ * Decode and parse one WebSocket frame. The size is checked first, so an
+ * oversized frame costs a length comparison rather than a decode and a parse.
+ * Never throws.
+ */
+export function parseClientFrame(data: string | ArrayBuffer): ClientMessage | ClientMessageError {
+  const size = typeof data === 'string' ? data.length : data.byteLength;
+  if (size > MAX_FRAME_BYTES) return refuse('PROTOCOL', 'Message too large');
+  let raw: unknown;
+  try {
+    raw = JSON.parse(typeof data === 'string' ? data : new TextDecoder().decode(data));
+  } catch {
+    raw = undefined;
+  }
+  return parseClientMessage(raw);
+}
+
+// --- actions ---------------------------------------------------------------
+//
+// Each action type has its own builder, which reads exactly the fields that
+// type carries and builds a fresh object from them — nested targets included.
+// It used to copy any key that SOME action had, so a `quickChat` could carry a
+// `pos`, and a `target` of the right kind could carry any text beside its
+// coordinate straight into the `quickChatSaid` event everyone receives.
+//
+// These check shape only. Whether the unit exists, the square is on this
+// board, or the card is in hand is the engine's to say, exactly as before.
+
+type ActionOf<T extends ActionType> = Extract<Action, { type: T }>;
+type Fields = Record<string, unknown>;
+
+function id(v: unknown): string | null {
+  return typeof v === 'string' && v.length > 0 && v.length <= MAX_ID ? v : null;
+}
+
+function seat(v: unknown): PlayerId | null {
+  return typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 3 ? v : null;
+}
+
+function coord(v: unknown): v is number {
+  return typeof v === 'number' && Number.isInteger(v) && v >= 0 && v < MAX_BOARD_SIZE;
+}
+
+function pos(v: unknown): Pos | null {
+  return isPlainObject(v) && coord(v.x) && coord(v.y) ? { x: v.x, y: v.y } : null;
+}
+
+function plantable(v: unknown): PlantableGardenType | null {
+  return (PLANTABLE_GARDEN_TYPES as readonly unknown[]).includes(v) ? (v as PlantableGardenType) : null;
+}
+
+/** Every element valid, or null. */
+function listOf<T>(v: unknown, one: (x: unknown) => T | null): T[] | null {
+  if (!Array.isArray(v)) return null;
+  const out: T[] = [];
+  for (const x of v) {
+    const ok = one(x);
+    if (ok === null) return null;
+    out.push(ok);
+  }
+  return out;
+}
+
+function cardTarget(v: unknown): CardTarget | null {
+  if (!isPlainObject(v)) return null;
+  switch (v.kind) {
+    case 'unit': {
+      const unitId = id(v.unitId);
+      return unitId === null ? null : { kind: 'unit', unitId };
+    }
+    case 'space': {
+      const p = pos(v.pos);
+      return p === null ? null : { kind: 'space', pos: p };
+    }
+    case 'player': {
+      const playerId = seat(v.playerId);
+      return playerId === null ? null : { kind: 'player', playerId };
+    }
+    case 'card': {
+      const cardId = id(v.cardId);
+      return cardId === null ? null : { kind: 'card', cardId };
+    }
+    case 'gardenType': {
+      const gardenType = plantable(v.gardenType);
+      return gardenType === null ? null : { kind: 'gardenType', gardenType };
+    }
+    default:
+      return null;
+  }
+}
+
+function cardTargets(v: unknown): CardTargets | null {
+  if (!isPlainObject(v)) return null;
+  const out: CardTargets = {};
+  if (v.units !== undefined) {
+    const units = listOf(v.units, id);
+    if (!units) return null;
+    out.units = units;
+  }
+  if (v.spaces !== undefined) {
+    const spaces = listOf(v.spaces, pos);
+    if (!spaces) return null;
+    out.spaces = spaces;
+  }
+  if (v.players !== undefined) {
+    const players = listOf(v.players, seat);
+    if (!players) return null;
+    out.players = players;
+  }
+  if (v.cards !== undefined) {
+    const cards = listOf(v.cards, id);
+    if (!cards) return null;
+    out.cards = cards;
+  }
+  if (v.gardenType !== undefined) {
+    const gardenType = plantable(v.gardenType);
+    if (!gardenType) return null;
+    out.gardenType = gardenType;
+  }
+  return out;
+}
+
+function quickChatTarget(v: unknown): QuickChatTarget | null {
+  if (!isPlainObject(v)) return null;
+  if (v.kind === 'player') {
+    const player = seat(v.player);
+    return player === null ? null : { kind: 'player', player };
+  }
+  if (v.kind === 'space') {
+    const p = pos(v.pos);
+    return p === null ? null : { kind: 'space', pos: p };
+  }
+  return null;
+}
+
+const HOME_HARVEST: readonly unknown[] = ['wish', 'gnome'] satisfies HomeHarvestChoice[];
+
+/** Actions that carry nothing but who is acting. */
+function bare<T extends ActionType>(type: T) {
+  return (_a: Fields, player: PlayerId) => ({ type, player }) as ActionOf<T>;
+}
+
+function toPos<T extends 'slide' | 'tunnel' | 'snailMove'>(type: T) {
+  return (a: Fields, player: PlayerId) => {
+    const to = pos(a.to);
+    return to && ({ type, player, to } as ActionOf<T>);
+  };
+}
+
+function accepting<T extends 'snailify' | 'snailEat'>(type: T) {
+  return (a: Fields, player: PlayerId) =>
+    typeof a.accept === 'boolean' ? ({ type, player, accept: a.accept } as ActionOf<T>) : null;
+}
+
+function withCard<T extends 'playCard' | 'respondPlayCard'>(type: T) {
+  return (a: Fields, player: PlayerId) => {
+    const cardId = id(a.cardId);
+    if (cardId === null) return null;
+    if (a.targets === undefined) return { type, player, cardId } as ActionOf<T>;
+    const targets = cardTargets(a.targets);
+    return targets && ({ type, player, cardId, targets } as ActionOf<T>);
+  };
+}
+
+/**
+ * One builder per action type. Keyed by `ActionType`, so an action added to
+ * the engine is a compile error here until it has a builder.
+ */
+const ACTION_BUILDERS: { [T in ActionType]: (a: Fields, player: PlayerId) => ActionOf<T> | null } = {
+  rollOff: bare('rollOff'),
+  declineEffect: bare('declineEffect'),
+  respondPass: bare('respondPass'),
+  cancelTargeting: bare('cancelTargeting'),
+  drawCard: bare('drawCard'),
+  endTurn: bare('endTurn'),
+  slide: toPos('slide'),
+  tunnel: toPos('tunnel'),
+  snailMove: toPos('snailMove'),
+  snailify: accepting('snailify'),
+  snailEat: accepting('snailEat'),
+  playCard: withCard('playCard'),
+  respondPlayCard: withCard('respondPlayCard'),
+  chooseHarvest: (a, player) => {
+    const sourceKey = id(a.sourceKey);
+    return sourceKey === null ? null : { type: 'chooseHarvest', player, sourceKey };
+  },
+  homeHarvest: (a, player) =>
+    HOME_HARVEST.includes(a.take) ? { type: 'homeHarvest', player, take: a.take as HomeHarvestChoice } : null,
+  discardCard: (a, player) => {
+    const cardId = id(a.cardId);
+    return cardId === null ? null : { type: 'discardCard', player, cardId };
+  },
+  sacrificeGnome: (a, player) => {
+    const unitId = id(a.unitId);
+    return unitId === null ? null : { type: 'sacrificeGnome', player, unitId };
+  },
+  selectTarget: (a, player) => {
+    const target = cardTarget(a.target);
+    return target && { type: 'selectTarget', player, target };
+  },
+  move: (a, player) => {
+    const unitId = id(a.unitId);
+    const to = pos(a.to);
+    return unitId === null || to === null ? null : { type: 'move', player, unitId, to };
+  },
+  plant: (a, player) => {
+    const p = pos(a.pos);
+    const gardenType = plantable(a.gardenType);
+    return p && gardenType && { type: 'plant', player, pos: p, gardenType };
+  },
+  upgrade: (a, player) => {
+    const p = pos(a.pos);
+    return p && { type: 'upgrade', player, pos: p };
+  },
+  quickChat: (a, player) => {
+    const phraseId = id(a.phraseId);
+    if (phraseId === null) return null;
+    if (a.target === undefined) return { type: 'quickChat', player, phraseId };
+    const target = quickChatTarget(a.target);
+    return target && { type: 'quickChat', player, phraseId, target };
+  },
+};
+
 function parseAction(raw: Record<string, unknown>): ClientMessage | ClientMessageError {
   const action = raw.action;
-  if (!isPlainObject(action) || typeof action.type !== 'string' || typeof action.player !== 'number' || !Number.isInteger(action.player)) {
+  if (!isPlainObject(action) || typeof action.type !== 'string' || !Object.hasOwn(ACTION_BUILDERS, action.type)) {
     return refuse('PROTOCOL', 'Malformed action');
   }
-  const kept: Record<string, unknown> = {};
-  for (const key of ACTION_KEYS) if (action[key] !== undefined) kept[key] = action[key];
-  if (JSON.stringify(kept).length > MAX_ACTION_BYTES) return refuse('PROTOCOL', 'Malformed action');
-  // The engine validates everything past the shape, exactly as before.
-  return { t: 'action', action: kept as unknown as Action };
+  const player = seat(action.player);
+  if (player === null) return refuse('PROTOCOL', 'Malformed action');
+  const built = ACTION_BUILDERS[action.type as ActionType](action, player);
+  if (!built || JSON.stringify(built).length > MAX_ACTION_BYTES) return refuse('PROTOCOL', 'Malformed action');
+  return { t: 'action', action: built };
 }

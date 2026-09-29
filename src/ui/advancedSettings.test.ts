@@ -7,7 +7,9 @@
 
 import { describe, expect, it } from 'vitest';
 import { CARD_DEFINITIONS, CURSE_DEFINITIONS, createGame, EngineError, PLANTABLE_GARDEN_TYPES } from '../engine';
+import { MAX_BOARD_SIZE, isSupportedBoardSize } from '../net/protocol';
 import {
+  BOARD_SIZES,
   DEFAULT_ADVANCED_SETTINGS,
   STOCK_TILES_PER_TYPE,
   deckCountOf,
@@ -171,5 +173,12 @@ describe('the Center Star', () => {
     const v: AdvancedSettingsValue = { ...DEFAULT_ADVANCED_SETTINGS, centerStar: false };
     expect(isDefaultSettings(v)).toBe(false);
     expect(start(v).config.centerStar).toBe(false);
+  });
+});
+
+describe('BOARD_SIZES', () => {
+  it('offers only sizes an online room will deal', () => {
+    for (const n of BOARD_SIZES) expect(isSupportedBoardSize(n), String(n)).toBe(true);
+    expect(Math.max(...BOARD_SIZES)).toBe(MAX_BOARD_SIZE);
   });
 });

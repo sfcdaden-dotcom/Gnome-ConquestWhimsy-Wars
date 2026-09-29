@@ -25,6 +25,7 @@ import {
   CONTROL_BUDGET_MS,
   EMPTY_ROOM_REAP_MS,
   HOST_GRACE_MS,
+  MAX_BOARD_SIZE,
   ROOM_CODE_ALPHABET,
   PROTOCOL_VERSION,
   SHOT_CLOCK_MS,
@@ -604,6 +605,13 @@ describe('the lobby belongs to the host', () => {
     await room.handle('c0', { t: 'configure', boardSize: 6 });
     expect(c0.last('error')?.code).toBe('BAD_CONFIG');
     expect(room.phase).toBe('lobby');
+  });
+
+  it('rejects a board too large for a client to draw', async () => {
+    const { room, c0 } = await lobby();
+    await room.handle('c0', { t: 'configure', boardSize: MAX_BOARD_SIZE + 2 });
+    expect(c0.last('error')?.code).toBe('BAD_CONFIG');
+    expect(room.snapshot().boardSize).toBe(7);
   });
 
   it('refuses lobby changes once the game is running', async () => {
