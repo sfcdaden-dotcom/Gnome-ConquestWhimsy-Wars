@@ -34,8 +34,18 @@ jobs:
       - name: Unit and integration tests
         run: npm test
 
+      # The same repository suites again, plus the migration tests, inside the
+      # Workers runtime on real local D1 (ACCOUNTS.md §9.5, P2-2). Node's SQLite
+      # is not D1: it accepted a CHECK that D1 cannot evaluate at all.
+      - name: Workers-runtime tests (local D1)
+        run: npm run test:workers
+
       - name: Build
         run: npm run build
+
+      # Server-only code (jose) must never reach the browser bundle.
+      - name: Client bundle holds no server-only code
+        run: npm run check:bundle
 
   e2e:
     name: browser tests
