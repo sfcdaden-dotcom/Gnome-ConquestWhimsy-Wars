@@ -14,6 +14,6 @@
 interface ImportMeta {
   glob(
     pattern: string,
-    options?: { eager?: boolean; import?: string },
+    options?: { eager?: boolean; import?: string; query?: string },
   ): Record<string, unknown>;
 }
