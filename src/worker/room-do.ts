@@ -22,7 +22,7 @@ import { createSeal } from '../net/commitment';
 import type { PersistedRoom, RoomConnection, RoomStore } from '../net/room';
 import { Room } from '../net/room';
 import type { ServerMessage } from '../net/protocol';
-import { PROTOCOL_VERSION, parseClientMessage } from '../net/protocol';
+import { PROTOCOL_VERSION, parseClientFrame } from '../net/protocol';
 
 /** What a hibernating socket remembers about itself. */
 interface SocketAttachment {
@@ -196,15 +196,10 @@ export class RoomDurableObject implements DurableObject {
     const room = await this.roomFor('');
     const conn = this.connection(ws, at.connId);
 
-    let raw: unknown;
-    try {
-      raw = JSON.parse(typeof data === 'string' ? data : new TextDecoder().decode(data));
-    } catch {
-      raw = undefined;
-    }
-    // Every field is checked here, before the room sees the message; see
-    // `parseClientMessage`. A refusal is metered like any other message.
-    const parsed = parseClientMessage(raw);
+    // Every field is checked here, before the room sees the message, and the
+    // frame's size before it is even decoded; see `parseClientFrame`. A
+    // refusal is metered like any other message.
+    const parsed = parseClientFrame(data);
     if ('error' in parsed) {
       room.reject(at.connId, conn, parsed.error, parsed.message);
       return;
