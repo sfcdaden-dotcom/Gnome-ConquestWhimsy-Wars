@@ -50,14 +50,12 @@ Accounts (ACCOUNTS.md) add one Cloudflare D1 database per environment. Its
 schema is the `migrations/` folder: numbered SQL files, applied in order and
 recorded by wrangler in the database's `d1_migrations` table.
 
-**One-time setup (a person with the Cloudflare account):**
-
-1. `npx wrangler d1 create gnomeconquest` and
-   `npx wrangler d1 create gnomeconquest-staging`.
-2. Paste each printed `database_id` into its `d1_databases` entry in
-   `wrangler.jsonc`: the top level for production, `env.staging` for staging.
-   Until that is done, local work is unaffected, but a remote deploy could
-   provision or pick up a database by name, which is not what you want.
+**One-time setup: done 2026-09-29.** Both databases exist
+(`gnomeconquest` and `gnomeconquest-staging`), and their ids are pinned in
+`wrangler.jsonc`. The ids are identifiers, not secrets. A new environment
+would repeat this: create the database (dashboard, or
+`npx wrangler d1 create <name>`) and pin its id in that environment's
+`d1_databases` entry.
 
 **Every release that includes a migration, in this order:**
 

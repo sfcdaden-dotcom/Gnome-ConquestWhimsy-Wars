@@ -65,15 +65,16 @@
   // the migrations/ folder, applied with `npm run db:migrate:*` BEFORE the code
   // that needs it is deployed (DEPLOYMENT.md).
   //
-  // No database_id yet, deliberately: local runs (wrangler dev, vite preview,
-  // the e2e suite) key their local database off the binding and need none.
-  // Before the first production deploy, run `wrangler d1 create gnomeconquest`
-  // and pin the id it prints here, so a deploy can never provision or pick up
-  // a different database by name.
+  // The id is pinned so a deploy can never provision, or pick up by name, a
+  // different database. It is an identifier, not a credential: nothing can be
+  // done with it without the account's own login or API token. Local runs
+  // (wrangler dev, vite preview, the e2e suite) use a miniflare database under
+  // .wrangler/ and never touch this one.
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "gnomeconquest",
+      "database_id": "fcf26646-ced5-42fb-b28a-a14f2d3f6b37",
       "migrations_dir": "migrations"
     }
   ],
@@ -117,11 +118,11 @@
           "simple": { "limit": 30, "period": 60 }
         }
       ],
-      // Pin the id from `wrangler d1 create gnomeconquest-staging` here too.
       "d1_databases": [
         {
           "binding": "DB",
           "database_name": "gnomeconquest-staging",
+          "database_id": "5da7b240-476d-4fb8-938a-7cabcf80a964",
           "migrations_dir": "migrations"
         }
       ]
