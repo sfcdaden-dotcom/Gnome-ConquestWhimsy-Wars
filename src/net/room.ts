@@ -77,6 +77,7 @@ import type {
   ShotClock,
 } from './protocol';
 import {
+  AI_DIFFICULTIES,
   CLOSE_PROTOCOL,
   CLOSE_RATE_LIMITED,
   CLOSE_ROOM_CLOSED,
@@ -308,7 +309,7 @@ function isController(v: unknown): v is PersistedSeat['controller'] {
 }
 
 function isDifficulty(v: unknown): v is AiDifficulty {
-  return v === 'easy' || v === 'normal' || v === 'hard';
+  return (AI_DIFFICULTIES as readonly unknown[]).includes(v);
 }
 
 class RoomError extends Error {

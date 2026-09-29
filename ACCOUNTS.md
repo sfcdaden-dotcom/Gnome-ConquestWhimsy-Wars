@@ -9,6 +9,12 @@ works. The product owner's decisions are recorded in
 [§19](#19-decisions-approved-2026-09-29). They take precedence over anything
 earlier in this document that reads as a proposal.
 
+This work was begun in the `Gnome-ConquestWhimsy-Wars-FlyBrain` repository
+and moved here, to the repository Cloudflare deploys, on 2026-09-29. It was
+replayed without conflicts onto the Fly CPU seat (PRs #56 and #57). One fix was
+needed: the room's difficulty checks now come from `AI_DIFFICULTIES`, which is
+tied to the engine's `AiDifficulty` type so 'fly' cannot be refused.
+
 Detailed specs for the next two phases:
 
 - [ACCOUNTS_SPEC_PHASE_0_5.md](ACCOUNTS_SPEC_PHASE_0_5.md): multiplayer

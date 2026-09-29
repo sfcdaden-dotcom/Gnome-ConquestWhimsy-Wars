@@ -464,7 +464,18 @@ const _everyActionKeyListed: [MissingActionKey] extends [never] ? true : never =
 void _everyActionKeyListed;
 
 const CONTROLLERS: readonly string[] = ['human', 'cpu'];
-const DIFFICULTIES: readonly string[] = ['easy', 'normal', 'hard'];
+/**
+ * Every CPU difficulty the engine has — the one list both the boundary and the
+ * room check against. Tied to `AiDifficulty` in both directions below, so a
+ * difficulty added to the engine is a compile error here until it is listed,
+ * rather than a value the room quietly refuses (which is exactly what
+ * happened to 'fly' when this list was first written by hand).
+ */
+export const AI_DIFFICULTIES = ['easy', 'normal', 'hard', 'fly'] as const satisfies readonly AiDifficulty[];
+type MissingDifficulty = Exclude<AiDifficulty, (typeof AI_DIFFICULTIES)[number]>;
+const _everyDifficultyListed: [MissingDifficulty] extends [never] ? true : never = true;
+void _everyDifficultyListed;
+const DIFFICULTIES: readonly string[] = AI_DIFFICULTIES;
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);

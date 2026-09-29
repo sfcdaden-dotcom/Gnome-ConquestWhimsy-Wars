@@ -336,7 +336,7 @@ CREATE TABLE match_players (
   seat             INTEGER NOT NULL CHECK (seat BETWEEN 0 AND 3),
   user_id          TEXT    REFERENCES users(id) ON DELETE SET NULL,
   seat_kind        TEXT    NOT NULL CHECK (seat_kind IN ('account', 'guest', 'cpu')),
-  cpu_difficulty   TEXT    CHECK (cpu_difficulty IN ('easy', 'normal', 'hard')),
+  cpu_difficulty   TEXT    CHECK (cpu_difficulty IN ('easy', 'normal', 'hard', 'fly')),  -- = AI_DIFFICULTIES
   result           TEXT    NOT NULL CHECK (result IN ('win', 'loss', 'draw')),
   taken_over       INTEGER NOT NULL DEFAULT 0 CHECK (taken_over IN (0, 1)),
   eliminated_by    TEXT    CHECK (eliminated_by IN ('home-captured', 'home-destroyed', 'reinforcements')),

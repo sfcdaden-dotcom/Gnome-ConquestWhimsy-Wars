@@ -7,7 +7,7 @@
 import { describe, expect, it } from 'vitest';
 import { defaultLook } from '../ui/gnomeArt';
 import type { ClientMessage, ClientMessageError } from './protocol';
-import { MAX_ACTION_BYTES, PROTOCOL_VERSION, parseClientMessage } from './protocol';
+import { AI_DIFFICULTIES, MAX_ACTION_BYTES, PROTOCOL_VERSION, parseClientMessage } from './protocol';
 
 const TOKEN = 'a'.repeat(32);
 
@@ -104,6 +104,17 @@ describe('parseClientMessage', () => {
         seats: [{ index: 1, controller: 'cpu', difficulty: 'hard', name: 'Bot', look }],
       };
       expect(ok(msg)).toEqual(msg);
+    });
+
+    it('accepts every CPU difficulty the engine has, the Fly included', () => {
+      // The list was once written by hand without 'fly', and every online
+      // lobby that picked the Fly seat was refused. AI_DIFFICULTIES is now tied
+      // to the engine's AiDifficulty type at compile time.
+      expect(AI_DIFFICULTIES).toContain('fly');
+      for (const difficulty of AI_DIFFICULTIES) {
+        const msg = { t: 'configure', seats: [{ index: 1, controller: 'cpu', difficulty }] };
+        expect(ok(msg), difficulty).toEqual(msg);
+      }
     });
 
     it('refuses values that do not exist', () => {

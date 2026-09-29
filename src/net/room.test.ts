@@ -2042,6 +2042,18 @@ describe('lobby settings are checked before any of them apply', () => {
     expect(room.snapshot().seats[1]).toMatchObject({ controller: 'cpu', difficulty: 'normal' });
   });
 
+  it('seats the Fly — and keeps it a Fly across a reload of the room', async () => {
+    const { host, room, c0 } = await lobby();
+
+    await room.handle('c0', { t: 'configure', seats: [{ index: 1, controller: 'cpu', difficulty: 'fly' }] });
+
+    expect(c0.errors()).toEqual([]);
+    expect(room.snapshot().seats[1]).toMatchObject({ controller: 'cpu', difficulty: 'fly' });
+    // The legacy clean-up on open must not mistake a real difficulty for nonsense.
+    const reopened = await Room.open(host, 'ABC123');
+    expect(reopened.snapshot().seats[1]).toMatchObject({ controller: 'cpu', difficulty: 'fly' });
+  });
+
   it('settles nonsense seat settings stored before these checks existed', async () => {
     const host = makeHost();
     const room = await Room.open(host, 'ABC123');
