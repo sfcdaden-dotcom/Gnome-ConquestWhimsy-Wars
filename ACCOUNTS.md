@@ -1,9 +1,10 @@
 # Accounts, profiles & social — architecture audit and proposal
 
 **Status: architecture approved 2026-09-29. Phase 0.5 implemented. Phase 1
-implemented, with `0001_identity.sql` frozen; it has not been applied to
-staging or production yet. Phase 2 has not started. Nothing in this document is
-implemented yet.** It audits the repository as of `43ffa51` and describes how
+complete: `0001_identity.sql` is applied to staging and production and is now
+production history, so every later schema change is a new migration file.
+Phase 2 is specified for review ([ACCOUNTS_SPEC_PHASE_2.md](ACCOUNTS_SPEC_PHASE_2.md))
+and not started.** It audits the repository as of `43ffa51` and describes how
 persistent player accounts will be added without destabilising what already
 works. The product owner's decisions are recorded in
 [§19](#19-decisions-approved-2026-09-29). They take precedence over anything
@@ -15,16 +16,17 @@ replayed without conflicts onto the Fly CPU seat (PRs #56 and #57). One fix was
 needed: the room's difficulty checks now come from `AI_DIFFICULTIES`, which is
 tied to the engine's `AiDifficulty` type so 'fly' cannot be refused.
 
-Detailed specs for the next two phases:
+Detailed specs, one per phase so far:
 
 - [ACCOUNTS_SPEC_PHASE_0_5.md](ACCOUNTS_SPEC_PHASE_0_5.md): multiplayer
   hardening, independent of accounts.
 - [ACCOUNTS_SPEC_PHASE_1.md](ACCOUNTS_SPEC_PHASE_1.md): the persistence
-  foundation and **the full proposed D1 schema, for review before any
-  migration is applied**.
+  foundation and the full proposed D1 schema.
+- [ACCOUNTS_SPEC_PHASE_2.md](ACCOUNTS_SPEC_PHASE_2.md): Google sign-in,
+  **for review before implementation**. Its §0 lists where it departs from
+  §9, §10 and §17 below, and why.
 
-Phase 2 (authentication) does not start until the Phase 1 schema is
-approved.
+Phase 2 does not start until its spec is approved.
 
 The codebase and its docs call the game **Whimsy Wars** (the Worker is named
 `gnomeconquest`); this document uses **Gnome Wars**, as the brief does.

@@ -1,10 +1,11 @@
 # Phase 1 — Persistence foundation (implementation spec + schema for review)
 
-**Status: implemented 2026-09-29** as four commits titled "Phase 1 (1/4)"
-through "(4/4)". `0001_identity.sql` is frozen (§3). It has been applied only
-to local and test databases. **Not yet applied to staging or production**:
-that needs the human steps in DEPLOYMENT.md first (`wrangler d1 create`,
-pinning the ids).
+**Status: complete 2026-09-29.** Implemented as four commits titled "Phase 1
+(1/4)" through "(4/4)", then applied to staging and production (migrate, then
+deploy, then `/api/health` answering 200 in each). **`0001_identity.sql` is
+production history**: it is never edited again, and every later schema change
+is a new migration file (§3). Phase 2 is specified in
+[ACCOUNTS_SPEC_PHASE_2.md](ACCOUNTS_SPEC_PHASE_2.md).
 
 As built, relative to §6:
 - The Room DO does not take `env` yet. Nothing needs it before Phase 5, and
@@ -78,7 +79,7 @@ return per table, not all at once.
 
 ## 3. The schema
 
-### 0001_identity.sql (Phase 1): FROZEN 2026-09-29
+### 0001_identity.sql (Phase 1): FROZEN 2026-09-29, APPLIED TO PRODUCTION
 
 This is the whole file, byte for byte, as committed at
 `migrations/0001_identity.sql`. **Frozen 2026-09-29.** Once it has been

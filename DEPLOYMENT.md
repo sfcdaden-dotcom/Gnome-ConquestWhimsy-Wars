@@ -72,8 +72,9 @@ would repeat this: create the database (dashboard, or
   minutes in between. So a migration only ever *adds* (expand); removing
   anything the old code used waits for a later release (contract).
 - **A migration applied to production is never edited.** Every change is a
-  new, higher-numbered file. `migrations/0001_identity.sql` is frozen, and a
-  unit test pins its hash.
+  new, higher-numbered file. `migrations/0001_identity.sql` was applied to
+  staging and production on 2026-09-29 and is production history; a unit
+  test pins its hash.
 - **Nothing automated touches a remote database.** Unit tests use an
   in-memory SQLite that runs the same migrations
   (`src/worker/db/testDb.ts`). Local runs and the Playwright suite use
