@@ -1,9 +1,8 @@
 # Phase 1 — Persistence foundation (implementation spec + schema for review)
 
-**Status: the repository and testing strategy are provisionally approved
-(2026-09-29). Final approval waits on review of the complete
-`0001_identity.sql` in §3. No migration file exists in the repo, and nothing
-has been applied anywhere.**
+**Status: approved 2026-09-29. `0001_identity.sql` is frozen (§3), and
+Phase 1 is being implemented as PRs 1-A to 1-D. Nothing has been applied to
+staging or production.**
 
 This is the document to review before a persistent database becomes part of
 the application. It contains:
@@ -65,10 +64,13 @@ return per table, not all at once.
 
 ## 3. The schema
 
-### 0001_identity.sql (Phase 1): complete proposed file, for review
+### 0001_identity.sql (Phase 1): FROZEN 2026-09-29
 
-This is the whole file, byte for byte, as PR 1-B would add it at
-`migrations/0001_identity.sql`. It has been executed against SQLite with
+This is the whole file, byte for byte, as committed at
+`migrations/0001_identity.sql`. **Frozen 2026-09-29.** Once it has been
+applied to production it is never edited again, and every later schema
+change is a new migration file. A unit test pins the file's SHA-256 so an
+accidental edit fails CI. It has been executed against SQLite with
 foreign keys on. Every constraint below was exercised, refusing its bad case
 and accepting a valid row (see §5.2.1 for the race run). `STRICT` was
 confirmed to work on miniflare's D1 engine (§6, PR 1-D verification).
@@ -87,7 +89,11 @@ confirmed to work on miniflare's D1 engine (§6, PR 1-D verification).
 
 -- The internal account. Private: never serialised to a client.
 CREATE TABLE users (
-  id            TEXT    NOT NULL PRIMARY KEY CHECK (length(id) = 36),
+  -- Exactly what crypto.randomUUID() produces: a lowercase RFC 9562 version-4
+  -- UUID (8-4-4-4-12 hex; version nibble 4; variant nibble 8, 9, a or b). GLOB
+  -- matches the whole string, so this pins length, alphabet and layout at once.
+  id            TEXT    NOT NULL PRIMARY KEY
+                        CHECK (id GLOB '[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-4[0-9a-f][0-9a-f][0-9a-f]-[89ab][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]'),
   status        TEXT    NOT NULL DEFAULT 'active'
                         CHECK (status IN ('active', 'suspended', 'deleting')),
   created_at    INTEGER NOT NULL CHECK (created_at > 0),
@@ -121,7 +127,11 @@ CREATE TABLE sessions (
 ) STRICT;
 
 CREATE INDEX sessions_by_user   ON sessions(user_id);              -- sign out everywhere; deletion cascade
-CREATE INDEX sessions_by_expiry ON sessions(absolute_expires_at);  -- periodic purge
+-- A session is expired exactly when now >= idle_expires_at: the CHECK above
+-- caps idle at absolute, so a session past its absolute limit is always past
+-- its idle one too. Validity checks and the purge therefore both test
+-- idle_expires_at alone, and this index serves the purge.
+CREATE INDEX sessions_by_expiry ON sessions(idle_expires_at);
 ```
 
 Notes for review:
@@ -133,17 +143,43 @@ Notes for review:
   spans D1 and the UserHub DO can be resumed, and the account is unusable
   while it runs.
 - **Why each `CHECK` is there.**
-  - `length(id) = 36` pins UUID-shaped ids.
+  - `users.id` must match exactly what `crypto.randomUUID()` produces: a
+    lowercase RFC 9562 version-4 UUID. The whole-string `GLOB` pins length,
+    alphabet, dash positions, the version nibble and the variant nibble.
+    10,000 real `crypto.randomUUID()` values were accepted, and ten malformed
+    shapes were refused (uppercase, no dashes, version 1, variant `c`, nil,
+    braces, a non-hex character, 36 × `x`, a trailing space, too long). The
+    repository still generates ids only through `crypto.randomUUID()`; the
+    database makes any other shape impossible to store.
   - `updated_at >= created_at` and `last_login_at >= created_at` catch a
     wrong argument order at the database, not in production data.
   - The `id_hash` check guarantees only a lowercase hex SHA-256 can ever be
     stored, never a raw cookie value by mistake.
   - The expiry checks make "idle never outlives absolute" a database fact.
-- **Indexes.** The two primary keys; `UNIQUE (user_id, provider)`, which
-  also serves the `ON DELETE CASCADE` lookup from `users`; `sessions_by_user`
-  for sign-out-everywhere and the cascade; and `sessions_by_expiry` for the
-  purge. There are no others: every Phase 1 and Phase 2 query is covered by
-  one of these.
+- **Indexes, verified with `EXPLAIN QUERY PLAN`.**
+  - The two primary keys, plus `UNIQUE (user_id, provider)`, which also
+    serves the `ON DELETE CASCADE` lookup from `users`.
+  - `sessions_by_user`: sign-out-everywhere (`DELETE FROM sessions WHERE
+    user_id = ?` → covering-index search) and the cascade.
+  - `sessions_by_expiry`, on **`idle_expires_at`**, not
+    `absolute_expires_at`.
+    - A session expires through either limit, but the table's own `CHECK
+      (idle_expires_at <= absolute_expires_at)` means any session past its
+      absolute limit is also past its idle one. `now >= idle_expires_at` is
+      therefore the complete expiry test.
+    - The planned purge, `DELETE FROM sessions WHERE idle_expires_at <= ?`,
+      plans as `SEARCH … USING COVERING INDEX sessions_by_expiry`.
+    - Testing both columns (`… OR absolute_expires_at <= ?`) would plan as
+      a full `SCAN`, so the single-column predicate is both sufficient and
+      the fast one.
+    - Session resolution (`WHERE id_hash = ? AND idle_expires_at > ?`)
+      searches by primary key.
+- **`updated_at` is maintained by the repository, not a trigger.** Every
+  repository statement that changes a `users` row also sets `updated_at`. In
+  Phase 1 that is only the sign-in batch; `status` changes arrive in later
+  phases under the same rule. Two tests enforce it: a behavioural test
+  (sign-in moves `updated_at`), and a source scan that fails if any `UPDATE
+  users` statement in `src/worker/db/` omits `updated_at`.
 - **Deliberately absent.** No email (decision 1). No IP address or user
   agent, so there is no device list. No `deleted_at` tombstone: deletion
   deletes (§4).
@@ -456,7 +492,7 @@ resolveSession(db, idHash, now): Promise<{ userId: string; status: UserStatus } 
 touchSession(db, idHash, now): Promise<void>                  // no-op if touched in the last 24 h
 revokeSession(db, idHash): Promise<void>
 revokeAllSessions(db, userId): Promise<void>
-purgeExpiredSessions(db, now): Promise<number>
+purgeExpiredSessions(db, now): Promise<number>   // DELETE FROM sessions WHERE idle_expires_at <= ?
 ```
 
 The cookie format, hashing and rotation belong to Phase 2
