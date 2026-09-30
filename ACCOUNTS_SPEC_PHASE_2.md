@@ -1,10 +1,17 @@
 # Phase 2 — Google sign-in (implementation spec, for review)
 
-**Status: revision 3 (2026-09-29). Revision 2 was approved, and PR 2-A
+**Status: revision 4 (2026-09-29). Revision 2 was approved, and PR 2-A
 (test harness and dependencies) is authorised. PRs 2-B to 2-F each need
 their own approval.** Phase 1 is complete:
 `0001_identity.sql` is applied to staging and production, and is now
 production history.
+
+**Revision 4 corrects this spec's claim that Phase 2 needs no migration.**
+PR 2-A's first run of the repository tests on real D1 found that
+`0001_identity.sql`'s `users.id` CHECK cannot be evaluated by D1 at all, so
+no `users` row can ever be inserted. Phase 2 therefore needs one corrective
+migration, `0002_users_id_check.sql`, which ships in the same PR as the
+harness that found it (§1.1, §12 checks 8 and 9).
 
 **Revision 2** answers the first review. Each change is marked where it
 lands:
@@ -70,10 +77,53 @@ seat names (Phase 3), saved gnomes (Phase 4), stats (Phase 5), friends
 (Phase 6), presence (Phase 7), "sign out everywhere", export or deletion
 (Phase 8).
 
-### 1.1 Migrations: none
+### 1.1 Migrations: one corrective migration, and nothing else (revision 4)
 
-**Phase 2 adds no migration.** Everything it stores fits the three tables
-`0001_identity.sql` already created:
+**Revisions 1 to 3 of this spec said Phase 2 adds no migration. That was
+wrong.** Phase 2 needs `0002_users_id_check.sql`: a fix to 0001, not a
+feature.
+
+- **The defect.** `0001_identity.sql` checks `users.id` with one `GLOB`
+  pattern 251 bytes long. D1 refuses any `LIKE` or `GLOB` pattern longer
+  than 50 bytes ("LIKE or GLOB pattern too complex"). So on D1 that CHECK
+  fails for every row, and **no `users` row can ever be inserted**. That
+  includes the sign-in batch, which could never have created an account.
+- **Why it was not caught.** Phase 1 tested the UUID validation, including
+  "10,000 real `crypto.randomUUID()` values accepted", **on Node's SQLite
+  (`node:sqlite`), not on D1.** Node's SQLite accepts the long pattern. The
+  Phase 1 check on miniflare's D1 created the tables and inserted into a
+  probe table, but never inserted into `users`.
+- **How it was found.** PR 2-A ran the identity and session suites on real
+  local D1 for the first time: 18 of them failed with the pattern error.
+  That is the fidelity check P2-2 exists for.
+- **No harm yet.** No route writes `users`, and D1 could not have accepted a
+  row if one had. The identity tables are empty in every environment.
+- **The fix.** 0001 is production history and is not edited.
+  `0002_users_id_check.sql`:
+  1. **refuses to run** if `users`, `auth_identities` or `sessions` holds any
+     row (`CHECK constraint failed: identity_rows = 0`), before changing
+     anything;
+  2. rebuilds `users` with 0001's columns and CHECKs exactly, except the id
+     CHECK. The new one is built from `length`, `substr`, `replace` and one
+     13-byte `GLOB`, and accepts exactly the strings 0001's pattern
+     described.
+- **Its tests run on real local D1.** They show that under 0001 every real
+  id is refused, and that under 0002:
+  - 1,000 real ids are accepted and 13 malformed shapes refused;
+  - on 1,500 one-edit near misses, D1 agrees with the UUID-v4 regex exactly;
+  - the other constraints, the foreign keys and the cascade are unchanged;
+  - the guard rolls the whole migration back when a row is present.
+- **Deploy order.** `LATEST_MIGRATION` becomes `0002_users_id_check.sql`, so
+  `/api/health` answers 503 on any database without it. 0002 is applied to
+  staging, then production, **before** the code that expects it is deployed
+  (DEPLOYMENT.md, "migrate first"). Applying it first is safe: nothing in the
+  deployed code reads or writes `users`.
+- **Numbering.** The Phase 1 spec's draft migrations each move up one number
+  (`0002_profiles.sql` becomes `0003`, and so on), as the numbering rule
+  below provides. Their contents do not change.
+
+Everything else Phase 2 stores fits the three tables `0001_identity.sql`
+created, as 0002 corrects them:
 
 - the sign-in transaction lives in an encrypted cookie, not a table
   (decision D3);
@@ -81,15 +131,15 @@ seat names (Phase 3), saved gnomes (Phase 4), stats (Phase 5), friends
 - live authentication lives only in each socket's attachment. Phase 2
   writes nothing about accounts to room storage or to D1 (§8).
 
-`LATEST_MIGRATION` stays `0001_identity.sql`, so `/api/health` keeps
-answering 200 across the Phase 2 deploys.
-
 **`0001_identity.sql` is production history.** It is never edited again; a
-unit test already pins its SHA-256. If review finds that Phase 2 needs a
-schema change after all, it goes in a new file, `0002_<name>.sql`. Numbers
-follow the order migrations are applied, so the Phase 1 spec's draft
-"`0002_profiles.sql`" would then take the next free number. Only the draft's
-file name changes, not its contents.
+unit test pins its SHA-256, and 0002's too. Every later schema change is a
+new file. Numbers follow the order migrations are applied, so a draft takes
+the next free number when its phase ships.
+
+**New rule, from this defect: a migration is tested on real D1 before it is
+applied anywhere.** `npm run test:workers` runs the migrations and the
+repository suites on local D1, and a test on both engines fails if any
+`LIKE` or `GLOB` pattern in the resulting schema exceeds 50 bytes.
 
 ## 2. Decisions for review
 
@@ -123,11 +173,12 @@ OAuth consent screen, and the R12 copy changes ("no accounts, no cookies").
   policy exists.
 
 **D3. The sign-in transaction lives in an encrypted cookie.** *(Recommended.)*
-The transaction is state, nonce, PKCE verifier, return path and prior session
-hash. It is sealed with `jose`'s `EncryptJWT` (`dir` + `A256GCM`) under
-`OAUTH_COOKIE_KEY`: authenticated encryption, not hand-rolled crypto. This
-keeps Phase 2 migration-free. It also means an unauthenticated caller
-hitting `/start` costs no database write.
+The transaction is state, nonce, PKCE verifier, return path, prior session
+hash, and the session token it will issue (§5.4). It is sealed with `jose`'s
+`EncryptJWT` (`dir` + `A256GCM`) under `OAUTH_COOKIE_KEY`: authenticated
+encryption, not hand-rolled crypto. This keeps the sign-in transaction out of
+the database, so an unauthenticated caller hitting `/start` costs no
+database write.
 
 - *Alternative:* an `oauth_transactions` table. That needs a migration, a
   write per `/start` from anyone, and a purge job.
@@ -180,15 +231,21 @@ survives a browser restart. The 30-day sliding limit is enforced in D1.
   on but a Google value or the cookie key is missing, the auth routes answer
   503 ("sign-in is unavailable"). Guest play and rooms are unaffected. The
   Worker never refuses to boot over it.
-- **Getting local values into e2e.** CI has no `.dev.vars`. PR 2-A picks and
-  verifies how the Playwright `webServer` supplies `FAKE_IDP` and a test
-  cookie key. Candidates:
-  - wrangler's `CLOUDFLARE_INCLUDE_PROCESS_ENV`, which must be confirmed to
-    reach `vite preview`;
-  - a git-ignored `.dev.vars` that the `webServer` command writes when none
-    exists.
-
-  Either way, nothing is ever passed with `--env` (Phase 1 rule).
+- **Getting local values into e2e (decided and checked in PR 2-A; §12,
+  check 9).** CI has no `.dev.vars`. The Playwright `webServer` sets
+  `CLOUDFLARE_INCLUDE_PROCESS_ENV=true`, with `FAKE_IDP` and a test cookie
+  key, on the `vite preview` command **only**. The wiring lands in 2-C, with
+  the first value anything reads.
+  - **Never on a build.** With the flag set, `npm run build` writes the whole
+    process environment into `dist/gnomeconquest/.dev.vars`: in CI, every
+    variable the job has. `src/worker/localConfig.test.ts` fails if a
+    script, the Playwright web server or a workflow ever sets the flag on a
+    build or deploy.
+  - **`.dev.vars` is copied into the build too.** `npm run build` copies a
+    developer's `.dev.vars` into `dist/gnomeconquest/.dev.vars`. Both paths
+    are git-ignored and `wrangler deploy` does not upload the file, but
+    `dist/` must never be published anywhere else.
+  - Nothing is ever passed with `--env` (Phase 1 rule).
 
 ## 4. Routes
 
@@ -839,6 +896,8 @@ from them is in the repo.
 | 5 | The same, but with the other site answering a plain `302` instead of a page | The callback **did** receive the old `Strict` cookie. A fake IdP made of redirects would hide what check 4 found, hence §10. |
 | 6 | `jose@6.2.12` `jwtVerify` with and without `requiredClaims`, over tokens with missing and malformed timestamps (revision 2) | Without `requiredClaims`, a token with **no `exp` was accepted**. With `requiredClaims`, a missing `exp` or `iat` was rejected. A string `exp` was rejected ("must be a number"). An `iat` in milliseconds was rejected (it reads as the future), as was an `iat` an hour old under `maxTokenAge: '10m'`. **An `exp` in milliseconds was accepted**, which is why §5.2 bounds `exp - iat`. |
 | 7 | Reading `RoomDurableObject.fetch` for the hibernation ordering (revision 3) | The connection id is allocated (`String(this.nextConnId++)`) one line **before** `await this.roomFor(code)`, which is what re-attaches surviving sockets and advances `nextConnId`. After an eviction the ids can therefore repeat (§8.2 rule 3). Found by reading the code; the regression test that proves it is part of the fix. |
+| 8 | PR 2-A: the identity and session suites on real local D1 through the new harness (revision 4) | **18 of 20 failed** with `D1_ERROR: LIKE or GLOB pattern too complex`. Measured on local D1, a 50-byte pattern works and 51 bytes fails; 0001's `users.id` pattern is 251 bytes. Every insert into `users` fails, so none can succeed. The only other pattern in the schema (`sessions.id_hash`, 11 bytes) is fine. Fixed by `0002_users_id_check.sql` (§1.1). Afterwards all 36 Workers-runtime tests pass. |
+| 9 | PR 2-A: how local-only values reach the Worker under `vite preview`, with a temporary probe route that was not committed (revision 4) | `.dev.vars` at build and preview: **seen**, and copied into `dist/gnomeconquest/.dev.vars`. `CLOUDFLARE_INCLUDE_PROCESS_ENV=true` on preview only: **seen**, and nothing written. The variable alone, without the flag: **not seen**. The flag on the build: **seen**, and the build wrote the process environment into `dist/gnomeconquest/.dev.vars`. Hence §3's rule. |
 
 Limits of these checks:
 
@@ -853,9 +912,11 @@ Limits of these checks:
 ## 13. Change list (small PRs)
 
 Each PR leaves `main` shippable. All existing unit and e2e tests stay green.
-No PR adds a migration.
+The only migration is `0002_users_id_check.sql`, in PR 2-A (§1.1).
 
-**PR 2-A — Test harness and dependencies (P2-2).**
+**PR 2-A — Test harness and dependencies (P2-2), with `0002_users_id_check.sql`.**
+The harness found 0001's D1 defect (§1.1), and 2-A cannot pass on D1
+without the fix, so they ship together, as separate commits.
 - `@cloudflare/vitest-pool-workers@0.22.0` (dev, exact pin), a
   `vitest.workers.config.ts`, `npm run test:workers`, and a CI step.
 - Phase 1's identity and session suites also run on real local D1.
@@ -943,7 +1004,11 @@ Safe to deploy to production. For real browsers, nothing changes.
 - the published consent screen;
 - `ACCOUNTS_ENABLED` set to `"true"`.
 
-Nothing here needs a remote database command. Phase 2 migrates nothing.
+**One remote database step, reviewed before it runs:** apply
+`0002_users_id_check.sql` to staging (`npm run db:migrate:staging`), check
+it, then to production (`npm run db:migrate:prod`). Do it before the PR that
+adds it is deployed, because that code's `/api/health` expects it. Nothing
+else in Phase 2 touches a remote database.
 
 ## 15. Exit criteria
 
@@ -959,9 +1024,9 @@ Nothing here needs a remote database command. Phase 2 migrates nothing.
   - deployed with `ACCOUNTS_ENABLED="false"`;
   - `/api/auth/google/start` and `/api/me` answer 404;
   - rooms, local play and the board view behave exactly as before;
-  - `/api/health` answers 200 with `0001_identity.sql` still the latest
+  - `/api/health` answers 200 with `0002_users_id_check.sql` as the latest
     migration.
-- No migration was added, and `0001_identity.sql` is byte-identical to what
-  production ran.
+- The only migration added is `0002_users_id_check.sql`. `0001_identity.sql`
+  is byte-identical to what production ran.
 - ACCOUNTS.md, this spec, DEPLOYMENT.md and MULTIPLAYER.md describe what was
   built.

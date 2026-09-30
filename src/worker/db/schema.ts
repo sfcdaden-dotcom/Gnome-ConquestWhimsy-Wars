@@ -15,7 +15,7 @@ import type { Db } from './db';
  * The newest file in migrations/. A unit test fails if this falls behind the
  * folder, so adding a migration means bumping it in the same change.
  */
-export const LATEST_MIGRATION = '0001_identity.sql';
+export const LATEST_MIGRATION = '0002_users_id_check.sql';
 
 /** True when `migration` has been applied. False, never an error, when nothing has. */
 export async function schemaIsCurrent(db: Db, migration: string = LATEST_MIGRATION): Promise<boolean> {

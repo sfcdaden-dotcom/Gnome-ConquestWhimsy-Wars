@@ -7,6 +7,17 @@ production history**: it is never edited again, and every later schema change
 is a new migration file (§3). Phase 2 is specified in
 [ACCOUNTS_SPEC_PHASE_2.md](ACCOUNTS_SPEC_PHASE_2.md).
 
+**Correction (2026-09-29): 0001's `users.id` CHECK does not work on D1.** Its
+one `GLOB` pattern is 251 bytes, and D1 refuses any pattern over 50, so on D1
+no `users` row can be inserted. Every UUID-validation result recorded in §3
+below was obtained on **Node's SQLite (`node:sqlite`), not on D1**. The
+miniflare check in §6 never inserted into `users`, so nothing here exercised
+the CHECK on D1. `0002_users_id_check.sql` replaces the CHECK (see
+[ACCOUNTS_SPEC_PHASE_2.md §1.1](ACCOUNTS_SPEC_PHASE_2.md#11-migrations-one-corrective-migration-and-nothing-else-revision-4)).
+Because it takes number 0002, each draft migration below moves up one number
+when its phase ships: `0002_profiles.sql` becomes `0003`, and so on to
+`0006_privacy.sql`, which becomes `0007`.
+
 As built, relative to §6:
 - The Room DO does not take `env` yet. Nothing needs it before Phase 5, and
   an unused parameter fails this repo's lint settings.
@@ -85,9 +96,11 @@ This is the whole file, byte for byte, as committed at
 `migrations/0001_identity.sql`. **Frozen 2026-09-29.** Once it has been
 applied to production it is never edited again, and every later schema
 change is a new migration file. A unit test pins the file's SHA-256 so an
-accidental edit fails CI. It has been executed against SQLite with
-foreign keys on. Every constraint below was exercised, refusing its bad case
-and accepting a valid row (see §5.2.1 for the race run). `STRICT` was
+accidental edit fails CI. It has been executed against **Node's** SQLite
+with foreign keys on. Every constraint below was exercised there, refusing
+its bad case and accepting a valid row (see §5.2.1 for the race run). On D1
+the `users.id` CHECK cannot be evaluated at all; see the correction at the
+top of this document. `STRICT` was
 confirmed to work on miniflare's D1 engine (§6, PR 1-D verification).
 
 ```sql
@@ -161,6 +174,8 @@ Notes for review:
   - `users.id` must match exactly what `crypto.randomUUID()` produces: a
     lowercase RFC 9562 version-4 UUID. The whole-string `GLOB` pins length,
     alphabet, dash positions, the version nibble and the variant nibble.
+    **On Node's SQLite, not on D1** (see the correction at the top; D1
+    refuses this pattern and every insert with it):
     10,000 real `crypto.randomUUID()` values were accepted, and ten malformed
     shapes were refused (uppercase, no dashes, version 1, variant `c`, nil,
     braces, a non-hex character, 36 × `x`, a trailing space, too long). The

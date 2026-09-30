@@ -11,6 +11,8 @@
     "lint": "oxlint",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:workers": "vitest run -c vitest.workers.config.ts",
+    "check:bundle": "node scripts/check-client-bundle.mjs",
     "tune:fly": "node scripts/tune-fly.mjs",
     "train:fly": "FLY_TRAIN=1 vitest run src/engine/ai/fly.train.test.ts",
     "preview": "npm run build && wrangler dev",
@@ -23,11 +25,13 @@
     "db:migrate:prod": "wrangler d1 migrations apply DB --remote -c wrangler.jsonc"
   },
   "dependencies": {
+    "jose": "6.2.12",
     "react": "^19.2.7",
     "react-dom": "^19.2.7"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.46.0",
+    "@cloudflare/vitest-pool-workers": "0.22.0",
     "@playwright/test": "^1.61.1",
     "@types/node": "^24.13.2",
     "@types/react": "^19.2.17",

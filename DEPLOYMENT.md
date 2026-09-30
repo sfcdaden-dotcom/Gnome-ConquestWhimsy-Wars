@@ -75,6 +75,12 @@ would repeat this: create the database (dashboard, or
   new, higher-numbered file. `migrations/0001_identity.sql` was applied to
   staging and production on 2026-09-29 and is production history; a unit
   test pins its hash.
+- **A migration is tested on real D1 before it is applied anywhere.**
+  `npm run test:workers` (also in CI) applies the migrations to a local D1
+  inside the Workers runtime and runs the repository suites against it.
+  Node's SQLite is not D1: `0001_identity.sql`'s `users.id` CHECK passed
+  every Node test and cannot be evaluated by D1 at all, which
+  `0002_users_id_check.sql` fixes.
 - **Nothing automated touches a remote database.** Unit tests use an
   in-memory SQLite that runs the same migrations
   (`src/worker/db/testDb.ts`). Local runs and the Playwright suite use
@@ -83,6 +89,18 @@ would repeat this: create the database (dashboard, or
   to a developer machine.
 - The `db:*` scripts pass `-c wrangler.jsonc` explicitly, so they always read
   the source config, never the last build's output.
+- **`npm run build` copies `.dev.vars` into `dist/gnomeconquest/.dev.vars`.**
+  Both are git-ignored and `wrangler deploy` does not upload the file, but
+  `dist/` must not be published anywhere else once `.dev.vars` holds real
+  secrets. Never set `CLOUDFLARE_INCLUDE_PROCESS_ENV` on a build: the build
+  then writes the whole process environment into that file (a test enforces
+  this; see ACCOUNTS_SPEC_PHASE_2.md §3).
+
+**Next release with a migration: `0002_users_id_check.sql`.** Apply it to
+staging, check `/api/health`, then to production, **before** the code that
+adds it is deployed. That code's `/api/health` answers 503 until 0002 is
+applied. Applying it first is safe, because the deployed code never touches
+`users`. 0002 refuses to run if any identity table holds a row.
 
 `npm run deploy:staging` builds with `CLOUDFLARE_ENV=staging` (POSIX shells),
 so the staging Worker, its database and its Durable Object namespace are

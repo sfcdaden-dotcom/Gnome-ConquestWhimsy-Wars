@@ -3,6 +3,9 @@
 **Status: architecture approved 2026-09-29. Phase 0.5 implemented. Phase 1
 complete: `0001_identity.sql` is applied to staging and production and is now
 production history, so every later schema change is a new migration file.
+Its `users.id` CHECK turned out not to work on D1 (it had only been tested on
+Node's SQLite); `0002_users_id_check.sql` replaces it, in Phase 2's first PR.
+The later draft migrations each move up one number.
 Phase 2 is specified for review ([ACCOUNTS_SPEC_PHASE_2.md](ACCOUNTS_SPEC_PHASE_2.md))
 and not started.** It audits the repository as of `43ffa51` and describes how
 persistent player accounts will be added without destabilising what already
@@ -297,12 +300,12 @@ supersedes the sketch that was here. The tables are:
 
 | Area | Tables | Migration / phase |
 |---|---|---|
-| Identity | `users`, `auth_identities` (no email), `sessions` | 0001 / Phase 1 |
-| Public profile | `profiles`, `username_holds`, `username_rules`, `username_removals` | 0002 / Phase 3 |
-| Customization | `customizations` | 0003 / Phase 4 |
-| Gameplay | `matches`, `match_players` | 0004 / Phase 5 |
-| Social | `friendships`, `friend_requests`, `blocks` | 0005 / Phase 6 |
-| Privacy | `privacy_settings` | 0006 / Phase 7 |
+| Identity | `users`, `auth_identities` (no email), `sessions` | 0001 / Phase 1; `users.id` CHECK replaced by 0002 / Phase 2 |
+| Public profile | `profiles`, `username_holds`, `username_rules`, `username_removals` | 0003 / Phase 3 |
+| Customization | `customizations` | 0004 / Phase 4 |
+| Gameplay | `matches`, `match_players` | 0005 / Phase 5 |
+| Social | `friendships`, `friend_requests`, `blocks` | 0006 / Phase 6 |
+| Privacy | `privacy_settings` | 0007 / Phase 7 |
 
 Deliberately **absent**: email addresses (decision 1), real names,
 birthdays (decision 2), location, avatars as images, a Google display name or
