@@ -89,3 +89,17 @@ describe('production', () => {
     expect(production.previews).toBeUndefined();
   });
 });
+
+describe('accounts switch and cron, per environment (D2, D7, §6.6)', () => {
+  it('accounts are off in production, on in staging, off in branch previews', () => {
+    expect(production.vars).toMatchObject({ ACCOUNTS_ENABLED: 'false' });
+    expect(staging.vars).toMatchObject({ ACCOUNTS_ENABLED: 'true' });
+    expect(previews?.vars).toMatchObject({ ACCOUNTS_ENABLED: 'false' });
+  });
+
+  it('both environments purge expired sessions daily', () => {
+    expect(production.triggers.crons).toEqual(['17 3 * * *']);
+    expect(staging.triggers.crons).toEqual(['17 3 * * *']);
+  });
+});
+

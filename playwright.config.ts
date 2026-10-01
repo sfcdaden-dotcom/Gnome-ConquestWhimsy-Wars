@@ -28,9 +28,15 @@ export default defineConfig({
   // (idempotent), and e2e/schema.spec.ts proves the Worker this serves reads
   // that same database. No --env on either step: both must resolve the same
   // top-level database binding.
+  //
+  // Local runs have accounts on (ACCOUNTS_SPEC_PHASE_2.md §3), but CI has no
+  // .dev.vars, so the value comes from the process environment, on the
+  // serving command ONLY: with that flag set while building, the
+  // build writes the whole environment into dist/ (src/worker/localConfig.test.ts).
   webServer: {
     command:
-      'npm run db:migrate:local && npm run build && npx vite preview --port 4173 --strictPort --host localhost',
+      'npm run db:migrate:local && npm run build && ' +
+      'CLOUDFLARE_INCLUDE_PROCESS_ENV=true ACCOUNTS_ENABLED=true npx vite preview --port 4173 --strictPort --host localhost',
     url: 'http://localhost:4173',
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,

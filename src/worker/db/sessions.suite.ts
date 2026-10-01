@@ -11,6 +11,7 @@ import {
   SESSION_IDLE_MS,
   SESSION_TOUCH_INTERVAL_MS,
   createSession,
+  issueSession,
   purgeExpiredSessions,
   resolveSession,
   revokeAllSessions,
@@ -127,6 +128,84 @@ export function sessionsSuite(fresh: FreshDb): void {
       expect(await resolveSession(db, H1, NOW + 1)).toBeNull();
       expect(await resolveSession(db, H2, NOW + 1)).toBeNull();
       expect(await resolveSession(db, H3, NOW + 1)).toEqual({ userId: bob, status: 'active' });
+    });
+
+    describe('issueSession (sign-in, §6.3)', () => {
+      it('creates the session for an active account, and says so', async () => {
+        const db = await fresh();
+        const userId = await signedIn(db);
+        expect(await issueSession(db, userId, H1, null, NOW)).toBe(true);
+        expect(await row(db, H1)).toMatchObject({
+          user_id: userId,
+          created_at: NOW,
+          idle_expires_at: NOW + SESSION_IDLE_MS,
+          absolute_expires_at: NOW + SESSION_ABSOLUTE_MS,
+        });
+        expect(await resolveSession(db, H1, NOW + 1)).toEqual({ userId, status: 'active' });
+      });
+
+      it('gives a suspended or deleting account no session, and writes no row (R4)', async () => {
+        for (const status of ['suspended', 'deleting'] as const) {
+          const db = await fresh();
+          const userId = await signedIn(db);
+          await db.exec('UPDATE users SET status = ?, updated_at = ? WHERE id = ?', status, NOW, userId);
+          expect(await issueSession(db, userId, H1, null, NOW), status).toBe(false);
+          expect(await db.rows('SELECT id_hash FROM sessions'), status).toEqual([]);
+        }
+      });
+
+      it('revokes the browser’s previous session, whoever it belonged to', async () => {
+        const db = await fresh();
+        const alice = await signedIn(db, 'sub-alice');
+        const bob = await signedIn(db, 'sub-bob');
+        await createSession(db, bob, H2, NOW);
+        expect(await issueSession(db, alice, H1, H2, NOW)).toBe(true);
+        expect(await resolveSession(db, H2, NOW + 1)).toBeNull();
+        expect(await resolveSession(db, H1, NOW + 1)).toEqual({ userId: alice, status: 'active' });
+      });
+
+      it('revokes the previous session even when the account turns out not to be active', async () => {
+        const db = await fresh();
+        const userId = await signedIn(db);
+        await createSession(db, userId, H2, NOW);
+        await db.exec("UPDATE users SET status = 'suspended', updated_at = ? WHERE id = ?", NOW, userId);
+        expect(await issueSession(db, userId, H1, H2, NOW)).toBe(false);
+        expect(await db.rows('SELECT id_hash FROM sessions')).toEqual([]);
+      });
+
+      it('is a no-op when replayed: one row, and true both times (§5.4)', async () => {
+        const db = await fresh();
+        const userId = await signedIn(db);
+        expect(await issueSession(db, userId, H1, H2, NOW)).toBe(true);
+        expect(await issueSession(db, userId, H1, H2, NOW + 5)).toBe(true);
+        expect(await db.rows('SELECT id_hash, created_at FROM sessions')).toEqual([{ id_hash: H1, created_at: NOW }]);
+      });
+
+      it('never deletes the session it is issuing, even if named as the prior one', async () => {
+        const db = await fresh();
+        const userId = await signedIn(db);
+        await issueSession(db, userId, H1, null, NOW);
+        expect(await issueSession(db, userId, H1, H1, NOW + 5)).toBe(true);
+        expect(await resolveSession(db, H1, NOW + 6)).not.toBeNull();
+      });
+
+      it('answers false for a hash held by another user, and leaves that session alone', async () => {
+        const db = await fresh();
+        const alice = await signedIn(db, 'sub-alice');
+        const bob = await signedIn(db, 'sub-bob');
+        await issueSession(db, bob, H1, null, NOW);
+        expect(await issueSession(db, alice, H1, null, NOW)).toBe(false);
+        expect(await resolveSession(db, H1, NOW + 1)).toEqual({ userId: bob, status: 'active' });
+      });
+
+      it('runs as one batch', async () => {
+        const db = await fresh();
+        const userId = await signedIn(db);
+        const before = db.batches.length;
+        await issueSession(db, userId, H1, null, NOW);
+        expect(db.batches.length - before).toBe(1);
+        expect(db.batches.at(-1)).toHaveLength(3);
+      });
     });
 
     it('purges only expired sessions, by either limit', async () => {

@@ -7,6 +7,8 @@
  *   GET  /api/rooms/:code      → the room's public snapshot (does it exist?)
  *   GET  /api/rooms/:code/ws   → WebSocket upgrade into the room
  *   GET  /api/health           → 200 when the database has the schema this code expects, else 503
+ *   GET  /api/me               → the signed-in account's status (404 while accounts are off)
+ *   POST /api/auth/logout      → 204, the session revoked and its cookie cleared (404 while off)
  *
  * Rooms are private by construction: there is no list endpoint and no lobby.
  * Knowing the code is what gets you in, so codes are drawn from a CSPRNG over
@@ -35,12 +37,15 @@
  *  - `GET /api/health` reads D1 on every call.
  */
 
+import { toMeResponse } from '../net/apiTypes';
 import { ROOM_CODE_LENGTH } from '../net/protocol';
 import { generateRoomCode } from '../net/room';
+import { clearedSessionCookie, revokeRequestSession } from './auth/session';
 import { ACCOUNT_HEADER } from './auth/types';
 import { fromD1 } from './db/db';
 import { schemaIsCurrent } from './db/schema';
 import type { WorkerEnv } from './env';
+import { accountsEnabled } from './env';
 import { json } from './http';
 import type { Route } from './router';
 import { route } from './router';
@@ -130,6 +135,42 @@ export const ROUTES: readonly Route[] = [
     async handler({ env }) {
       const ok = await schemaIsCurrent(fromD1(env.DB));
       return json({ ok }, ok ? 200 : 503);
+    },
+  }),
+
+  // Accounts (ACCOUNTS_SPEC_PHASE_2.md §6). Both exist only while
+  // ACCOUNTS_ENABLED is "true", and both are self-exit: a suspended or
+  // deleting account can still learn its status and sign out.
+
+  // What the page asks to learn whether it is signed in (A2): its own load
+  // never carries the cookie after a sign-in, but its fetch does. A guest gets
+  // 401 SIGNED_OUT from the router.
+  route({
+    method: 'GET',
+    path: '/api/me',
+    access: 'self-exit',
+    limit: 'ME_LIMIT',
+    enabled: accountsEnabled,
+    async handler({ auth }) {
+      return json(toMeResponse(auth.kind === 'user' ? 'active' : auth.status));
+    },
+  }),
+
+  // Sign out this browser: the session row goes and the cookie is expired.
+  // Seats are untouched (a seat token is the seat), and an open room socket
+  // keeps the authentication it connected with until it closes (§8.3).
+  route({
+    method: 'POST',
+    path: '/api/auth/logout',
+    access: 'self-exit',
+    limit: 'AUTH_LIMIT',
+    enabled: accountsEnabled,
+    async handler({ request, env }) {
+      await revokeRequestSession(request, env);
+      return new Response(null, {
+        status: 204,
+        headers: { 'cache-control': 'no-store', 'set-cookie': clearedSessionCookie() },
+      });
     },
   }),
 ];
