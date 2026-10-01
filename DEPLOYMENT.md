@@ -106,7 +106,39 @@ both staging and production. `LATEST_MIGRATION` is 0002, and production's
 so the staging Worker, its database and its Durable Object namespace are
 separate from production's. Staging rooms and production rooms never meet.
 
+### Branch previews
 
+Workers Builds builds every non-production branch into a preview of the
+**staging** Worker, at `<branch>-gnomeconquest-staging.<subdomain>.workers.dev`.
+Production (`gnomeconquest`) builds no branch previews: that setting is off
+in its dashboard.
+
+- **A preview inherits no bindings.** It gets exactly what
+  `env.staging.previews` in `wrangler.jsonc` declares, plus `ASSETS`, and
+  nothing from `env.staging` itself. Without that block a preview has no
+  `DB` and no `ROOMS`, so `/api/health` answers 503 and rooms cannot open.
+  That is how the first previews behaved.
+- **What it declares:**
+  - `DB`: staging's own database;
+  - `ROOMS`;
+  - the three rate limits, in namespaces 3001–3003 of their own, so preview
+    traffic never spends staging's budget.
+- **A preview shares staging's database.** A branch that adds a migration
+  answers 503 on its preview until that migration is applied to staging.
+  This is the "migrate first" rule above. Nothing deployed ever applies a
+  migration.
+- **A binding, var or secret added to staging must be added to `previews`
+  too.** Secrets use `wrangler preview secret put`.
+  `src/worker/previewConfig.test.ts` fails if `previews` is missing anything
+  staging declares, if its database is not staging's, or if a top-level
+  `previews` block appears. A preview must never be bound to production's
+  database.
+- **Real Google sign-in stays off in previews** (ACCOUNTS_SPEC_PHASE_2.md,
+  D7).
+- **To check a preview:** `/api/health` should answer 200, and
+  `POST /api/rooms` from the preview's own origin should return a room code.
+
+### Cloudflare Pages / Netlify (single-device play only)
 1. Create the account and a new project (drag-and-drop the `dist/` folder, or
    connect a git repository).
 2. If connecting git: build command `npm run build`, output directory `dist`.
