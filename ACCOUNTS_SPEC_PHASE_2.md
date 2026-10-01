@@ -3,8 +3,12 @@
 **Status: revision 4 (2026-09-29). Revision 2 was approved. PR 2-A (test
 harness and dependencies, with `0002_users_id_check.sql`) is done: merged
 2026-09-30 as #62 and deployed, with 0002 applied to staging and production
-and verified on both. Production `/api/health` answers 200. PRs 2-B to
-2-F each need their own approval.** Phase 1 is complete:
+and verified on both. Production `/api/health` answers 200. PR 2-B
+(router, `Origin` rule, access levels) is done: merged 2026-10-01 as #64 and
+deployed. In production, `/api/health` answers 200 and a real multiplayer
+game was played through. Branch previews now get their own bindings (#65;
+DEPLOYMENT.md, "Branch previews"). PRs 2-C to 2-F each need their own
+approval.** Phase 1 is complete:
 `0001_identity.sql` is applied to staging and production, and is now
 production history.
 
@@ -963,7 +967,10 @@ without the fix, so they ship together, as separate commits.
 
 No behaviour change.
 
-**PR 2-B — Router, `Origin`, access levels.**
+**PR 2-B — Router, `Origin`, access levels. ✅ Done: #64, merged and
+deployed 2026-10-01.** Verified by hand on its staging preview (health, and
+`Origin`-protected room creation) and in production (health, and a full
+multiplayer game).
 - `src/worker/router.ts` and `http.ts`. The existing routes move into the
   table unchanged.
 - The `Origin` rule (§7.2).

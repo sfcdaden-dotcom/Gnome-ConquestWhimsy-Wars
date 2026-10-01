@@ -9,10 +9,11 @@ migrations each move up one number.
 Phase 2 is in progress ([ACCOUNTS_SPEC_PHASE_2.md](ACCOUNTS_SPEC_PHASE_2.md)):
 PR 2-A (the Workers-runtime test harness, with 0002) is merged and deployed,
 and 0002 is applied to staging and production and is production history too.
-PRs 2-B to 2-F each need their own approval.** It audits the repository as
-of `43ffa51` and describes how persistent player accounts will be added
-without destabilising what already works. The product owner's decisions are recorded in
-[§19](#19-decisions-approved-2026-09-29). They take precedence over anything
+PR 2-B (the router, the `Origin` rule and access levels) is merged and
+deployed. PRs 2-C to 2-F each need their own approval.** It audits the
+repository as of `43ffa51` and describes how persistent player accounts
+will be added without destabilising what already works. The product owner's
+decisions are recorded in [§19](#19-decisions-approved-2026-09-29). They take precedence over anything
 earlier in this document that reads as a proposal.
 
 This work was begun in the `Gnome-ConquestWhimsy-Wars-FlyBrain` repository
@@ -28,7 +29,7 @@ Detailed specs, one per phase so far:
 - [ACCOUNTS_SPEC_PHASE_1.md](ACCOUNTS_SPEC_PHASE_1.md): the persistence
   foundation and the full proposed D1 schema.
 - [ACCOUNTS_SPEC_PHASE_2.md](ACCOUNTS_SPEC_PHASE_2.md): Google sign-in,
-  approved and in progress (PR 2-A done). Its §0 lists where it departs from
+  approved and in progress (PRs 2-A and 2-B done). Its §0 lists where it departs from
   §9, §10 and §17 below, and why.
 
 The codebase and its docs call the game **Whimsy Wars** (the Worker is named
@@ -914,7 +915,7 @@ should exclude pairings.
 | R3 | **Names are only length-capped.** Control characters, NUL, RTL overrides and Cyrillic lookalikes pass through. React escapes the output, so there is **no XSS**, but lobby and log spoofing is possible. | Confirmed by probe | Low | Becomes impersonation of registered usernames. Fixed by §10 rule 4 plus sanitising guest names. |
 | R4 | **Online look is not persisted.** `OnlineScreen` keeps it in `useState(defaultLook)`. After a page reload inside a room, `hello` sends the default look and overwrites the seat's gnome mid-game. MULTIPLAYER.md's "a reconnect restores the character" holds for socket re-dials, not page reloads. | Code reading | Low (bug) | Fixed for accounts by Phase 4; fixable now for guests. |
 | R5 | **`GET /api/rooms/:code` is public.** It returns the full snapshot, including names and looks, to anyone who knows a ~29-bit code, without connecting. This is by design today. | Code reading | Low | Anything added to `SeatInfo` is public. Never add `user_id`, email or presence there. |
-| R6 | **No `Origin` check** on the WebSocket upgrade or `POST /api/rooms`. | Code reading | None today (no ambient credentials) | **Cross-site WebSocket hijacking** once cookies exist. Must ship with Phase 2. **Fixed in PR 2-B** (ACCOUNTS_SPEC_PHASE_2.md §7.2). |
+| R6 | **No `Origin` check** on the WebSocket upgrade or `POST /api/rooms`. | Code reading | None today (no ambient credentials) | **Cross-site WebSocket hijacking** once cookies exist. Must ship with Phase 2. **Fixed in PR 2-B** (#64, deployed 2026-10-01; ACCOUNTS_SPEC_PHASE_2.md §7.2). |
 | R7 | **Bearer credentials in Web Storage**: seat token (`sessionStorage`) and host key (`localStorage`). They are readable by any script on the origin. The strict CSP is what makes that acceptable. | Code reading | Low | Keep the session **out** of Web Storage (`HttpOnly` cookie), and keep the CSP strict. This is another reason for the redirect flow over GIS. |
 | R8 | **`revealed` broadcasts the full `MatchRecord`**, including `config.players[].name`, to every connection including spectators. | Code reading | Low | Never put a `user_id` into `GameConfig`. Keep identity beside the record. |
 | R9 | **Host-supplied `controller`, `difficulty` and `gardenPreset` aren't enum-checked.** `createGame` passes `controller`/`difficulty` through. A host can set a nonsense controller, which the room treats as a CPU. | Code reading | Low (host griefing their own room) | Same validation pass as R1. |
@@ -1167,8 +1168,8 @@ proposal, the relevant section above has been updated.
   first ([spec](ACCOUNTS_SPEC_PHASE_0_5.md)).
 - **Phase 1** follows, but only after its schema
   ([spec](ACCOUNTS_SPEC_PHASE_1.md)) has been reviewed.
-- **Phase 2** (authentication): spec approved; PR 2-A shipped 2026-09-30,
-  and each later PR waits for its own approval. It carries
+- **Phase 2** (authentication): spec approved; PR 2-A shipped 2026-09-30
+  and PR 2-B 2026-10-01, and each later PR waits for its own approval. It carries
   requirements **P2-1** (central enforcement of `status = 'active'`) and
   **P2-2** (authentication tested through the real Worker and D1
   environment), both in §9.5.
