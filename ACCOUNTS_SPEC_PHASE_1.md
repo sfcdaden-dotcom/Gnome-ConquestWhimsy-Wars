@@ -12,7 +12,8 @@ one `GLOB` pattern is 251 bytes, and D1 refuses any pattern over 50, so on D1
 no `users` row can be inserted. Every UUID-validation result recorded in §3
 below was obtained on **Node's SQLite (`node:sqlite`), not on D1**. The
 miniflare check in §6 never inserted into `users`, so nothing here exercised
-the CHECK on D1. `0002_users_id_check.sql` replaces the CHECK (see
+the CHECK on D1. `0002_users_id_check.sql` replaces the CHECK, and is
+applied to staging and production (Phase 2's PR 2-A; see
 [ACCOUNTS_SPEC_PHASE_2.md §1.1](ACCOUNTS_SPEC_PHASE_2.md#11-migrations-one-corrective-migration-and-nothing-else-revision-4)).
 Because it takes number 0002, each draft migration below moves up one number
 when its phase ships: `0002_profiles.sql` becomes `0003`, and so on to

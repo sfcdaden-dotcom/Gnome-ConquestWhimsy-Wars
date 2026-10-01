@@ -1,8 +1,10 @@
 # Phase 2 — Google sign-in (implementation spec, for review)
 
-**Status: revision 4 (2026-09-29). Revision 2 was approved, and PR 2-A
-(test harness and dependencies) is authorised. PRs 2-B to 2-F each need
-their own approval.** Phase 1 is complete:
+**Status: revision 4 (2026-09-29). Revision 2 was approved. PR 2-A (test
+harness and dependencies, with `0002_users_id_check.sql`) is done: merged
+2026-09-30 as #62 and deployed, with 0002 applied to staging and production
+and verified on both. Production `/api/health` answers 200. PRs 2-B to
+2-F each need their own approval.** Phase 1 is complete:
 `0001_identity.sql` is applied to staging and production, and is now
 production history.
 
@@ -117,7 +119,9 @@ feature.
   `/api/health` answers 503 on any database without it. 0002 is applied to
   staging, then production, **before** the code that expects it is deployed
   (DEPLOYMENT.md, "migrate first"). Applying it first is safe: nothing in the
-  deployed code reads or writes `users`.
+  deployed code reads or writes `users`. **Done:** applied to staging and
+  production and verified on both; production `/api/health` answers 200 on
+  the deployed code.
 - **Numbering.** The Phase 1 spec's draft migrations each move up one number
   (`0002_profiles.sql` becomes `0003`, and so on), as the numbering rule
   below provides. Their contents do not change.
@@ -914,7 +918,11 @@ Limits of these checks:
 Each PR leaves `main` shippable. All existing unit and e2e tests stay green.
 The only migration is `0002_users_id_check.sql`, in PR 2-A (§1.1).
 
-**PR 2-A — Test harness and dependencies (P2-2), with `0002_users_id_check.sql`.**
+**PR 2-A — Test harness and dependencies (P2-2), with `0002_users_id_check.sql`.
+✅ Done: #62, merged and deployed 2026-09-30.** Two items it left as
+follow-ups: the `npm audit` findings in dev tooling (the pool pins its own
+wrangler, miniflare, undici and sharp, all within flagged ranges), and the
+connection-id fix listed before 2-E below.
 The harness found 0001's D1 defect (§1.1), and 2-A cannot pass on D1
 without the fix, so they ship together, as separate commits.
 - `@cloudflare/vitest-pool-workers@0.22.0` (dev, exact pin), a
@@ -1004,11 +1012,11 @@ Safe to deploy to production. For real browsers, nothing changes.
 - the published consent screen;
 - `ACCOUNTS_ENABLED` set to `"true"`.
 
-**One remote database step, reviewed before it runs:** apply
+**One remote database step, reviewed before it runs (✅ done):** apply
 `0002_users_id_check.sql` to staging (`npm run db:migrate:staging`), check
 it, then to production (`npm run db:migrate:prod`). Do it before the PR that
-adds it is deployed, because that code's `/api/health` expects it. Nothing
-else in Phase 2 touches a remote database.
+adds it is deployed, because that code's `/api/health` expects it. Applied
+and verified on both. Nothing else in Phase 2 touches a remote database.
 
 ## 15. Exit criteria
 

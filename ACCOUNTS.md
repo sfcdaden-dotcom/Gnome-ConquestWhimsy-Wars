@@ -4,12 +4,14 @@
 complete: `0001_identity.sql` is applied to staging and production and is now
 production history, so every later schema change is a new migration file.
 Its `users.id` CHECK turned out not to work on D1 (it had only been tested on
-Node's SQLite); `0002_users_id_check.sql` replaces it, in Phase 2's first PR.
-The later draft migrations each move up one number.
-Phase 2 is specified for review ([ACCOUNTS_SPEC_PHASE_2.md](ACCOUNTS_SPEC_PHASE_2.md))
-and not started.** It audits the repository as of `43ffa51` and describes how
-persistent player accounts will be added without destabilising what already
-works. The product owner's decisions are recorded in
+Node's SQLite); `0002_users_id_check.sql` replaces it. The later draft
+migrations each move up one number.
+Phase 2 is in progress ([ACCOUNTS_SPEC_PHASE_2.md](ACCOUNTS_SPEC_PHASE_2.md)):
+PR 2-A (the Workers-runtime test harness, with 0002) is merged and deployed,
+and 0002 is applied to staging and production and is production history too.
+PRs 2-B to 2-F each need their own approval.** It audits the repository as
+of `43ffa51` and describes how persistent player accounts will be added
+without destabilising what already works. The product owner's decisions are recorded in
 [§19](#19-decisions-approved-2026-09-29). They take precedence over anything
 earlier in this document that reads as a proposal.
 
@@ -26,10 +28,8 @@ Detailed specs, one per phase so far:
 - [ACCOUNTS_SPEC_PHASE_1.md](ACCOUNTS_SPEC_PHASE_1.md): the persistence
   foundation and the full proposed D1 schema.
 - [ACCOUNTS_SPEC_PHASE_2.md](ACCOUNTS_SPEC_PHASE_2.md): Google sign-in,
-  **for review before implementation**. Its §0 lists where it departs from
+  approved and in progress (PR 2-A done). Its §0 lists where it departs from
   §9, §10 and §17 below, and why.
-
-Phase 2 does not start until its spec is approved.
 
 The codebase and its docs call the game **Whimsy Wars** (the Worker is named
 `gnomeconquest`); this document uses **Gnome Wars**, as the brief does.
@@ -1167,7 +1167,8 @@ proposal, the relevant section above has been updated.
   first ([spec](ACCOUNTS_SPEC_PHASE_0_5.md)).
 - **Phase 1** follows, but only after its schema
   ([spec](ACCOUNTS_SPEC_PHASE_1.md)) has been reviewed.
-- **Phase 2** (authentication) waits for explicit approval. It carries
+- **Phase 2** (authentication): spec approved; PR 2-A shipped 2026-09-30,
+  and each later PR waits for its own approval. It carries
   requirements **P2-1** (central enforcement of `status = 'active'`) and
   **P2-2** (authentication tested through the real Worker and D1
   environment), both in §9.5.

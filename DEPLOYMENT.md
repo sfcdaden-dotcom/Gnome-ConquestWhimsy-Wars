@@ -72,9 +72,10 @@ would repeat this: create the database (dashboard, or
   minutes in between. So a migration only ever *adds* (expand); removing
   anything the old code used waits for a later release (contract).
 - **A migration applied to production is never edited.** Every change is a
-  new, higher-numbered file. `migrations/0001_identity.sql` was applied to
-  staging and production on 2026-09-29 and is production history; a unit
-  test pins its hash.
+  new, higher-numbered file. `migrations/0001_identity.sql` (applied
+  2026-09-29) and `migrations/0002_users_id_check.sql` (applied with
+  PR 2-A, deployed 2026-09-30) are production history; a unit test pins
+  both hashes.
 - **A migration is tested on real D1 before it is applied anywhere.**
   `npm run test:workers` (also in CI) applies the migrations to a local D1
   inside the Workers runtime and runs the repository suites against it.
@@ -96,11 +97,10 @@ would repeat this: create the database (dashboard, or
   then writes the whole process environment into that file (a test enforces
   this; see ACCOUNTS_SPEC_PHASE_2.md §3).
 
-**Next release with a migration: `0002_users_id_check.sql`.** Apply it to
-staging, check `/api/health`, then to production, **before** the code that
-adds it is deployed. That code's `/api/health` answers 503 until 0002 is
-applied. Applying it first is safe, because the deployed code never touches
-`users`. 0002 refuses to run if any identity table holds a row.
+**Applied so far:** `0001_identity.sql` and `0002_users_id_check.sql`, on
+both staging and production. `LATEST_MIGRATION` is 0002, and production's
+`/api/health` answers 200. The next migration is Phase 3's
+`0003_profiles.sql`; no Phase 2 PR after 2-A adds one.
 
 `npm run deploy:staging` builds with `CLOUDFLARE_ENV=staging` (POSIX shells),
 so the staging Worker, its database and its Durable Object namespace are
