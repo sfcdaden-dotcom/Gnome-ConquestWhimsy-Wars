@@ -218,6 +218,32 @@ survives a browser restart. The 30-day sliding limit is enforced in D1.
 - *Alternative:* a browser-session cookie. It ends when the browser quits,
   which makes decision 12's 30-day sliding lifetime meaningless in practice.
 
+**D7. Real Google sign-in is off in branch previews (open design item,
+recorded 2026-10-01).**
+
+- **The problem.** Google requires the `redirect_uri` to match a registered
+  URI exactly. Every branch preview has its own host
+  (`<branch>-gnomeconquest-staging.<subdomain>.workers.dev`, plus one per
+  deployment), so the set of hosts is unbounded and not known in advance.
+  Previews also share one `env.staging.previews` block across all branches,
+  so it cannot hold a per-branch `PUBLIC_ORIGIN`.
+- **For now:**
+  - Branch previews run with `ACCOUNTS_ENABLED="false"` in
+    `env.staging.previews.vars`, so the auth routes and `/api/me` answer 404
+    there, as in production (D2).
+  - Previews get no Google client id and no Google secret.
+  - `FAKE_IDP` is never set on any deployed Worker. The fake IdP also refuses
+    any non-loopback host (§10).
+  - Real sign-in is tested on staging's own host and locally.
+- **Not designed yet.** Sign-in on previews would need a deliberate design,
+  for example a callback on the staging host that hands the session back to
+  the preview. Nothing in Phase 2 depends on it, and none of it is assumed.
+- **Effect on 2-C.** 2-C adds its vars to `env.staging.previews.vars` too.
+  `src/worker/previewConfig.test.ts` requires previews to declare every
+  binding and var staging declares, by name. Where a preview's value must
+  differ from staging's (`ACCOUNTS_ENABLED`), 2-C declares the preview value
+  explicitly rather than leaving the var out.
+
 ## 3. Configuration and secrets
 
 | Name | Kind | Production | Staging | Local (`.dev.vars`) |
@@ -231,6 +257,8 @@ survives a browser restart. The 30-day sliding limit is enforced in D1.
 
 - **`PUBLIC_ORIGIN`** is used only to build the `redirect_uri`, which Google
   requires to match exactly. It is never taken from the request.
+- **Branch previews** inherit none of these. They get only what
+  `env.staging.previews` declares, and run with accounts off (D7).
 - **Missing configuration fails closed, per route.** If `ACCOUNTS_ENABLED` is
   on but a Google value or the cookie key is missing, the auth routes answer
   503 ("sign-in is unavailable"). Guest play and rooms are unaffected. The
