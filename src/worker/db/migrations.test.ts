@@ -15,14 +15,13 @@ import type { TestDb } from './testDb';
 import { createTestDb, migrations } from './testDb';
 
 /**
- * The frozen 0001, byte for byte. Once a migration has been applied to
+ * The frozen migrations, byte for byte. Once a migration has been applied to
  * production it is never edited — every change is a new file — so an edit to
- * this one is a mistake this test exists to catch. Do not "fix" the hash.
+ * one of these is a mistake this test exists to catch. Do not "fix" a hash.
  */
 const FROZEN: Record<string, string> = {
   '0001_identity.sql': '51a24faaf3a3ba1460a062f49b515bcfa79a41081fa8b35df5cfec8336728c84',
-  // Pinned at review, before it has been applied anywhere remote. An edit
-  // during review updates this deliberately; once applied, it never changes.
+  // Applied to staging and production with PR 2-A: production history too.
   '0002_users_id_check.sql': '0642555e16bc09ad18173990275c633c0192a4d5c7601e57eace6709c22a502b',
 };
 
