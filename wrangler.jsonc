@@ -125,7 +125,56 @@
           "database_id": "5da7b240-476d-4fb8-938a-7cabcf80a964",
           "migrations_dir": "migrations"
         }
-      ]
+      ],
+      // Branch previews (Workers Builds, one per non-production branch) do NOT
+      // inherit any binding above: a preview gets exactly what is declared
+      // here, plus ASSETS. Without this block a preview has no DB and no
+      // ROOMS, and /api/health answers 503.
+      //
+      // - DB is staging's own database, so a branch that adds a migration
+      //   answers 503 on its preview until staging is migrated (migrate first).
+      // - The rate limits are staging's, in namespaces of their own, so
+      //   preview traffic never spends staging's budget.
+      // - Vars and secrets, when there are any, must be declared here too
+      //   (secrets with `wrangler preview secret put`).
+      //
+      // There is deliberately no top-level "previews": production builds no
+      // branch previews, and a preview must never be bound to production's
+      // database. src/worker/previewConfig.test.ts pins all of this.
+      "previews": {
+        "durable_objects": {
+          "bindings": [
+            {
+              "name": "ROOMS",
+              "class_name": "RoomDurableObject"
+            }
+          ]
+        },
+        "ratelimits": [
+          {
+            "name": "ROOM_CREATE_LIMIT",
+            "namespace_id": "3001",
+            "simple": { "limit": 10, "period": 60 }
+          },
+          {
+            "name": "ROOM_JOIN_LIMIT",
+            "namespace_id": "3002",
+            "simple": { "limit": 60, "period": 60 }
+          },
+          {
+            "name": "HEALTH_LIMIT",
+            "namespace_id": "3003",
+            "simple": { "limit": 30, "period": 60 }
+          }
+        ],
+        "d1_databases": [
+          {
+            "binding": "DB",
+            "database_name": "gnomeconquest-staging",
+            "database_id": "5da7b240-476d-4fb8-938a-7cabcf80a964"
+          }
+        ]
+      }
     }
   }
 }
