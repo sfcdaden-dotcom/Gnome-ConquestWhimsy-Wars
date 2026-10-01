@@ -29,8 +29,8 @@
       "new_sqlite_classes": ["RoomDurableObject"]
     }
   ],
-  // Per-IP limits on the two endpoints reachable before a room has agreed to
-  // hold you (src/worker/index.ts). Inside a room the limiting is the room's
+  // Per-IP limits on the endpoints reachable before a room has agreed to
+  // hold you (src/worker/routes.ts). Inside a room the limiting is the room's
   // own — per connection and per room, see src/net/ratelimit.ts.
   //
   // The namespace ids are local to this Worker and just have to be distinct.

@@ -1,11 +1,10 @@
 /**
  * The Worker's front door, driven directly — no wrangler, no miniflare.
  *
- * Until now this file had no tests at all; the e2e suite covered it only
- * incidentally. It is where authentication will live (see ACCOUNTS.md), so the
- * routing properties it already relies on are pinned first. The one that
- * matters most: a room's host key can only be minted by the Worker's own
- * `POST /api/rooms`, never requested from outside.
+ * These pin the routing properties the rooms rely on, through the real route
+ * table and router. The one that matters most: a room's host key can only be
+ * minted by the Worker's own `POST /api/rooms`, never requested from outside.
+ * The router's own rules (access levels, body rules) are in router.test.ts.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -17,6 +16,7 @@ interface Forwarded {
   room: string;
   url: URL;
   method: string;
+  headers: Headers;
 }
 
 /** A fake env: rooms that record what reaches them, assets, and limiters. */
@@ -35,7 +35,7 @@ function makeEnv(opts: { createAllowed?: boolean; joinAllowed?: boolean; healthA
       get: (id: { name: string }) => ({
         async fetch(request: Request) {
           const url = new URL(request.url);
-          forwarded.push({ room: id.name, url, method: request.method });
+          forwarded.push({ room: id.name, url, method: request.method, headers: request.headers });
           if (url.pathname.endsWith('/host-key')) return Response.json({ hostKey: 'f'.repeat(32) });
           return Response.json({ code: url.searchParams.get('code') });
         },
@@ -50,15 +50,24 @@ function makeEnv(opts: { createAllowed?: boolean; joinAllowed?: boolean; healthA
   return { env, forwarded, limited };
 }
 
-async function call(env: unknown, path: string, init: RequestInit = {}): Promise<Response> {
-  const request = new Request(`https://gnomes.example${path}`, {
-    ...init,
-    headers: { 'CF-Connecting-IP': '203.0.113.7', ...(init.headers ?? {}) },
-  });
+const ORIGIN = 'https://gnomes.example';
+
+/**
+ * A request as the game's own page sends it: from its own origin, so with
+ * `Origin` set to it. `origin: null` sends none; a string sends that one.
+ */
+async function call(env: unknown, path: string, init: RequestInit & { origin?: string | null } = {}): Promise<Response> {
+  const { origin = ORIGIN, ...rest } = init;
+  const headers = new Headers(rest.headers);
+  headers.set('CF-Connecting-IP', '203.0.113.7');
+  if (origin !== null) headers.set('Origin', origin);
+  const request = new Request(`${ORIGIN}${path}`, { ...rest, headers });
   // The handler is typed against the Workers runtime; these are Node's
   // Request/Response, which is all it touches.
-  return (worker.fetch as unknown as (r: Request, e: unknown) => Promise<Response>)(request, env);
+  return (worker.fetch as unknown as (r: Request, e: unknown, c: unknown) => Promise<Response>)(request, env, {});
 }
+
+const UPGRADE = { Upgrade: 'websocket' };
 
 describe('POST /api/rooms', () => {
   it('opens a room and hands back its code and host key', async () => {
@@ -82,6 +91,17 @@ describe('POST /api/rooms', () => {
     expect(res.headers.get('retry-after')).toBe('60');
     expect(forwarded).toHaveLength(0);
     expect(limited).toEqual([{ limiter: 'create', key: '203.0.113.7' }]);
+  });
+
+  it('refuses another origin, or none, before spending the caller’s budget', async () => {
+    for (const origin of ['https://evil.example', 'https://sub.gnomes.example', 'http://gnomes.example', 'null', null]) {
+      const { env, forwarded, limited } = makeEnv();
+      const res = await call(env, '/api/rooms', { method: 'POST', origin });
+      expect(res.status, String(origin)).toBe(403);
+      expect(await res.json()).toEqual({ error: 'BAD_ORIGIN' });
+      expect(forwarded).toHaveLength(0);
+      expect(limited).toHaveLength(0);
+    }
   });
 });
 
@@ -133,6 +153,52 @@ describe('/api/rooms/:code', () => {
   });
 });
 
+describe('the socket upgrade and its Origin', () => {
+  it('forwards an upgrade from the page’s own origin', async () => {
+    const { env, forwarded } = makeEnv();
+    await call(env, '/api/rooms/ABC234/ws', { headers: UPGRADE });
+    expect(forwarded).toHaveLength(1);
+  });
+
+  it('refuses an upgrade from another origin, on either room path, before the join limit', async () => {
+    for (const path of ['/api/rooms/ABC234/ws', '/api/rooms/ABC234']) {
+      const { env, forwarded, limited } = makeEnv();
+      const res = await call(env, path, { headers: UPGRADE, origin: 'https://evil.example' });
+      expect(res.status, path).toBe(403);
+      expect(await res.json()).toEqual({ error: 'BAD_ORIGIN' });
+      expect(forwarded).toHaveLength(0);
+      expect(limited).toHaveLength(0);
+    }
+  });
+
+  it('lets an upgrade with no Origin through: not a browser, so it can only be a guest', async () => {
+    const { env, forwarded } = makeEnv();
+    await call(env, '/api/rooms/ABC234/ws', { headers: UPGRADE, origin: null });
+    expect(forwarded).toHaveLength(1);
+  });
+
+  it('does not check the Origin of a plain GET', async () => {
+    const { env, forwarded } = makeEnv();
+    const res = await call(env, '/api/rooms/ABC234', { origin: 'https://evil.example' });
+    expect(res.status).toBe(200);
+    expect(forwarded).toHaveLength(1);
+  });
+});
+
+describe('the account header', () => {
+  it('is deleted from whatever the client sent, on both forwarded paths', async () => {
+    const { env, forwarded } = makeEnv();
+    for (const name of ['x-gw-account', 'X-GW-Account']) {
+      await call(env, '/api/rooms/ABC234', { headers: { [name]: 'someone-else' } });
+      await call(env, '/api/rooms/ABC234/ws', { headers: { ...UPGRADE, [name]: 'someone-else' } });
+    }
+    expect(forwarded).toHaveLength(4);
+    for (const f of forwarded) expect(f.headers.has('x-gw-account')).toBe(false);
+    // Everything else the client sent still arrives.
+    expect(forwarded[1].headers.get('upgrade')).toBe('websocket');
+  });
+});
+
 describe('GET /api/health', () => {
   it('answers 200 when the database has the schema the code expects', async () => {
     const db = createTestDb();
@@ -163,6 +229,15 @@ describe('GET /api/health', () => {
 });
 
 describe('everything else', () => {
+  it('answers a room path only to GET', async () => {
+    const { env, forwarded } = makeEnv();
+    for (const method of ['POST', 'PUT', 'DELETE']) {
+      const res = await call(env, '/api/rooms/ABC234', { method });
+      expect(res.status, method).toBe(404);
+    }
+    expect(forwarded).toHaveLength(0);
+  });
+
   it('answers unknown API paths with a JSON 404', async () => {
     const { env } = makeEnv();
     const res = await call(env, '/api/nothing-here');

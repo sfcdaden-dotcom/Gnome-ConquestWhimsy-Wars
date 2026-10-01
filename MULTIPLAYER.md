@@ -14,7 +14,9 @@ Cloudflare Durable Object per room.
 src/net/protocol.ts    the wire messages (client ⇄ room), and nothing else
 src/net/room.ts        ALL of the server's behaviour — no Cloudflare imports
 src/net/commitment.ts  commit–reveal for the deck secret
-src/worker/index.ts    Worker entry: /api/rooms/*, everything else → assets
+src/worker/index.ts    Worker entry: /api/* → the router, everything else → assets
+src/worker/router.ts   per-route Origin rule, rate limit and access level
+src/worker/routes.ts   the /api/* route table: rooms and health
 src/worker/room-do.ts  the Durable Object: sockets, storage, alarms, randomness
 src/ui/useNetGame.ts   the client socket, as a GameSession GameScreen can render
 src/ui/netClient.ts    URLs, reconnect tokens, backoff, framing (no React)

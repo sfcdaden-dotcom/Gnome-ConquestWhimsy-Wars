@@ -974,6 +974,23 @@ No behaviour change.
 
 Safe to deploy to production. For real browsers, nothing changes.
 
+As built (the 2-B PR):
+- `src/worker/router.ts` (the checks, in §7.1's order), `http.ts`,
+  `routes.ts` (the table), `env.ts` (the bindings), and
+  `auth/types.ts` and `auth/session.ts` (the stub). `index.ts` only sends
+  `/api/*` to the router.
+- The `Origin` rule applies to a WebSocket upgrade on **any** route, not
+  only `/ws`. The room accepts an upgrade on the snapshot path too, so
+  checking `/ws` alone would have left a door open.
+- Room paths now answer GET only, as §4's table says. Before, any method
+  was forwarded, and the room answered with the snapshot. The game sends
+  only GET (and the upgrade, which is a GET).
+- Body rules: `application/json` only (415), a cap counted as the bytes
+  arrive whatever `Content-Length` says (413), and then strict UTF-8, JSON
+  and the route's schema (400). No route uses them yet.
+- The Worker does not yet set `x-gw-account`; it only strips it. Setting it
+  arrives with the room handoff (2-E), when something reads it.
+
 **PR 2-C — Sessions, `/api/me`, logout.**
 - `src/worker/auth/session.ts`, `issueSession` (§6.3), the `/api/me` DTO,
   logout, and the purge cron.

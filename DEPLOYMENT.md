@@ -166,6 +166,11 @@ into a `vercel.json` `headers` entry (Vercel doesn't read `_headers`).
   'none'` in `_headers`.
 - **Headers** (`public/_headers`): `nosniff`, `no-referrer`, frame denial,
   restrictive `Permissions-Policy`, COOP/CORP.
+- **`Origin` checks** (`src/worker/router.ts`): every non-GET `/api/*`
+  request must come from the page's own origin, and so must any WebSocket
+  upgrade that sends an `Origin` at all. Anything else gets
+  `403 BAD_ORIGIN`. This blocks cross-site WebSocket hijacking before
+  sign-in adds a cookie for it to ride (ACCOUNTS.md R6).
 - **No data collection**: no cookies, no telemetry, no third-party anything.
   Single-device play still makes no network calls at all. Multiplayer
   necessarily adds some state: a room holds a board, seat names and a private
