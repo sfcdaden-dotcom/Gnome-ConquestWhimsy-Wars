@@ -752,7 +752,11 @@ on the connection's in-memory `ConnState`, and nowhere else.
 
      This is wrong today, accounts or not. The fix is to allocate the id
      after `roomFor()`, and it ships ahead of PR 2-E (it is not part of
-     2-A), with a regression test.
+     2-A), with a regression test. **Fixed (2026-10-02)** in its own PR,
+     after it surfaced in production as each player's lobby showing the
+     other's seat as empty until a reconnect.
+     `src/worker/room-do.workers.test.ts` reproduces that, and covers the
+     id rule.
    - **Regression test:** with two connections of one account, hibernate
      and wake the room (rebuild it from storage and re-attach its sockets
      in a shuffled order). The same connection, and so the same seat, still
@@ -1049,6 +1053,20 @@ As built (the 2-C PR):
 - This is an existing bug, not Phase 2 work.
 - Allocate the id after `roomFor()`, with the regression test.
 - It needs its own approval, and can land any time before 2-E.
+- **Done in its own PR (2026-10-02).** It was found in production: a
+  player who joined after the lobby's Durable Object had been evicted got
+  the host's connection id. The host then dropped out of the room's view
+  until their socket redialled.
+  - **The production symptom:** each screen said it was waiting for the
+    other's seat.
+  - **The tests,** in `src/worker/room-do.workers.test.ts`:
+    - after a wake, both screens agree;
+    - the host's messages still reach the host;
+    - a new id is above every surviving one (N1);
+    - ids stay unique when the wake is a message.
+
+  N1's other half (a wake does not change which connection counts for an
+  account) needs accounts in the room, so it ships with 2-E.
 
 **PR 2-E — The room handoff (live authentication only).**
 - `room-do.ts`: the attachment, `hello` with the third argument, and the
