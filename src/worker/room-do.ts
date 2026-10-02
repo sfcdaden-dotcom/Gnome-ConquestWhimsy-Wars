@@ -180,9 +180,16 @@ export class RoomDurableObject implements DurableObject {
 
     const pair = new WebSocketPair();
     const [client, server] = [pair[0], pair[1]];
-    const connId = String(this.nextConnId++);
 
     await this.roomFor(code);
+    // The id is allocated only AFTER `roomFor`. On a wake from hibernation
+    // `nextConnId` restarts at 1, and it is `reattachSockets` that advances it
+    // past every socket that survived. Allocating first handed a newcomer the
+    // same id as a live player, and the newcomer's hello then replaced that
+    // player in the room: each screen saw the other's seat as empty until a
+    // reconnect. Nothing is awaited between here and the attachment, so no
+    // other upgrade can take the same id.
+    const connId = String(this.nextConnId++);
     // Hibernation-aware accept: the DO can be evicted while this socket stays
     // open, and wakes on the next message rather than holding memory idle.
     this.ctx.acceptWebSocket(server);
