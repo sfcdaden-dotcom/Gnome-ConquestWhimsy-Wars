@@ -155,7 +155,7 @@ describe('the real route table', () => {
   it('refuses guests and non-active accounts on every route that is not public or self-exit', async () => {
     // Phase 2 has no `user` routes, so this walk is empty today. It is here
     // so that Phase 3's routes are covered the day they are added.
-    const env = { ...limiterEnv().env } as WorkerEnv;
+    const env = { ...limiterEnv().env, ACCOUNTS_ENABLED: 'true' } as WorkerEnv;
     for (const r of ROUTES.filter((r) => r.access === 'user')) {
       const path = r.path.replace(/:[A-Za-z]+/g, 'ABC234');
       for (const [auth, status] of [
@@ -169,10 +169,24 @@ describe('the real route table', () => {
     }
   });
 
-  it('refuses guests on every self-exit route', async () => {
-    for (const r of ROUTES.filter((r) => r.access === 'self-exit')) {
-      const res = await run(ROUTES, request(r.path, { method: r.method }), GUEST);
+  it('refuses guests on every self-exit route, and has exactly the allowlisted ones', async () => {
+    // With accounts on, so each route is reachable (off, they answer 404).
+    const env = { ...limiterEnv().env, ACCOUNTS_ENABLED: 'true' } as WorkerEnv;
+    const selfExit = ROUTES.filter((r) => r.access === 'self-exit');
+    expect(selfExit.map(routeKey).sort()).toEqual([...SELF_EXIT_ALLOWLIST].sort());
+    for (const r of selfExit) {
+      const res = await run(ROUTES, request(r.path, { method: r.method }), GUEST, env);
       expect(res.status, routeKey(r)).toBe(401);
+    }
+  });
+
+  it('hides every accounts route while accounts are off', async () => {
+    for (const r of ROUTES.filter((r) => r.access !== 'public')) {
+      for (const ACCOUNTS_ENABLED of [undefined, 'false']) {
+        const env = { ...limiterEnv().env, ACCOUNTS_ENABLED } as WorkerEnv;
+        const res = await run(ROUTES, request(r.path, { method: r.method }), ACTIVE, env);
+        expect(res.status, `${routeKey(r)} with ${ACCOUNTS_ENABLED}`).toBe(404);
+      }
     }
   });
 });
@@ -314,3 +328,87 @@ describe('body rules', () => {
     }
   });
 });
+
+describe('routes that are off (D2)', () => {
+  const gated = route({
+    method: 'GET',
+    path: '/api/me',
+    access: 'self-exit',
+    enabled: (env) => env.ACCOUNTS_ENABLED === 'true',
+    handler: async () => Response.json({ ok: true }),
+  });
+
+  it('answer the same JSON 404 as an unknown path, before anything else is checked', async () => {
+    const { fn, calls } = as(ACTIVE);
+    const { env, limited } = limiterEnv();
+    const limitedRoute = { ...gated, limit: 'HEALTH_LIMIT' } as Route;
+    const res = await dispatch([limitedRoute], request('/api/me', { origin: 'https://evil.example' }), env, {} as ExecutionContext, fn);
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: 'Not found' });
+    expect(calls.n).toBe(0);
+    expect(limited).toHaveLength(0);
+  });
+
+  it('run normally once on', async () => {
+    const env = { ...limiterEnv().env, ACCOUNTS_ENABLED: 'true' } as WorkerEnv;
+    const res = await dispatch([gated], request('/api/me'), env, {} as ExecutionContext, as(ACTIVE).fn);
+    expect(res.status).toBe(200);
+  });
+});
+
+describe('a stale session cookie', () => {
+  const STALE: Auth = { kind: 'guest', staleSession: true };
+
+  it('is cleared on a refusal', async () => {
+    const res = await run([echo('self-exit', '/api/me')], request('/api/me'), STALE);
+    expect(res.status).toBe(401);
+    expect(res.headers.get('set-cookie')).toMatch(/^__Host-gw_session=;.*Max-Age=0/);
+  });
+
+  it('is cleared on a public route that looked, and not on one that did not', async () => {
+    const looking = route({
+      method: 'GET',
+      path: '/api/thing',
+      access: 'public',
+      identity: 'optional',
+      handler: async () => Response.json({}),
+    });
+    expect((await run([looking], request('/api/thing'), STALE)).headers.get('set-cookie')).toMatch(/Max-Age=0/);
+    expect((await run([echo('public')], request('/api/thing'), STALE)).headers.get('set-cookie')).toBeNull();
+  });
+
+  it('is never set for a live session or a plain guest', async () => {
+    for (const auth of [GUEST, ACTIVE, SUSPENDED]) {
+      const res = await run([echo('self-exit', '/api/me')], request('/api/me'), auth);
+      expect(res.headers.get('set-cookie'), auth.kind).toBeNull();
+    }
+  });
+});
+
+describe('when the session lookup itself fails', () => {
+  const failing: Authenticate = async () => {
+    throw new Error('D1 unreachable');
+  };
+
+  it('a public route still runs, as a guest', async () => {
+    const looking = route({
+      method: 'GET',
+      path: '/api/thing',
+      access: 'public',
+      identity: 'optional',
+      handler: async ({ auth }) => Response.json({ auth: auth.kind }),
+    });
+    const res = await dispatch([looking], request('/api/thing'), limiterEnv().env, {} as ExecutionContext, failing);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ auth: 'guest' });
+  });
+
+  it('a route that needs an account answers 503, not 401', async () => {
+    for (const r of [echo('user'), echo('self-exit', '/api/thing')]) {
+      const res = await dispatch([r], request('/api/thing'), limiterEnv().env, {} as ExecutionContext, failing);
+      expect(res.status, r.access).toBe(503);
+      expect(await res.json()).toEqual({ error: 'UNAVAILABLE' });
+    }
+  });
+});
+

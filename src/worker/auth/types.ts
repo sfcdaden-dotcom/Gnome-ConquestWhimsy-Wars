@@ -17,7 +17,12 @@ export interface ActiveUser {
 }
 
 export type Auth =
-  | { kind: 'guest' }
+  /**
+   * `staleSession`: the request carried a session cookie that matches no live
+   * session (unknown, expired or revoked). It is a guest, and the router
+   * clears the cookie on the way out so the browser stops sending it.
+   */
+  | { kind: 'guest'; staleSession?: true }
   | { kind: 'user'; user: ActiveUser }
   | { kind: 'unavailable'; userId: string; status: 'suspended' | 'deleting' };
 

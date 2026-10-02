@@ -106,6 +106,36 @@ both staging and production. `LATEST_MIGRATION` is 0002, and production's
 so the staging Worker, its database and its Durable Object namespace are
 separate from production's. Staging rooms and production rooms never meet.
 
+### Accounts switch, rate limits and the purge
+
+- **`ACCOUNTS_ENABLED`** (a var, not a secret) turns accounts on only when it
+  is exactly `"true"`:
+
+  | Environment | Value |
+  |---|---|
+  | production | `"false"` (dark launch, decision D2) |
+  | staging | `"true"` |
+  | branch previews | `"false"` (D7) |
+  | local runs, Playwright included | `"true"` |
+
+  While it is off, `/api/me` and the auth routes answer 404, and no request
+  is ever resolved to an account. Turning it on in production waits for
+  Phase 3, a privacy policy and the published OAuth consent screen.
+- **Rate limits** are per IP, with namespace ids that must be distinct
+  within an environment:
+
+  | Limit | Rate | Production | Staging | Previews |
+  |---|---|---|---|---|
+  | `AUTH_LIMIT` (sign-in, sign-out) | 20 a minute | 1004 | 2004 | 3004 |
+  | `ME_LIMIT` | 60 a minute | 1005 | 2005 | 3005 |
+
+- **A daily cron** (`17 3 * * *` UTC) purges expired sessions in production
+  and staging. Expired sessions already resolve as guests; the purge only
+  keeps the table small.
+- **Smoke checks after a deploy:**
+  - production: `GET /api/me` answers 404;
+  - staging: `GET /api/me` answers `401 {"error":"SIGNED_OUT"}`.
+
 ### Branch previews
 
 Workers Builds builds every non-production branch into a preview of the
@@ -121,8 +151,9 @@ in its dashboard.
 - **What it declares:**
   - `DB`: staging's own database;
   - `ROOMS`;
-  - the three rate limits, in namespaces 3001–3003 of their own, so preview
-    traffic never spends staging's budget.
+  - the five rate limits, in namespaces 3001–3005 of their own, so preview
+    traffic never spends staging's budget;
+  - `ACCOUNTS_ENABLED="false"`: accounts stay off in every preview (D7).
 - **A preview shares staging's database.** A branch that adds a migration
   answers 503 on its preview until that migration is applied to staging.
   This is the "migrate first" rule above. Nothing deployed ever applies a

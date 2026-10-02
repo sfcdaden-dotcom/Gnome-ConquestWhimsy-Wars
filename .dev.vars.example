@@ -1,11 +1,20 @@
-# Local secrets for `wrangler dev` / `vite preview`. Copy to .dev.vars (which
-# is git-ignored) and fill in. Names only here; never commit a value.
+# Local values for `wrangler dev` / `vite preview`. Copy to .dev.vars (which
+# is git-ignored) and fill in. Names only here; never commit a secret's value.
 #
-# Nothing is needed yet: Phase 1 (the database foundation) uses no secrets.
-# Phase 2 (Google sign-in) will add, per environment:
-#
+# `npm run build` copies .dev.vars into dist/gnomeconquest/.dev.vars (also
+# git-ignored, and never uploaded by `wrangler deploy`), so dist/ must not be
+# published anywhere else once this holds real secrets.
+
+# Accounts on for local runs (decision D2). "false" in production and in
+# branch previews; "true" on staging.
+ACCOUNTS_ENABLED=true
+
+# Added with Google sign-in (PR 2-D), each optional locally:
+# PUBLIC_ORIGIN=http://localhost:4173
+# GOOGLE_CLIENT_ID=
 # GOOGLE_CLIENT_SECRET=
 # OAUTH_COOKIE_KEY=
+# FAKE_IDP=
 #
-# Staging and production get theirs with `wrangler secret put <NAME>`
-# (add `--env staging` for staging) and each has its own values.
+# Staging and production get their secrets with `wrangler secret put <NAME>`
+# (add `--env staging` for staging); each has its own values.

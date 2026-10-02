@@ -59,6 +59,19 @@
       "name": "HEALTH_LIMIT",
       "namespace_id": "1003",
       "simple": { "limit": 30, "period": 60 }
+    },
+    {
+      // Sign-in and sign-out. A sign-in is two requests (start, callback),
+      // so this is ten sign-ins a minute from one address.
+      "name": "AUTH_LIMIT",
+      "namespace_id": "1004",
+      "simple": { "limit": 20, "period": 60 }
+    },
+    {
+      // GET /api/me reads D1 on every call.
+      "name": "ME_LIMIT",
+      "namespace_id": "1005",
+      "simple": { "limit": 60, "period": 60 }
     }
   ],
   // Accounts (ACCOUNTS.md). One D1 database per environment; the schema is
@@ -81,6 +94,17 @@
   "compatibility_flags": [
     "nodejs_compat"
   ],
+  // Accounts are dark in production until Phase 3 (decision D2): with this
+  // "false", /api/me and the auth routes answer 404 and no request is ever
+  // resolved to an account. Vars are not inherited, so each environment, and
+  // branch previews, state their own.
+  "vars": {
+    "ACCOUNTS_ENABLED": "false"
+  },
+  // The daily purge of expired sessions (ACCOUNTS_SPEC_PHASE_2.md §6.6).
+  "triggers": {
+    "crons": ["17 3 * * *"]
+  },
   // Staging: its own Worker, its own D1 database, its own Durable Object
   // namespace (so staging rooms and production rooms never meet) and, from
   // Phase 2, its own Google OAuth client and secrets. Bindings are not
@@ -93,6 +117,12 @@
   "env": {
     "staging": {
       "name": "gnomeconquest-staging",
+      "vars": {
+        "ACCOUNTS_ENABLED": "true"
+      },
+      "triggers": {
+        "crons": ["17 3 * * *"]
+      },
       "durable_objects": {
         "bindings": [
           {
@@ -116,6 +146,19 @@
           "name": "HEALTH_LIMIT",
           "namespace_id": "2003",
           "simple": { "limit": 30, "period": 60 }
+        },
+        {
+          // Sign-in and sign-out. A sign-in is two requests (start, callback),
+          // so this is ten sign-ins a minute from one address.
+          "name": "AUTH_LIMIT",
+          "namespace_id": "2004",
+          "simple": { "limit": 20, "period": 60 }
+        },
+        {
+          // GET /api/me reads D1 on every call.
+          "name": "ME_LIMIT",
+          "namespace_id": "2005",
+          "simple": { "limit": 60, "period": 60 }
         }
       ],
       "d1_databases": [
@@ -142,6 +185,11 @@
       // branch previews, and a preview must never be bound to production's
       // database. src/worker/previewConfig.test.ts pins all of this.
       "previews": {
+        // Real Google sign-in cannot work on preview hosts (D7), so accounts
+        // stay off in every branch preview.
+        "vars": {
+          "ACCOUNTS_ENABLED": "false"
+        },
         "durable_objects": {
           "bindings": [
             {
@@ -165,6 +213,19 @@
             "name": "HEALTH_LIMIT",
             "namespace_id": "3003",
             "simple": { "limit": 30, "period": 60 }
+          },
+          {
+            // Sign-in and sign-out. A sign-in is two requests (start, callback),
+            // so this is ten sign-ins a minute from one address.
+            "name": "AUTH_LIMIT",
+            "namespace_id": "3004",
+            "simple": { "limit": 20, "period": 60 }
+          },
+          {
+            // GET /api/me reads D1 on every call.
+            "name": "ME_LIMIT",
+            "namespace_id": "3005",
+            "simple": { "limit": 60, "period": 60 }
           }
         ],
         "d1_databases": [

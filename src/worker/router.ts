@@ -5,7 +5,8 @@
  * method, a path, an access level and an optional rate limit. This module
  * applies the same checks to every request, in one order (§7.1):
  *
- *   1. match the table; anything else is a JSON 404;
+ *   1. match the table; anything else, or a route switched off in this
+ *      environment, is a JSON 404;
  *   2. the `Origin` rule (§7.2);
  *   3. the route's rate limit;
  *   4. `authenticate`, only when the route needs to know who is asking;
@@ -20,6 +21,7 @@
  */
 
 import type { Authenticate } from './auth/session';
+import { withClearedSession } from './auth/session';
 import type { ActiveUser, Auth } from './auth/types';
 import { GUEST } from './auth/types';
 import type { LimitBinding, WorkerEnv } from './env';
@@ -63,6 +65,12 @@ interface RouteBase<B> {
   checkParams?(params: Record<string, string>): Response | null;
   /** JSON body rules. A route without this never has its body read. */
   body?: BodySpec<B>;
+  /**
+   * Whether the route exists in this environment. When false it answers the
+   * same JSON 404 as an unknown path, before any other check: a route that is
+   * off is indistinguishable from one that was never there (decision D2).
+   */
+  enabled?(env: WorkerEnv): boolean;
 }
 
 export type RouteDef<B> = RouteBase<B> &
@@ -186,6 +194,7 @@ export async function dispatch(
   const found = find(routes, request.method, url.pathname);
   if (!found) return json({ error: 'Not found' }, 404);
   const { route, params } = found;
+  if (route.enabled && !route.enabled(env)) return json({ error: 'Not found' }, 404);
   const early = route.checkParams?.(params);
   if (early) return early;
 
@@ -196,12 +205,32 @@ export async function dispatch(
   // 3. Rate limit.
   if (route.limit && (await overLimit(env[route.limit], callerKey(request)))) return tooManyRequests();
 
-  // 4. Who is asking, only if this route will look.
+  // 4. Who is asking, only if this route will look. If the lookup itself
+  // fails (D1 unreachable), a public route still runs, as a guest: it never
+  // refuses over identity. A route that needs an account cannot, so it says so.
   const wantsAuth = route.access !== 'public' || route.identity === 'optional';
-  const auth: Auth = wantsAuth && origin.identity ? await authenticate(request, env, ctx) : GUEST;
+  let auth: Auth = GUEST;
+  if (wantsAuth && origin.identity) {
+    try {
+      auth = await authenticate(request, env, ctx);
+    } catch (err) {
+      console.error('router: authenticate failed', { error: err instanceof Error ? err.name : typeof err });
+      if (route.access !== 'public') return refuse(503, 'UNAVAILABLE');
+    }
+  }
 
+  // 5–7. Access, body, handler. A cookie that named no live session is
+  // cleared on whatever the answer is, refusals included.
+  const res = await authorised(route, { request, env, ctx, params }, auth);
+  return auth.kind === 'guest' && auth.staleSession ? withClearedSession(res) : res;
+}
+
+async function authorised(
+  route: Route,
+  base: { request: Request; env: WorkerEnv; ctx: ExecutionContext; params: Record<string, string> },
+  auth: Auth,
+): Promise<Response> {
   // 5. Access. Each case narrows `auth` to what its handler is owed.
-  const base = { request, env, ctx, params };
   let run: (body: unknown) => Promise<Response>;
   switch (route.access) {
     case 'public':
@@ -224,7 +253,7 @@ export async function dispatch(
 
   // 6. Body.
   if (!route.body) return run(undefined);
-  const read = await readJsonBody(request, route.body);
+  const read = await readJsonBody(base.request, route.body);
   if (!read.ok) return read.response;
 
   // 7. The handler.

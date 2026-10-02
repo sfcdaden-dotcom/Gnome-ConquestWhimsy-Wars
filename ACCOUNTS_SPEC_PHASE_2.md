@@ -1006,6 +1006,38 @@ As built (the 2-B PR):
 - `wrangler.jsonc` vars per environment, and `.dev.vars.example` updated
   (names only).
 
+As built (the 2-C PR):
+- **`src/worker/auth/session.ts`** holds the cookie: token, hash,
+  `Set-Cookie` strings, `authenticate`, and logout's revoke. It is the only
+  module that reads the cookie (source scan).
+  - With `ACCOUNTS_ENABLED` anything but exactly `"true"`, `authenticate`
+    reads neither the cookie nor D1. Production therefore resolves no
+    request to an account.
+  - `issueSession` is in `src/worker/db/sessions.ts` as specified, tested on
+    both engines. Its only caller is 2-D's callback.
+- **The router:**
+  - **`enabled`:** routes can be switched off per environment, and a
+    switched-off route answers the same JSON 404 as an unknown path, before
+    any other check. `/api/me` and logout use it.
+  - **Stale cookies:** a cookie that names no live session is cleared on
+    whatever the answer is, refusals included. A WebSocket 101 is the one
+    exception, since it cannot be rebuilt.
+  - **Failed lookups:** if the session lookup itself fails (D1 unreachable),
+    a public route still runs as a guest, and a route that needs an account
+    answers `503 UNAVAILABLE` rather than a misleading 401.
+- **`AUTH_LIMIT` and `ME_LIMIT`:** in namespaces 1004/1005 (production),
+  2004/2005 (staging) and 3004/3005 (previews).
+- **The purge cron** (`17 3 * * *`) runs in production and staging. It runs
+  whether or not accounts are on.
+- **Vars:** `ACCOUNTS_ENABLED` is `"false"` in production and previews (D2,
+  D7) and `"true"` on staging.
+- **Deferred to 2-D:** `PUBLIC_ORIGIN`, `GOOGLE_CLIENT_ID`, the secrets and
+  their fail-closed 503 move there, because 2-D's routes are the first to
+  read them.
+- **e2e:** Playwright passes `ACCOUNTS_ENABLED=true` to `vite preview`
+  through the process environment (the serving command only, as §3 requires).
+  `e2e/accounts.spec.ts` proves it: a guest gets 401 from `/api/me`, not 404.
+
 **PR 2-D — The Google flow and the fake IdP.**
 - `src/worker/auth/google.ts` (start, callback, verification),
   `transaction.ts` (the sealed cookie) and `time.ts` (the seconds and

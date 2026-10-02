@@ -31,6 +31,47 @@ export async function createSession(db: Db, userId: string, idHash: string, now:
 }
 
 /**
+ * Sign-in's session creation (ACCOUNTS_SPEC_PHASE_2.md §6.3), as one batch,
+ * so a suspension cannot land between "the account is active" and "here is
+ * its session":
+ *
+ *  I1. the browser's previous session goes, whoever it belonged to: it proved
+ *      it held that cookie, and the cookie is about to be overwritten;
+ *  I2. the new session, only while the account is active. ON CONFLICT makes a
+ *      replayed transaction a no-op: one transaction, one row;
+ *  I3. the answer: true only if, when the batch finished, the session exists
+ *      for this user AND the user is active.
+ *
+ * A cookie is set only on true. `createSession` stays for tests.
+ */
+export async function issueSession(
+  db: Db,
+  userId: string,
+  newHash: string,
+  priorHash: string | null,
+  now: number,
+): Promise<boolean> {
+  const [, , answer] = await db.batch<{ ok: number }>([
+    db.prepare('DELETE FROM sessions WHERE ?1 IS NOT NULL AND id_hash = ?1 AND id_hash <> ?2').bind(priorHash, newHash),
+    db
+      .prepare(
+        `INSERT INTO sessions (id_hash, user_id, created_at, last_seen_at, idle_expires_at, absolute_expires_at)
+           SELECT ?1, ?2, ?3, ?3, ?3 + ?4, ?3 + ?5
+           WHERE EXISTS (SELECT 1 FROM users WHERE id = ?2 AND status = 'active')
+           ON CONFLICT (id_hash) DO NOTHING`,
+      )
+      .bind(newHash, userId, now, Math.min(SESSION_IDLE_MS, SESSION_ABSOLUTE_MS), SESSION_ABSOLUTE_MS),
+    db
+      .prepare(
+        `SELECT 1 AS ok FROM sessions s JOIN users u ON u.id = s.user_id
+           WHERE s.id_hash = ?1 AND s.user_id = ?2 AND u.status = 'active'`,
+      )
+      .bind(newHash, userId),
+  ]);
+  return answer.results.length > 0;
+}
+
+/**
  * The user a live session belongs to, with their status; null for an unknown
  * or expired session. A suspended or deleting account still resolves — what it
  * may do is the router's single decision, not this function's.
